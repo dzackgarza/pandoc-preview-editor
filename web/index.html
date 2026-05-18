@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>pandoc-nvim-preview</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/xterm/xterm.css" />
+  </head>
+  <body>
+    <div id="app">
+      <div id="toolbar">
+        <span data-testid="status" id="status">connecting...</span>
+        <button data-testid="save-button" id="save-btn">Save</button>
+      </div>
+      <div id="panes">
+        <div id="terminal-pane" data-testid="terminal"></div>
+        <div id="preview-pane" data-testid="preview">
+          <iframe
+            data-testid="preview-frame"
+            id="preview-frame"
+            sandbox="allow-scripts allow-same-origin"
+          ></iframe>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/dist/main.js"></script>
+  </body>
+</html>
