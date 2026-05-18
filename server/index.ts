@@ -1,6 +1,5 @@
 import { spawnNvim } from './pty.js';
 import { getBuffer, saveBuffer, pollReady } from './nvim-rpc.js';
-import { renderMarkdown } from './render.js';
 import { createWSServer, broadcast } from './ws.js';
 import express from 'express';
 import { createServer } from 'node:http';
@@ -109,14 +108,11 @@ export async function startServer(config: AppConfig) {
 
     nvim.onData(onPtyData);
 
-    // Replay buffered PTY output so the client sees the nvim startup screen
-    for (const chunk of ptyBuffer) {
-      ws.send(JSON.stringify({ type: 'pty-output', data: chunk }));
-    }
-
-    // Replay current preview HTML (pollOnce fires before WS connect)
-    if (lastRenderedHtml) {
-      ws.send(JSON.stringify({ type: 'preview-update', html: lastRenderedHtml }));
+    if (ptyBuffer.length > 0) {
+      // Replay buffered PTY output so the client sees the nvim startup screen
+      for (const chunk of ptyBuffer) {
+        ws.send(JSON.stringify({ type: 'pty-output', data: chunk }));
+      }
     }
 
     ws.on('message', (raw) => {
@@ -145,48 +141,8 @@ export async function startServer(config: AppConfig) {
     });
   });
 
-  // Poll loop: get buffer -> render -> broadcast preview
-  let pollTimer: NodeJS.Timeout | null = null;
-  let lastContent = '';
-  let lastRenderedHtml = '';
-
-  async function pollOnce() {
-    try {
-      const buffer = await getBuffer(SOCKET_PATH);
-      if (buffer === lastContent) return;
-      lastContent = buffer;
-
-      let html: string;
-      try {
-        html = renderMarkdown(buffer, {
-          bibliography: config.bibliography,
-          csl: config.csl,
-          katex: config.katex,
-        });
-      } catch (renderErr: any) {
-        console.error('[pandoc-nvim-preview] render error:', renderErr.message);
-        html = `<!-- render error: ${renderErr.message} -->`;
-      }
-
-      broadcast({ type: 'preview-update', html });
-      lastRenderedHtml = html;
-    } catch (pollErr) {
-      console.error(
-        '[pandoc-nvim-preview] poll error:',
-        pollErr instanceof Error ? pollErr.message : String(pollErr),
-      );
-    }
-  }
-
-  function startPolling() {
-    // Run once immediately, then on interval
-    pollOnce();
-    pollTimer = setInterval(pollOnce, 300);
-  }
-
   // Cleanup on exit
   function cleanup() {
-    if (pollTimer) clearInterval(pollTimer);
     nvim.kill();
     if (existsSync(SOCKET_PATH)) {
       rmSync(SOCKET_PATH);
@@ -199,7 +155,6 @@ export async function startServer(config: AppConfig) {
   return new Promise<void>((resolve, reject) => {
     httpServer.listen(config.port, async () => {
       console.log(`[pandoc-nvim-preview] Server on http://localhost:${config.port}`);
-      startPolling();
 
       if (process.env.NO_OPEN !== '1') {
         try {
