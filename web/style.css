@@ -14,6 +14,27 @@
   box-sizing: border-box;
 }
 
+@font-face {
+  font-family: 'JetBrainsMono Nerd Font';
+  src: url('/JetBrainsMonoNerdFont-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'JetBrainsMono Nerd Font';
+  src: url('/JetBrainsMonoNerdFont-Bold.ttf') format('truetype');
+  font-weight: bold;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'JetBrainsMono Nerd Font';
+  src: url('/JetBrainsMonoNerdFont-Italic.ttf') format('truetype');
+  font-weight: normal;
+  font-style: italic;
+}
+
 body {
   background: var(--bg);
   color: var(--text);

@@ -33,7 +33,7 @@ export function createTerminal(
       brightCyan: '#94e2d5',
       brightWhite: '#a6adc8',
     },
-    fontFamily: 'monospace',
+    fontFamily: "'JetBrainsMono Nerd Font Mono', 'JetBrainsMono Nerd Font', 'FiraCode Nerd Font', 'monospace', 'Menlo', 'Monaco', 'Courier New'",
     fontSize: 14,
     allowProposedApi: true,
   });
