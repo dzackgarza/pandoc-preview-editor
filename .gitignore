@@ -2,3 +2,5 @@ node_modules/
 dist/
 web/dist/
 test-artifacts/
+test-results/
+*.orig

@@ -49,10 +49,19 @@ test('preview shows content on initial load without typing', async ({ page }) =>
       timeout: 5000,
     });
 
-    await expect(preview.locator('.MathJax, .katex, math, .math').first()).toBeAttached({
-      timeout: 5000,
-    });
+    await expect(preview.locator('.MathJax, .katex, math, .math').first()).toBeAttached(
+      {
+        timeout: 5000,
+      },
+    );
   } finally {
+    // Log server output for debugging if test failed
+    if (server) {
+      const stdout = server.out.join('').slice(-2000);
+      const stderr = server.err.join('').slice(-2000);
+      if (stdout) console.log('\n=== SERVER STDOUT ===\n' + stdout);
+      if (stderr) console.log('\n=== SERVER STDERR ===\n' + stderr);
+    }
     await killServer(server);
   }
 });
@@ -136,9 +145,11 @@ test('nvim input updates pandoc preview DOM and file on disk', async ({ page }) 
 
     const preview = page.frameLocator('[data-testid="preview-frame"]');
     await expect(preview.locator('h1').last()).toContainText('Theorem');
-    await expect(preview.locator('.MathJax, .katex, math, .math').first()).toBeAttached({
-      timeout: 5000,
-    });
+    await expect(preview.locator('.MathJax, .katex, math, .math').first()).toBeAttached(
+      {
+        timeout: 5000,
+      },
+    );
   } finally {
     await killServer(server);
   }
@@ -196,9 +207,11 @@ test('pandoc math and citations render and file contains source', async ({ page 
 
     const preview = page.frameLocator('[data-testid="preview-frame"]');
     await expect(preview.locator('body')).toContainText('doe99');
-    await expect(preview.locator('.MathJax, .katex, math, .math').first()).toBeAttached({
-      timeout: 5000,
-    });
+    await expect(preview.locator('.MathJax, .katex, math, .math').first()).toBeAttached(
+      {
+        timeout: 5000,
+      },
+    );
   } finally {
     await killServer(server);
   }

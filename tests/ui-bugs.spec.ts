@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { launchServer, killServer, type ServerInstance } from './helpers.js';
 
-let server: Awaited<ReturnType<typeof launchServer>>;
+let server: ServerInstance;
 
 test.afterEach(async () => {
   if (server) {

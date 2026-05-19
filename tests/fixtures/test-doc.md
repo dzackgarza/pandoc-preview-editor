@@ -1,4 +1,4 @@
-KEYBOARD_TO_NVIM_SENTINEL_CHARLIIMMEDIATE_SAVE_SENTINEinciL5_SENTINEL_CHARLIELE# Test Document for E2E Tests
+# Test Document for E2E Tests
 
 ## Section One
 
@@ -22,7 +22,6 @@ Also $x^2 + y^2 = z^2$.
 ```python
 def hello():
     print("hello world")
-
 ```
 
 ## Lists

@@ -1,4 +1,4 @@
-import { spawnNvim } from './pty.js';
+import { spawnNvim, type NvimPTY } from './pty.js';
 import { getBuffer, saveBuffer, pollReady } from './nvim-rpc.js';
 import { createWSServer, broadcast } from './ws.js';
 import { renderMarkdown } from './render.js';
@@ -37,21 +37,8 @@ export async function startServer(config: AppConfig) {
 
   const absFilePath = resolve(config.filePath);
 
-  console.log(`[pandoc-nvim-preview] Starting nvim for ${absFilePath}`);
-  const nvim = spawnNvim(absFilePath, SOCKET_PATH, config.port);
-
-  console.log(`[pandoc-nvim-preview] Waiting for nvim to be ready...`);
-  const ready = await pollReady(SOCKET_PATH);
-  if (!ready) {
-    nvim.kill();
-    throw new Error('Neovim failed to start within timeout');
-  }
-  console.log(`[pandoc-nvim-preview] Neovim ready (pid ${nvim.pid})`);
-
-  // Global PTY listener - broadcast to all clients (ONE listener, not one per client)
-  nvim.onData((data: string) => {
-    broadcast({ type: 'pty-output', data });
-  });
+  // nvim is assigned after HTTP server starts, but before any requests arrive
+  let nvim: NvimPTY;
 
   const app = express();
   app.use(express.json());
@@ -94,20 +81,28 @@ export async function startServer(config: AppConfig) {
 
   // Health check
   app.get('/api/status', (_req, res) => {
-    res.json({ pid: nvim.pid, socket: SOCKET_PATH, file: absFilePath });
+    res.json({ pid: nvim?.pid ?? 0, socket: SOCKET_PATH, file: absFilePath });
   });
 
   // Buffer update from nvim plugin (push-based, no polling)
-  app.post('/api/buffer-update', express.text({ type: '*/*', limit: '10mb' }), (req, res) => {
-    const buffer = req.body;
-    const html = renderMarkdown(buffer, {
-      bibliography: config.bibliography,
-      csl: config.csl,
-      katex: config.katex,
-    });
-    broadcast({ type: 'preview-update', html });
-    res.status(200).end();
-  });
+  app.post(
+    '/api/buffer-update',
+    express.text({ type: '*/*', limit: '10mb' }),
+    (req, res) => {
+      const buffer = req.body;
+      console.log(
+        `[pandoc-nvim-preview] buffer-update received (${buffer.length} chars)`,
+      );
+      const html = renderMarkdown(buffer, {
+        bibliography: config.bibliography,
+        csl: config.csl,
+        katex: config.katex,
+      });
+      console.log(`[pandoc-nvim-preview] preview rendered (${html.length} chars)`);
+      broadcast({ type: 'preview-update', html });
+      res.status(200).end();
+    },
+  );
 
   // WebSocket: handle client messages
   wss.on('connection', (ws) => {
@@ -120,9 +115,9 @@ export async function startServer(config: AppConfig) {
           rows?: number;
         };
         if (msg.type === 'pty-input' && msg.data) {
-          nvim.write(msg.data);
+          nvim?.write(msg.data);
         } else if (msg.type === 'pty-resize' && msg.cols && msg.rows) {
-          nvim.resize(msg.cols, msg.rows);
+          nvim?.resize(msg.cols, msg.rows);
         }
       } catch (parseErr: any) {
         console.error(
@@ -135,37 +130,69 @@ export async function startServer(config: AppConfig) {
 
   // Cleanup on exit
   function cleanup() {
-    try { wss.close(); } catch {}
-    try { httpServer.close(); } catch {}
-    try { nvim.kill(); } catch {}
-    try { if (existsSync(SOCKET_PATH)) rmSync(SOCKET_PATH); } catch {}
+    try {
+      wss.close();
+    } catch {}
+    try {
+      httpServer.close();
+    } catch {}
+    try {
+      nvim?.kill();
+    } catch {}
+    try {
+      if (existsSync(SOCKET_PATH)) rmSync(SOCKET_PATH);
+    } catch {}
   }
 
-  process.on('SIGINT', () => { cleanup(); process.exit(0); });
-  process.on('SIGTERM', () => { cleanup(); process.exit(0); });
+  process.on('SIGINT', () => {
+    cleanup();
+    process.exit(0);
+  });
+  process.on('SIGTERM', () => {
+    cleanup();
+    process.exit(0);
+  });
   process.on('uncaughtException', (err) => {
     console.error('[pandoc-nvim-preview] uncaught exception:', err);
     cleanup();
     process.exit(1);
   });
 
-  return new Promise<void>((resolve, reject) => {
-    httpServer.listen(config.port, async () => {
+  // Start HTTP server FIRST, then spawn nvim.
+  // The nvim plugin sends buffer content to /api/buffer-update on VimEnter,
+  // so the HTTP server must be listening before nvim starts.
+  await new Promise<void>((resolve, reject) => {
+    httpServer.listen(config.port, () => {
       console.log(`[pandoc-nvim-preview] Server on http://localhost:${config.port}`);
-
-      if (process.env.NO_OPEN !== '1') {
-        try {
-          await open(`http://localhost:${config.port}`);
-        } catch {
-          console.log(
-            `[pandoc-nvim-preview] Open http://localhost:${config.port} in your browser`,
-          );
-        }
-      }
-
       resolve();
     });
-
     httpServer.on('error', reject);
   });
+
+  // Now spawn nvim — the plugin's VimEnter autocmd will POST to our server
+  console.log(`[pandoc-nvim-preview] Starting nvim for ${absFilePath}`);
+  nvim = spawnNvim(absFilePath, SOCKET_PATH, config.port);
+
+  // Global PTY listener - broadcast to all clients (ONE listener, not one per client)
+  nvim.onData((data: string) => {
+    broadcast({ type: 'pty-output', data });
+  });
+
+  console.log(`[pandoc-nvim-preview] Waiting for nvim to be ready...`);
+  const ready = await pollReady(SOCKET_PATH);
+  if (!ready) {
+    nvim.kill();
+    throw new Error('Neovim failed to start within timeout');
+  }
+  console.log(`[pandoc-nvim-preview] Neovim ready (pid ${nvim.pid})`);
+
+  if (process.env.NO_OPEN !== '1') {
+    try {
+      await open(`http://localhost:${config.port}`);
+    } catch {
+      console.log(
+        `[pandoc-nvim-preview] Open http://localhost:${config.port} in your browser`,
+      );
+    }
+  }
 }
