@@ -5,6 +5,7 @@ const durationEl = document.getElementById('duration');
 
 let renderVersion = 0;
 let debounceTimer = null;
+let currentFile = window.__INITIAL_FILE || null;
 
 function setStatus(text, className) {
   statusEl.textContent = text;
@@ -33,18 +34,34 @@ async function doRender(markdown, version) {
     if (data.ok) {
       preview.srcdoc = data.html;
       setStatus('ready', 'ok');
+      if (data.durationMs != null) {
+        durationEl.textContent = `${data.durationMs}ms`;
+      }
     } else {
       preview.srcdoc = `<html><body style="color:#f48771;padding:2em">Render failed</body></html>`;
       setStatus('error', 'error');
-    }
-
-    if (data.durationMs != null) {
-      durationEl.textContent = `${data.durationMs}ms`;
     }
   } catch (err) {
     if (version !== renderVersion) return;
     preview.srcdoc = `<html><body style="color:#f48771;padding:2em">Error: ${err.message}</body></html>`;
     setStatus('error', 'error');
+  }
+}
+
+async function doSave(markdown) {
+  if (!currentFile) return;
+  try {
+    const res = await fetch('/api/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ markdown }),
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      console.error('save failed:', data.error);
+    }
+  } catch (err) {
+    console.error('save error:', err);
   }
 }
 
@@ -61,18 +78,25 @@ function scheduleRender() {
   debounceTimer = setTimeout(() => doRender(text, version), debounceMs);
 }
 
-// Initial render from placeholder/default content
+// Load initial content if provided by the server
+if (window.__INITIAL_CONTENT) {
+  editor.value = window.__INITIAL_CONTENT;
+}
+
+// Initial render from whatever content is in the editor
+scheduleRender();
+
+// Re-render on input
 editor.addEventListener('input', scheduleRender);
 
-// Ctrl+S for immediate render
+// Ctrl+S for immediate render + save
 editor.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === 's') {
     e.preventDefault();
     if (debounceTimer) clearTimeout(debounceTimer);
     const version = ++renderVersion;
-    doRender(editor.value, version);
+    const text = editor.value;
+    doRender(text, version);
+    doSave(text);
   }
 });
-
-// Schedule initial render
-scheduleRender();

@@ -55,19 +55,32 @@ program
     const cwd = process.cwd();
     const configOverrides = loadConfig(options.config, cwd);
 
+    // Read file content if a file argument is provided
+    let fileContent: string | undefined;
+    let absPath: string | undefined;
+    if (file) {
+      absPath = resolve(cwd, file);
+      try {
+        fileContent = readFileSync(absPath, 'utf-8');
+      } catch (err) {
+        console.error(`Warning: could not read file ${absPath}: ${err}`);
+      }
+    }
+
     const config: ServerConfig = {
       pandocCommand: configOverrides.pandocCommand ?? 'pandoc',
       pandocArgs: configOverrides.pandocArgs ?? DEFAULT_ARGS,
       timeoutMs: configOverrides.timeoutMs ?? 30000,
       port: parseInt(options.port ?? '3000', 10),
       host: options.host ?? '127.0.0.1',
+      file: absPath,
+      fileContent,
     };
 
     startServer(config);
 
-    if (file) {
-      const absPath = resolve(cwd, file);
-      console.log(`File context: ${absPath}`);
+    if (file && absPath) {
+      console.log(`File: ${absPath}`);
     }
   });
 

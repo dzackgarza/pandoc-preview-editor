@@ -33,12 +33,18 @@ async function findFreePort(): Promise<number> {
   });
 }
 
-export async function launchServer(port?: number): Promise<ServerInstance> {
+export async function launchServer(
+  port?: number,
+  file?: string,
+): Promise<ServerInstance> {
   const p = port ?? (await findFreePort());
   const out: string[] = [];
   const err: string[] = [];
 
-  const proc = spawn('npx', ['tsx', 'src/server/cli.ts', '--port', String(p)], {
+  const args = ['tsx', 'src/server/cli.ts', '--port', String(p)];
+  if (file) args.push(file);
+
+  const proc = spawn('npx', args, {
     cwd: ROOT,
     stdio: 'pipe',
   });
