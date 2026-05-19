@@ -42,6 +42,12 @@ test-cert: build clean-runtime
 typecheck:
     npx tsc --noEmit
 
+# Install nvim plugin to Neovim config
+install-plugin:
+    mkdir -p ~/.config/nvim/plugin
+    cp nvim/plugin/pandoc-preview.lua ~/.config/nvim/plugin/pandoc-preview.lua
+    @echo "Installed nvim/plugin/pandoc-preview.lua -> ~/.config/nvim/plugin/pandoc-preview.lua"
+
 # Full setup: install + build + typecheck
 setup: install build typecheck
 
