@@ -22,6 +22,7 @@ Also $x^2 + y^2 = z^2$.
 ```python
 def hello():
     print("hello world")
+
 ```
 
 ## Lists
