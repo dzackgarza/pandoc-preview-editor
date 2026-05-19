@@ -69,17 +69,17 @@ export async function launchServer(filePath: string): Promise<ServerInstance> {
   await waitForServer(url, 15000);
 
   // Fetch the socket path and nvim PID from the server status endpoint
-  let socketPath = '/tmp/pandoc-nvim-preview/nvim.sock'; // fallback
+  let socketPath = '';
   let nvimPid = 0;
-  try {
-    const statusRes = await fetch(`${url}/api/status`);
-    if (statusRes.ok) {
-      const status = (await statusRes.json()) as { pid: number; socket: string };
-      nvimPid = status.pid;
-      socketPath = status.socket;
-    }
-  } catch {
-    // non-critical; use fallback
+  const statusRes = await fetch(`${url}/api/status`);
+  if (!statusRes.ok) {
+    throw new Error(`Failed to get server status: ${statusRes.status} ${statusRes.statusText}`);
+  }
+  const status = (await statusRes.json()) as { pid: number; socket: string };
+  nvimPid = status.pid;
+  socketPath = status.socket;
+  if (!socketPath) {
+    throw new Error('Server status response missing socket path');
   }
 
   return { port, process: proc, filePath, url, socketPath, nvimPid, out, err };

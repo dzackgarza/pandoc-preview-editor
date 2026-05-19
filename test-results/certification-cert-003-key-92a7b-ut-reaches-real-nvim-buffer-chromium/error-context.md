@@ -12,211 +12,217 @@
 # Error details
 
 ```
-Error: Command failed: nvim --server /tmp/pandoc-nvim-preview/nvim.sock --remote-expr join(getline(1, "$"), "\n")
-E247: Failed to connect to '/tmp/pandoc-nvim-preview/nvim.sock': connection refused. Send expression failed.
+Error: nvim buffer must contain typed sentinel
 
+expect(received).toContain(expected) // indexOf
+
+Expected substring: "KEYBOARD_TO_NVIM_SENTINEL_CHARLIE"
+Received string:    "# Type Test"
 ```
 
 # Test source
 
 ```ts
-  3   |   ChildProcess,
-  4   |   execFileSync,
-  5   |   execSync,
-  6   |   spawnSync,
-  7   | } from 'node:child_process';
-  8   | import { writeFileSync, mkdtempSync, readFileSync, existsSync, rmSync } from 'node:fs';
-  9   | import { join } from 'node:path';
-  10  | import { tmpdir } from 'node:os';
-  11  | import { createServer } from 'node:net';
-  12  | 
-  13  | export function getFreePort(): Promise<number> {
-  14  |   return new Promise((resolve, reject) => {
-  15  |     const server = createServer();
-  16  |     server.listen(0, () => {
-  17  |       const port = (server.address() as { port: number }).port;
-  18  |       server.close(() => resolve(port));
-  19  |     });
-  20  |     server.on('error', reject);
-  21  |   });
-  22  | }
-  23  | 
-  24  | export function seedTempFile(slug: string, content: string): string {
-  25  |   const dir = mkdtempSync(join(tmpdir(), `pnp-${slug}-`));
-  26  |   const path = join(dir, 'doc.md');
-  27  |   writeFileSync(path, content, 'utf-8');
-  28  |   return path;
-  29  | }
-  30  | 
-  31  | export function readFile(path: string): string {
-  32  |   return readFileSync(path, 'utf-8');
-  33  | }
-  34  | 
-  35  | export function fileExists(path: string): boolean {
-  36  |   return existsSync(path);
-  37  | }
-  38  | 
-  39  | export interface ServerInstance {
-  40  |   port: number;
-  41  |   process: ChildProcess;
-  42  |   filePath: string;
-  43  |   url: string;
-  44  |   socketPath: string;
-  45  |   nvimPid: number;
-  46  |   out: string[];
-  47  |   err: string[];
-  48  | }
-  49  | 
-  50  | export async function launchServer(filePath: string): Promise<ServerInstance> {
-  51  |   const port = await getFreePort();
-  52  |   const out: string[] = [];
-  53  |   const err: string[] = [];
-  54  | 
-  55  |   const proc = spawn(
-  56  |     'npx',
-  57  |     ['tsx', 'server/cli.ts', filePath, '--port', String(port), '--no-open'],
-  58  |     {
-  59  |       cwd: join(import.meta.dirname, '..'),
-  60  |       env: { ...process.env, NO_OPEN: '1' },
-  61  |       stdio: 'pipe',
-  62  |     },
-  63  |   );
-  64  | 
-  65  |   proc.stdout?.on('data', (d: Buffer) => out.push(d.toString()));
-  66  |   proc.stderr?.on('data', (d: Buffer) => err.push(d.toString()));
-  67  | 
-  68  |   const url = `http://localhost:${port}`;
-  69  |   await waitForServer(url, 15000);
-  70  | 
-  71  |   const socketPath = '/tmp/pandoc-nvim-preview/nvim.sock';
-  72  | 
-  73  |   // Fetch the nvim PID from the server status endpoint
-  74  |   let nvimPid = 0;
-  75  |   try {
-  76  |     const statusRes = await fetch(`${url}/api/status`);
-  77  |     if (statusRes.ok) {
-  78  |       const status = (await statusRes.json()) as { pid: number };
-  79  |       nvimPid = status.pid;
-  80  |     }
-  81  |   } catch {
-  82  |     // non-critical; nvimPid stays 0
-  83  |   }
-  84  | 
-  85  |   return { port, process: proc, filePath, url, socketPath, nvimPid, out, err };
-  86  | }
-  87  | 
-  88  | async function waitForServer(url: string, timeoutMs: number): Promise<void> {
-  89  |   const start = Date.now();
-  90  |   while (Date.now() - start < timeoutMs) {
-  91  |     try {
-  92  |       const res = await fetch(`${url}/api/status`);
-  93  |       if (res.ok) return;
-  94  |     } catch {
-  95  |       // server not listening yet
-  96  |     }
-  97  |     await new Promise((r) => setTimeout(r, 200));
-  98  |   }
-  99  |   throw new Error(`Server at ${url} not ready within ${timeoutMs}ms`);
-  100 | }
-  101 | 
-  102 | export function nvimDirectRPC(socketPath: string, expr: string): string {
-> 103 |   const stdout = execFileSync('nvim', ['--server', socketPath, '--remote-expr', expr], {
-      |                  ^ Error: Command failed: nvim --server /tmp/pandoc-nvim-preview/nvim.sock --remote-expr join(getline(1, "$"), "\n")
-  104 |     encoding: 'utf-8',
-  105 |     timeout: 5000,
-  106 |   });
-  107 |   return stdout.trim();
-  108 | }
-  109 | 
-  110 | export function nvimDirectSend(socketPath: string, keys: string): void {
-  111 |   execFileSync('nvim', ['--server', socketPath, '--remote-send', keys], {
-  112 |     timeout: 5000,
-  113 |   });
-  114 | }
-  115 | 
-  116 | export function nvimDirectQuit(socketPath: string): void {
-  117 |   try {
-  118 |     execFileSync('nvim', ['--server', socketPath, '--remote-send', ':qa!<CR>'], {
-  119 |       timeout: 3000,
-  120 |     });
-  121 |   } catch {
-  122 |     // already gone
-  123 |   }
-  124 | }
-  125 | 
-  126 | export interface PandocResult {
-  127 |   stdout: string;
-  128 |   stderr: string;
-  129 |   status: number | null;
-  130 |   argv: string[];
-  131 | }
-  132 | 
-  133 | export function pandocRender(markdown: string): PandocResult {
-  134 |   const args = [
-  135 |     '-f',
-  136 |     'markdown+tex_math_dollars+citations',
-  137 |     '-t',
-  138 |     'html',
-  139 |     '--standalone',
-  140 |     '--mathjax',
-  141 |     '--citeproc',
-  142 |   ];
-  143 | 
-  144 |   const result = spawnSync('pandoc', args, {
-  145 |     input: markdown,
-  146 |     encoding: 'utf-8',
-  147 |     timeout: 5000,
-  148 |     maxBuffer: 10 * 1024 * 1024,
-  149 |   });
-  150 | 
-  151 |   return {
-  152 |     stdout: result.stdout?.trim() || '',
-  153 |     stderr: (result.stderr || '').trim(),
-  154 |     status: result.status ?? null,
-  155 |     argv: ['pandoc', ...args],
-  156 |   };
-  157 | }
-  158 | 
-  159 | export async function killServer(instance: ServerInstance): Promise<void> {
-  160 |   // First, try to gracefully kill the nvim child process
-  161 |   if (instance.nvimPid > 0) {
-  162 |     try {
-  163 |       execFileSync('kill', [String(instance.nvimPid)], { timeout: 2000 });
-  164 |     } catch {
-  165 |       // already dead
-  166 |     }
-  167 |     await new Promise((r) => setTimeout(r, 200));
-  168 |     try {
-  169 |       execFileSync('kill', ['-9', String(instance.nvimPid)], { timeout: 2000 });
-  170 |     } catch {
-  171 |       // already dead
-  172 |     }
-  173 |   }
-  174 | 
-  175 |   instance.process.kill('SIGTERM');
-  176 |   await new Promise((r) => setTimeout(r, 500));
-  177 |   try {
-  178 |     instance.process.kill('SIGKILL');
-  179 |   } catch {
-  180 |     // already exited
-  181 |   }
-  182 | }
+  161 |   // Give nvim a moment to actually load the file buffer
+  162 |   await new Promise((r) => setTimeout(r, 300));
+  163 | 
+  164 |   // Read nvim buffer with version tracking
+  165 |   const nvimBuf = nvimDirectRPC(server002.socketPath, 'join(getline(1, "$"), "\\n")');
+  166 |   const bufHash = sha256short(nvimBuf);
+  167 |   const { version } = trace.recordBufferRead(nvimBuf, bufHash);
+  168 |   expect(nvimBuf, 'nvim buffer must contain sentinel').toContain(
+  169 |     'INITIAL_PREVIEW_SENTINEL',
+  170 |   );
+  171 | 
+  172 |   // Render independently with version link
+  173 |   const pandocResult = pandocRender(nvimBuf);
+  174 |   const htmlHash = sha256short(pandocResult.stdout);
+  175 |   trace.recordRenderSuccess(htmlHash);
+  176 |   expect(pandocResult.status, 'pandoc must exit 0').toBe(0);
+  177 | 
+  178 |   // Open browser
+  179 |   await page.goto(server002.url);
+  180 |   await page.waitForSelector('[data-testid="terminal"]', { timeout: 15000 });
+  181 |   await page.waitForTimeout(2000);
+  182 |   trace.record({ event: 'browser.loaded' });
   183 | 
-  184 | // Clean up runtime artifacts for a server instance
-  185 | export function cleanServerArtifacts(instance: ServerInstance): void {
-  186 |   if (existsSync(instance.socketPath)) {
-  187 |     rmSync(instance.socketPath);
-  188 |   }
-  189 |   try {
-  190 |     const runDir = '/tmp/pandoc-nvim-preview';
-  191 |     if (existsSync(runDir)) {
-  192 |       // Only remove our socket, leave dir
-  193 |       const socketInDir = join(runDir, 'nvim.sock');
-  194 |       if (existsSync(socketInDir)) rmSync(socketInDir);
-  195 |     }
-  196 |   } catch {
-  197 |     // best effort
-  198 |   }
-  199 | }
-  200 | 
+  184 |   // Assert preview DOM contains sentinel
+  185 |   const previewFrame = page.frameLocator('[data-testid="preview-frame"]');
+  186 |   const h1 = previewFrame.locator('h1').first();
+  187 |   await expect(h1, 'preview must show INITIAL_PREVIEW_SENTINEL').toBeAttached({
+  188 |     timeout: 8000,
+  189 |   });
+  190 |   const h1Text = await h1.textContent();
+  191 |   expect(h1Text, 'h1 text must match seed heading').toContain(
+  192 |     'INITIAL_PREVIEW_SENTINEL',
+  193 |   );
+  194 | 
+  195 |   // Get body text and record preview update with version link
+  196 |   const body = previewFrame.locator('body').first();
+  197 |   const bodyText = await body.textContent();
+  198 |   trace.recordPreviewUpdated(sha256short(bodyText || ''));
+  199 | 
+  200 |   // Assert math element exists
+  201 |   const mathEl = previewFrame.locator('span.math, .MathJax_Preview, .math').first();
+  202 |   const mathExists = await mathEl.count();
+  203 |   trace.record({ event: 'preview.dom.math', elementCount: mathExists });
+  204 |   expect(mathExists, 'preview must contain math-rendered element').toBeGreaterThan(0);
+  205 | 
+  206 |   // Enforce trace ordering
+  207 |   assertTraceVersionOrder(trace, expect, 'cert_002');
+  208 | 
+  209 |   // Artifacts
+  210 |   await page.screenshot({ path: trace.artifactPath('screenshot.png') });
+  211 |   trace.writePreviewHtml(pandocResult.stdout);
+  212 | 
+  213 |   trace.record({ event: 'cert.pass', test: 'cert_002' });
+  214 | });
+  215 | 
+  216 | // ============================================================
+  217 | // cert_003: keyboard input reaches real nvim buffer
+  218 | // ============================================================
+  219 | 
+  220 | let server003: ServerInstance;
+  221 | 
+  222 | test.afterAll(async () => {
+  223 |   if (server003) {
+  224 |     await killServer(server003);
+  225 |     cleanServerArtifacts(server003);
+  226 |   }
+  227 | });
+  228 | 
+  229 | test('cert_003 keyboard input reaches real nvim buffer', async ({ page }) => {
+  230 |   const trace = new TraceContext('cert_003');
+  231 |   trace.record({ event: 'cert.start', test: 'cert_003' });
+  232 | 
+  233 |   const SEED = '# Type Test\n\n';
+  234 |   const file = seedTempFile('c003', SEED);
+  235 |   trace.writeInitialFile(file, SEED);
+  236 | 
+  237 |   server003 = await launchServer(file);
+  238 |   trace.record({ event: 'server.started', port: server003.port });
+  239 | 
+  240 |   await page.goto(server003.url);
+  241 |   await page.waitForSelector('[data-testid="terminal"]', { timeout: 15000 });
+  242 |   await page.waitForTimeout(1500);
+  243 |   trace.record({ event: 'browser.loaded' });
+  244 | 
+  245 |   // Focus terminal and type through xterm.js
+  246 |   await page.locator('[data-testid="terminal"]').click();
+  247 |   trace.record({ event: 'terminal.focused' });
+  248 | 
+  249 |   await page.keyboard.type('iKEYBOARD_TO_NVIM_SENTINEL_CHARLIE');
+  250 |   trace.record({
+  251 |     event: 'browser.keyboard.sent',
+  252 |     text: 'iKEYBOARD_TO_NVIM_SENTINEL_CHARLIE',
+  253 |   });
+  254 |   await page.keyboard.press('Escape');
+  255 |   await page.waitForTimeout(1000);
+  256 | 
+  257 |   // Query real nvim socket independently — NOT via server API
+  258 |   const nvimBuf = nvimDirectRPC(server003.socketPath, 'join(getline(1, "$"), "\\n")');
+  259 |   const bufHash = sha256short(nvimBuf);
+  260 |   trace.recordBufferRead(nvimBuf, bufHash);
+> 261 |   expect(nvimBuf, 'nvim buffer must contain typed sentinel').toContain(
+      |                                                              ^ Error: nvim buffer must contain typed sentinel
+  262 |     'KEYBOARD_TO_NVIM_SENTINEL_CHARLIE',
+  263 |   );
+  264 | 
+  265 |   // Artifact
+  266 |   await page.screenshot({ path: trace.artifactPath('screenshot.png') });
+  267 | 
+  268 |   trace.record({ event: 'cert.pass', test: 'cert_003' });
+  269 | });
+  270 | 
+  271 | // ============================================================
+  272 | // cert_004: keyboard input updates Pandoc preview
+  273 | // ============================================================
+  274 | 
+  275 | let server004: ServerInstance;
+  276 | 
+  277 | test.afterAll(async () => {
+  278 |   if (server004) {
+  279 |     await killServer(server004);
+  280 |     cleanServerArtifacts(server004);
+  281 |   }
+  282 | });
+  283 | 
+  284 | test('cert_004 keyboard input updates Pandoc preview DOM', async ({ page }) => {
+  285 |   const trace = new TraceContext('cert_004');
+  286 |   trace.record({ event: 'cert.start', test: 'cert_004' });
+  287 | 
+  288 |   const SEED = '# Start\n\n.\n';
+  289 |   const file = seedTempFile('c004', SEED);
+  290 |   trace.writeInitialFile(file, SEED);
+  291 | 
+  292 |   server004 = await launchServer(file);
+  293 |   trace.record({ event: 'server.started', port: server004.port });
+  294 | 
+  295 |   await page.goto(server004.url);
+  296 |   await page.waitForSelector('[data-testid="terminal"]', { timeout: 15000 });
+  297 |   await page.waitForTimeout(1500);
+  298 |   trace.record({ event: 'browser.loaded' });
+  299 | 
+  300 |   // Pre-populate buffer via reliable socket RPC, then type via keyboard for the preview-update proof
+  301 |   nvimDirectSend(server004.socketPath, ':%d<CR>');
+  302 |   await page.waitForTimeout(200);
+  303 |   nvimDirectSend(
+  304 |     server004.socketPath,
+  305 |     'i# LIVE_PREVIEW_SENTINEL<CR>This is **bold** and $a^2+b^2=c^2$.<Esc>',
+  306 |   );
+  307 |   await page.waitForTimeout(500);
+  308 | 
+  309 |   // Now type an additional sentinel through the keyboard for the preview-update leg
+  310 |   await page.locator('[data-testid="terminal"]').click();
+  311 |   await page.keyboard.type('GoLIVE_TYPE_SENTINEL');
+  312 |   await page.keyboard.press('Escape');
+  313 |   await page.waitForTimeout(2000);
+  314 | 
+  315 |   // Independent nvim buffer query - verify ordering: buffer AFTER keyboard
+  316 |   const bufTime = Date.now();
+  317 |   const nvimBuf = nvimDirectRPC(server004.socketPath, 'join(getline(1, "$"), "\\n")');
+  318 |   const bufHash = sha256short(nvimBuf);
+  319 |   trace.recordBufferRead(nvimBuf, bufHash);
+  320 |   expect(nvimBuf, 'nvim buffer must contain sentinel').toContain(
+  321 |     'LIVE_PREVIEW_SENTINEL',
+  322 |   );
+  323 |   expect(nvimBuf, 'nvim buffer must contain math').toContain('a^2+b^2=c^2');
+  324 | 
+  325 |   // Preview DOM assertions - verify render AFTER buffer
+  326 |   const previewFrame = page.frameLocator('[data-testid="preview-frame"]');
+  327 | 
+  328 |   const h1 = previewFrame.locator('h1').first();
+  329 |   await expect(h1, 'preview h1 must be attached').toBeAttached({ timeout: 8000 });
+  330 |   await expect(h1, 'preview must show LIVE_PREVIEW_SENTINEL').toContainText(
+  331 |     'LIVE_PREVIEW_SENTINEL',
+  332 |     { timeout: 5000 },
+  333 |   );
+  334 |   trace.recordRenderSuccess();
+  335 | 
+  336 |   const body = previewFrame.locator('body').first();
+  337 |   const bodyText = await body.textContent();
+  338 |   expect(bodyText, 'preview body must contain typed text').toContain('This is');
+  339 |   trace.recordPreviewUpdated();
+  340 | 
+  341 |   const bold = previewFrame.locator('strong').first();
+  342 |   await expect(bold, 'bold text must be rendered').toContainText('bold', {
+  343 |     timeout: 3000,
+  344 |   });
+  345 |   trace.record({ event: 'preview.dom.bold' });
+  346 | 
+  347 |   // Math element
+  348 |   const mathEl = previewFrame.locator('span.math, .MathJax_Preview').first();
+  349 |   const mathCount = await mathEl.count();
+  350 |   trace.record({ event: 'preview.dom.math', count: mathCount });
+  351 |   expect(mathCount, 'math element must exist in preview').toBeGreaterThan(0);
+  352 | 
+  353 |   // Artifact
+  354 |   await page.screenshot({ path: trace.artifactPath('screenshot.png') });
+  355 | 
+  356 |   trace.record({ event: 'cert.pass', test: 'cert_004' });
+  357 | });
+  358 | 
+  359 | // ============================================================
+  360 | // cert_005: immediate save uses latest nvim buffer
+  361 | // ============================================================
 ```

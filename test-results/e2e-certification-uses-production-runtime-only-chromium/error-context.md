@@ -15,7 +15,7 @@
 Error: expect(received).toBe(expected) // Object.is equality
 
 Expected: "/tmp/pandoc-nvim-preview/nvim.sock"
-Received: "/tmp/pandoc-nvim-preview/nvim-92268.sock"
+Received: "/tmp/pandoc-nvim-preview/nvim-98840.sock"
 ```
 
 # Page snapshot
