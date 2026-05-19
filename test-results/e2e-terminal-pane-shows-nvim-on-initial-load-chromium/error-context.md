@@ -6,13 +6,16 @@
 
 # Test info
 
-- Name: e2e.spec.ts >> pandoc math and citations render and file contains source
-- Location: tests/e2e.spec.ts:210:1
+- Name: e2e.spec.ts >> terminal pane shows nvim on initial load
+- Location: tests/e2e.spec.ts:65:1
 
 # Error details
 
 ```
-Error: page.evaluate: SyntaxError: Unexpected token '<', "<!DOCTYPE "... is not valid JSON
+Error: expect(received).toBe(expected) // Object.is equality
+
+Expected: true
+Received: false
 ```
 
 # Page snapshot
@@ -82,8 +85,7 @@ Error: page.evaluate: SyntaxError: Unexpected token '<', "<!DOCTYPE "... is not 
   47  |   await page.goto(APP_URL);
   48  |   await expect(page.getByTestId('terminal')).toBeVisible({ timeout: 15000 });
   49  |   // Use the API to switch the file
-> 50  |   const res = await page.evaluate(async (path: string) => {
-      |                          ^ Error: page.evaluate: SyntaxError: Unexpected token '<', "<!DOCTYPE "... is not valid JSON
+  50  |   const res = await page.evaluate(async (path: string) => {
   51  |     const r = await fetch('/api/open-file', {
   52  |       method: 'POST',
   53  |       headers: { 'Content-Type': 'application/json' },
@@ -112,7 +114,8 @@ Error: page.evaluate: SyntaxError: Unexpected token '<', "<!DOCTYPE "... is not 
   76  |     return rows.textContent !== null && rows.textContent.trim().length > 0;
   77  |   });
   78  | 
-  79  |   expect(hasText).toBe(true);
+> 79  |   expect(hasText).toBe(true);
+      |                   ^ Error: expect(received).toBe(expected) // Object.is equality
   80  | });
   81  | 
   82  | // RED: Preview shows rendered content on initial load, before any keystrokes
@@ -184,4 +187,33 @@ Error: page.evaluate: SyntaxError: Unexpected token '<', "<!DOCTYPE "... is not 
   148 |   await page.waitForTimeout(500);
   149 | 
   150 |   const diskContent = readFile(f);
+  151 |   expect(diskContent).toContain('NEW_CONTENT_FROM_KEYBOARD');
+  152 | });
+  153 | 
+  154 | // Test: Nvim input updates pandoc preview DOM, and file on disk matches
+  155 | test('nvim input updates pandoc preview DOM and file on disk', async ({ page }) => {
+  156 |   const f = seedTempFile('preview-dom', '# Old Header\n\n');
+  157 |   await openFileInServer(page, f);
+  158 | 
+  159 |   await page.getByTestId('terminal').click();
+  160 | 
+  161 |   // Replace entire buffer content
+  162 |   await page.keyboard.type('ggdG');
+  163 |   await page.keyboard.type('i# Theorem');
+  164 |   await page.keyboard.press('Enter');
+  165 |   await page.keyboard.press('Enter');
+  166 |   await page.keyboard.type('Let $E=mc^2$');
+  167 |   await page.keyboard.press('.');
+  168 |   await page.keyboard.press('Escape');
+  169 | 
+  170 |   await page.waitForTimeout(1000);
+  171 | 
+  172 |   // Save to disk
+  173 |   await page.evaluate(async () => {
+  174 |     await fetch('/api/save', { method: 'POST' });
+  175 |   });
+  176 |   await page.waitForTimeout(500);
+  177 | 
+  178 |   // Assert file on disk
+  179 |   const diskContent = readFile(f);
 ```

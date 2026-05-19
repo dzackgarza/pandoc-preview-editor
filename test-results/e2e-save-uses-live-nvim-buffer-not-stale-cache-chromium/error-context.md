@@ -24,57 +24,9 @@ Error: page.evaluate: SyntaxError: Unexpected token '<', "<!DOCTYPE "... is not 
     - button "Save" [ref=e5] [cursor=pointer]
   - generic [ref=e6]:
     - generic [ref=e10]:
-      - textbox "Terminal input" [ref=e11]
-      - generic [ref=e12]:
-        - generic [ref=e13]:
-          - generic [ref=e14]: ▎
-          - generic [ref=e16]: 
-          - generic [ref=e17]: test-doc.md
-          - generic [ref=e18]: 
-        - generic [ref=e19]:
-          - generic [ref=e21]: "19"
-          - generic [ref=e22]: "## Code"
-        - generic [ref=e25]: "18"
-        - generic [ref=e26]:
-          - generic [ref=e28]: "17"
-          - generic [ref=e29]: "```python"
-        - generic [ref=e30]:
-          - generic [ref=e32]: "16"
-          - generic [ref=e33]: "def hello():"
-        - generic [ref=e34]:
-          - generic [ref=e36]: "15"
-          - generic [ref=e37]: ┊
-          - generic [ref=e39]: print("hello world")
-        - generic [ref=e42]: "14"
-        - generic [ref=e43]:
-          - generic [ref=e45]: "13"
-          - generic [ref=e46]: "```"
-        - generic [ref=e49]: "12"
-        - generic [ref=e50]:
-          - generic [ref=e52]: "11"
-          - generic [ref=e53]: "## Lists"
-        - generic [ref=e58]: "ion provider \"start\" (ns=nvim.treesitter.highlighter):"
-        - generic [ref=e61]: "Lua: /usr/share/nvim/runtime/lua/vim/treesitter/languagetree.lua:215: /us"
-        - generic [ref=e63]: r/share
-        - generic [ref=e65]: "/nvim/runtime/lua/vim/treesitter.lua:196: attempt to call method 'range'"
-        - generic [ref=e67]: (a nil
-        - generic [ref=e69]: value)
-        - generic [ref=e74]: "stack traceback:"
-        - generic [ref=e79]: "[C]: in function 'f'"
-        - generic [ref=e83]:
-          - generic [ref=e84]: /usr/share/nvim/runtime/lua/vim
-          - generic [ref=e85]: /
-          - generic [ref=e86]: "treesitter/languagetree.lua:215:"
-        - generic [ref=e88]: in func
-        - generic [ref=e90]: tion 'tcall'
-        - generic [ref=e95]: "/usr/share/nvim/runtime/lua/vim/treesitter/languagetree.lua:596:"
-        - generic [ref=e97]: in func
-        - generic [ref=e99]: tion 'parse'
-        - generic [ref=e104]: "/usr/share/nvim/runtime/lua/vim/treesitter/highlighter.lua:580: i"
-        - generic [ref=e106]: n funct
-        - generic [ref=e108]: ion </usr/share/nvim/runtime/lua/vim/treesitter/highlighter.lua:557>
-        - generic [ref=e113]: Press ENTER or type command to continue
-    - iframe [ref=e118]:
+      - generic:
+        - textbox "Terminal input"
+    - iframe [ref=e51]:
       
 ```
 

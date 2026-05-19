@@ -12,32 +12,17 @@
 # Error details
 
 ```
-Error: pandoc must exit 0
+Error: h1 text must match seed heading
 
-expect(received).toBe(expected) // Object.is equality
+expect(received).toContain(expected) // indexOf
 
-Expected: 0
-Received: null
+Expected substring: "INITIAL_PREVIEW_SENTINEL"
+Received string:    "L5 Type"
 ```
 
 # Test source
 
 ```ts
-  76  |   });
-  77  |   expect(status.pid, 'nvim pid must be > 0').toBeGreaterThan(0);
-  78  | 
-  79  |   // Check nvim argv — must NOT contain --headless
-  80  |   const psArgs = spawnSync('ps', ['-o', 'args=', '-p', String(status.pid)], {
-  81  |     encoding: 'utf-8',
-  82  |     timeout: 3000,
-  83  |   });
-  84  |   const nvimArgs = psArgs.stdout || '';
-  85  |   trace.record({ event: 'nvim.argv', args: nvimArgs.trim() });
-  86  |   expect(nvimArgs, 'nvim argv must NOT contain --headless').not.toContain('--headless');
-  87  |   expect(nvimArgs, 'nvim argv must contain --listen').toContain('--listen');
-  88  |   expect(nvimArgs, 'nvim argv must reference the file').toContain(file);
-  89  | 
-  90  |   // Socket must exist and answer
   91  |   expect(
   92  |     existsSync(server001.socketPath),
   93  |     `socket must exist at ${server001.socketPath}`,
@@ -123,8 +108,7 @@ Received: null
   173 |   const pandocResult = pandocRender(nvimBuf);
   174 |   const htmlHash = sha256short(pandocResult.stdout);
   175 |   trace.recordRenderSuccess(htmlHash);
-> 176 |   expect(pandocResult.status, 'pandoc must exit 0').toBe(0);
-      |                                                     ^ Error: pandoc must exit 0
+  176 |   expect(pandocResult.status, 'pandoc must exit 0').toBe(0);
   177 | 
   178 |   // Open browser
   179 |   await page.goto(server002.url);
@@ -139,7 +123,8 @@ Received: null
   188 |     timeout: 8000,
   189 |   });
   190 |   const h1Text = await h1.textContent();
-  191 |   expect(h1Text, 'h1 text must match seed heading').toContain(
+> 191 |   expect(h1Text, 'h1 text must match seed heading').toContain(
+      |                                                     ^ Error: h1 text must match seed heading
   192 |     'INITIAL_PREVIEW_SENTINEL',
   193 |   );
   194 | 
@@ -225,4 +210,19 @@ Received: null
   274 | 
   275 | let server004: ServerInstance;
   276 | 
+  277 | test.afterAll(async () => {
+  278 |   if (server004) {
+  279 |     await killServer(server004);
+  280 |     cleanServerArtifacts(server004);
+  281 |   }
+  282 | });
+  283 | 
+  284 | test('cert_004 keyboard input updates Pandoc preview DOM', async ({ page }) => {
+  285 |   const trace = new TraceContext('cert_004');
+  286 |   trace.record({ event: 'cert.start', test: 'cert_004' });
+  287 | 
+  288 |   const SEED = '# Start\n\n.\n';
+  289 |   const file = seedTempFile('c004', SEED);
+  290 |   trace.writeInitialFile(file, SEED);
+  291 | 
 ```

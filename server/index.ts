@@ -113,12 +113,25 @@ export async function startServer(config: AppConfig) {
   });
 
   // WebSocket: relay PTY I/O + handle client messages
-  wss.on('connection', (ws) => {
+  wss.on('connection', async (ws) => {
     const onPtyData = (data: string) => {
       broadcast({ type: 'pty-output', data });
     };
 
     nvim.onData(onPtyData);
+
+    // Send initial preview update on connection
+    try {
+      const buffer = await getBuffer(SOCKET_PATH);
+      const html = renderMarkdown(buffer, {
+        bibliography: config.bibliography,
+        csl: config.csl,
+        katex: config.katex,
+      });
+      ws.send(JSON.stringify({ type: 'preview-update', html }));
+    } catch (err: any) {
+      // nvim not ready yet - will be sent by polling interval
+    }
 
     ws.on('message', (raw) => {
       try {
