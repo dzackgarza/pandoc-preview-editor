@@ -6,23 +6,110 @@
 
 # Test info
 
-- Name: proof-ladder.spec.ts >> L5.1 xterm_keyboard_input_changes_nvim_buffer
-- Location: tests/proof-ladder.spec.ts:296:1
+- Name: proof-ladder.spec.ts >> L3.1 pandoc_renders_markdown_heading_without_nvim
+- Location: tests/proof-ladder.spec.ts:221:1
 
 # Error details
 
 ```
-Error: nvim buffer must contain typed sentinel
+Error: pandoc exit code must be 0; stderr=
 
-expect(received).toContain(expected) // indexOf
+expect(received).toBe(expected) // Object.is equality
 
-Expected substring: "L5_SENTINEL_CHARLIE"
-Received string:    "# L5 Type"
+Expected: 0
+Received: null
 ```
 
 # Test source
 
 ```ts
+  125 | });
+  126 | 
+  127 | test('L1.4 nvim_remote_expr_reads_initial_file — remote-expr returns seed buffer', async () => {
+  128 |   const SEED = '# Initial Content\n\nHello world.\n';
+  129 |   const SOCK = `/tmp/pnp-l14-${Date.now()}.sock`;
+  130 |   const tmpDir = mkdtempSync(join(tmpdir(), 'pnp-l14-'));
+  131 |   const filePath = join(tmpDir, 'doc.md');
+  132 |   writeFileSync(filePath, SEED, 'utf-8');
+  133 | 
+  134 |   const nvimProc = spawn('nvim', ['--listen', SOCK, '--headless', filePath], {
+  135 |     detached: true,
+  136 |     stdio: 'ignore',
+  137 |   });
+  138 | 
+  139 |   let ready = false;
+  140 |   for (let i = 0; i < 20; i++) {
+  141 |     try {
+  142 |       const out = execFileSync('nvim', ['--server', SOCK, '--remote-expr', '1'], {
+  143 |         encoding: 'utf-8',
+  144 |         timeout: 3000,
+  145 |       });
+  146 |       if (out.trim() === '1') {
+  147 |         ready = true;
+  148 |         break;
+  149 |       }
+  150 |     } catch {
+  151 |       /* not ready */
+  152 |     }
+  153 |     await new Promise((r) => setTimeout(r, 250));
+  154 |   }
+  155 |   expect(ready, `nvim socket not ready`).toBe(true);
+  156 | 
+  157 |   const buf = nvimDirectRPC(SOCK, 'join(getline(1, "$"), "\\n")');
+  158 |   expect(buf, 'buffer must contain seed heading').toContain('Initial Content');
+  159 |   expect(buf, 'buffer must contain seed body').toContain('Hello world');
+  160 | 
+  161 |   nvimDirectQuit(SOCK);
+  162 |   await new Promise((r) => setTimeout(r, 500));
+  163 |   nvimProc.kill();
+  164 | });
+  165 | 
+  166 | // ============================================================
+  167 | // LAYER 2: Server owns nvim correctly
+  168 | // ============================================================
+  169 | 
+  170 | let serverL2: ServerInstance;
+  171 | 
+  172 | test.afterAll(async () => {
+  173 |   if (serverL2) {
+  174 |     await killServer(serverL2);
+  175 |     cleanServerArtifacts(serverL2);
+  176 |   }
+  177 | });
+  178 | 
+  179 | test('L2.1 server_starts_nvim_and_status_reports_pid_socket', async () => {
+  180 |   const file = seedTempFile('l21', '# L2 Server\n\nStatus test.\n');
+  181 |   serverL2 = await launchServer(file);
+  182 | 
+  183 |   const res = await fetch(`${serverL2.url}/api/status`);
+  184 |   expect(res.status).toBe(200);
+  185 |   const status = await res.json();
+  186 | 
+  187 |   expect(status.pid, '/api/status must report pid > 0').toBeGreaterThan(0);
+  188 |   expect(status.socket, '/api/status must report correct socket').toBe(
+  189 |     serverL2.socketPath,
+  190 |   );
+  191 |   expect(status.file, '/api/status must report file path').toBe(file);
+  192 | 
+  193 |   const ps = spawnSync('ps', ['-p', String(status.pid), '-o', 'pid,comm'], {
+  194 |     encoding: 'utf-8',
+  195 |     timeout: 3000,
+  196 |   });
+  197 |   expect(ps.stdout, 'ps must confirm nvim process').toContain('nvim');
+  198 | });
+  199 | 
+  200 | test('L2.2 server_buffer_endpoint_reads_nvim_buffer', async () => {
+  201 |   const file = seedTempFile('l22', '# L2 Buffer\n\nEndpoint test.\n');
+  202 |   serverL2 = await launchServer(file);
+  203 | 
+  204 |   const res = await fetch(`${serverL2.url}/api/buffer`);
+  205 |   expect(res.status).toBe(200);
+  206 |   const data = await res.json();
+  207 | 
+  208 |   expect(data.buffer, '/api/buffer must contain seed heading').toContain('L2 Buffer');
+  209 |   expect(data.buffer, '/api/buffer must contain seed body').toContain('Endpoint test');
+  210 |   expect(data.hash, '/api/buffer must include non-empty hash').toBeTruthy();
+  211 |   expect(typeof data.hash).toBe('string');
   212 |   expect(data.socketPath, '/api/buffer must report socket path').toBe(
   213 |     serverL2.socketPath,
   214 |   );
@@ -36,7 +123,8 @@ Received string:    "# L5 Type"
   222 |   const md = '# The Title\n\nSome text. $E=mc^2$';
   223 |   const result = pandocRender(md);
   224 | 
-  225 |   expect(result.status, `pandoc exit code must be 0; stderr=${result.stderr}`).toBe(0);
+> 225 |   expect(result.status, `pandoc exit code must be 0; stderr=${result.stderr}`).toBe(0);
+      |                                                                                ^ Error: pandoc exit code must be 0; stderr=
   226 |   expect(result.stdout, 'pandoc output must contain heading text').toContain(
   227 |     'The Title',
   228 |   );
@@ -123,8 +211,7 @@ Received string:    "# L5 Type"
   309 | 
   310 |   // Query nvim via socket RPC — external fact, NOT internal API
   311 |   const buf = nvimDirectRPC(serverL5.socketPath, 'join(getline(1, "$"), "\\n")');
-> 312 |   expect(buf, 'nvim buffer must contain typed sentinel').toContain(
-      |                                                          ^ Error: nvim buffer must contain typed sentinel
+  312 |   expect(buf, 'nvim buffer must contain typed sentinel').toContain(
   313 |     'L5_SENTINEL_CHARLIE',
   314 |   );
   315 | });
@@ -138,51 +225,4 @@ Received string:    "# L5 Type"
   323 | test.afterAll(async () => {
   324 |   if (serverL6) {
   325 |     await killServer(serverL6);
-  326 |     cleanServerArtifacts(serverL6);
-  327 |   }
-  328 | });
-  329 | 
-  330 | test('L6.1 full_type_preview_save_contract — type, preview, save, disk', async ({
-  331 |   page,
-  332 | }) => {
-  333 |   const file = seedTempFile('l61', '# Contract Start\n\nInitial text.\n');
-  334 |   serverL6 = await launchServer(file);
-  335 | 
-  336 |   await page.goto(serverL6.url);
-  337 |   await page.waitForSelector('[data-testid="terminal"]', { timeout: 15000 });
-  338 |   await page.waitForTimeout(1500);
-  339 | 
-  340 |   // Assert initial preview shows seed content
-  341 |   const previewFrame = page.frameLocator('[data-testid="preview-frame"]');
-  342 |   await expect(
-  343 |     previewFrame.locator('body'),
-  344 |     'preview must show initial heading',
-  345 |   ).toContainText('Contract Start', { timeout: 5000 });
-  346 | 
-  347 |   // Type new content into nvim via terminal
-  348 |   await page.locator('[data-testid="terminal"]').click();
-  349 |   await page.keyboard.type('iL6_CONTRACT_FINAL');
-  350 |   await page.keyboard.press('Escape');
-  351 |   await page.waitForTimeout(2000);
-  352 | 
-  353 |   // Assert preview updated with sentinel
-  354 |   await expect(
-  355 |     previewFrame.locator('body'),
-  356 |     'preview must update with typed sentinel',
-  357 |   ).toContainText('L6_CONTRACT_FINAL', { timeout: 8000 });
-  358 | 
-  359 |   // Save via API
-  360 |   const saveRes = await page.evaluate(async () => {
-  361 |     const r = await fetch('/api/save', { method: 'POST' });
-  362 |     return r.json();
-  363 |   });
-  364 |   expect(saveRes.ok, '/api/save must return ok: true').toBe(true);
-  365 |   await page.waitForTimeout(500);
-  366 | 
-  367 |   // Assert file on disk contains both seed text and typed sentinel
-  368 |   const diskContent = readFile(file);
-  369 |   expect(diskContent, 'disk must contain sentinel').toContain('L6_CONTRACT_FINAL');
-  370 |   expect(diskContent, 'disk must contain initial text').toContain('Initial text');
-  371 | });
-  372 | 
 ```

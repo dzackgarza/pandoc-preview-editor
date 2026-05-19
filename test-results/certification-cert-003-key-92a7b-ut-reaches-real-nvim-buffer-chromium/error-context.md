@@ -12,12 +12,14 @@
 # Error details
 
 ```
-Error: spawnSync nvim ETIMEDOUT
+Error: Server at http://localhost:41483 not ready within 15000ms
 ```
 
 # Test source
 
 ```ts
+  1   | import {
+  2   |   spawn,
   3   |   ChildProcess,
   4   |   execFileSync,
   5   |   execSync,
@@ -114,12 +116,12 @@ Error: spawnSync nvim ETIMEDOUT
   96  |     }
   97  |     await new Promise((r) => setTimeout(r, 200));
   98  |   }
-  99  |   throw new Error(`Server at ${url} not ready within ${timeoutMs}ms`);
+> 99  |   throw new Error(`Server at ${url} not ready within ${timeoutMs}ms`);
+      |         ^ Error: Server at http://localhost:41483 not ready within 15000ms
   100 | }
   101 | 
   102 | export function nvimDirectRPC(socketPath: string, expr: string): string {
-> 103 |   const stdout = execFileSync('nvim', ['--server', socketPath, '--remote-expr', expr], {
-      |                  ^ Error: spawnSync nvim ETIMEDOUT
+  103 |   const stdout = execFileSync('nvim', ['--server', socketPath, '--remote-expr', expr], {
   104 |     encoding: 'utf-8',
   105 |     timeout: 5000,
   106 |   });
@@ -216,5 +218,4 @@ Error: spawnSync nvim ETIMEDOUT
   197 |     // best effort
   198 |   }
   199 | }
-  200 | 
 ```

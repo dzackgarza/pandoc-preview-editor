@@ -1,5 +1,5 @@
 import { spawnNvim } from './pty.js';
-import { getBuffer, saveBuffer, pollReady, connectNvim, attachBuffer } from './nvim-rpc.js';
+import { getBuffer, saveBuffer, pollReady } from './nvim-rpc.js';
 import { createWSServer, broadcast } from './ws.js';
 import { renderMarkdown } from './render.js';
 import express from 'express';
@@ -40,7 +40,7 @@ export async function startServer(config: AppConfig) {
   const absFilePath = resolve(config.filePath);
 
   console.log(`[pandoc-nvim-preview] Starting nvim for ${absFilePath}`);
-  const nvim = spawnNvim(absFilePath, SOCKET_PATH);
+  const nvim = spawnNvim(absFilePath, SOCKET_PATH, config.port);
 
   console.log(`[pandoc-nvim-preview] Waiting for nvim to be ready...`);
   const ready = await pollReady(SOCKET_PATH);
@@ -53,26 +53,6 @@ export async function startServer(config: AppConfig) {
   // Global PTY listener - broadcast to all clients (ONE listener, not one per client)
   nvim.onData((data: string) => {
     broadcast({ type: 'pty-output', data });
-  });
-
-  // Connect to nvim via RPC and attach buffer listener for push-based updates
-  console.log(`[pandoc-nvim-preview] Connecting to nvim RPC...`);
-  const nvimClient = await connectNvim(SOCKET_PATH);
-
-  let lastBuffer = '';
-  await attachBuffer(nvimClient, (buffer: string) => {
-    if (buffer !== lastBuffer) {
-      lastBuffer = buffer;
-      const html = renderMarkdown(buffer, {
-        bibliography: config.bibliography,
-        csl: config.csl,
-        katex: config.katex,
-      });
-      broadcast({ type: 'preview-update', html });
-      console.log(
-        `[pandoc-nvim-preview] Preview updated (${buffer.length} bytes, ${buffer.split('\n').length} lines)`,
-      );
-    }
   });
 
   const app = express();
@@ -118,6 +98,18 @@ export async function startServer(config: AppConfig) {
   // Health check
   app.get('/api/status', (_req, res) => {
     res.json({ pid: nvim.pid, socket: SOCKET_PATH, file: absFilePath });
+  });
+
+  // Buffer update from nvim plugin
+  app.post('/api/buffer-update', express.text({ type: '*/*', limit: '10mb' }), (req, res) => {
+    const buffer = req.body;
+    const html = renderMarkdown(buffer, {
+      bibliography: config.bibliography,
+      csl: config.csl,
+      katex: config.katex,
+    });
+    broadcast({ type: 'preview-update', html });
+    res.status(200).end();
   });
 
   // WebSocket: handle client messages + send initial preview
