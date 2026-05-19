@@ -15,7 +15,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const WEB_DIR = resolve(__dirname, '..', 'web');
 
 const RUN_DIR = join(tmpdir(), 'pandoc-nvim-preview');
-const SOCKET_PATH = join(RUN_DIR, 'nvim.sock');
 
 interface AppConfig {
   filePath: string;
@@ -29,6 +28,9 @@ export async function startServer(config: AppConfig) {
   if (!existsSync(RUN_DIR)) {
     mkdirSync(RUN_DIR, { recursive: true });
   }
+
+  // Use unique socket path per server instance to avoid test interference
+  const SOCKET_PATH = join(RUN_DIR, `nvim-${process.pid}.sock`);
 
   // Remove stale socket
   if (existsSync(SOCKET_PATH)) {
