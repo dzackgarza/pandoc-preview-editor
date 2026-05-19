@@ -4,11 +4,10 @@ import {
   execFileSync,
   spawnSync,
 } from 'node:child_process';
-import { writeFileSync, mkdtempSync, readFileSync, existsSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { writeFileSync, mkdtempSync, readFileSync, existsSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-
-const PORT = 3141;
+import { createServer } from 'node:net';
 
 export function seedTempFile(slug: string, content: string): string {
   const dir = mkdtempSync(join(tmpdir(), `pnp-${slug}-`));
@@ -36,13 +35,23 @@ export interface ServerInstance {
   err: string[];
 }
 
-export async function launchServer(filePath: string): Promise<ServerInstance> {
+export interface LaunchServerOptions {
+  port?: number;
+}
+
+export async function launchServer(
+  filePath: string,
+  options: LaunchServerOptions = {},
+): Promise<ServerInstance> {
+  const port = options.port ?? (await findFreePort());
+  const absFilePath = resolve(filePath);
   const out: string[] = [];
   const err: string[] = [];
+  let exitInfo: { code: number | null; signal: NodeJS.Signals | null } | null = null;
 
   const proc = spawn(
     'npx',
-    ['tsx', 'server/cli.ts', filePath, '--no-open'],
+    ['tsx', 'server/cli.ts', absFilePath, '--no-open', '--port', String(port)],
     {
       cwd: join(import.meta.dirname, '..'),
       env: { ...process.env, NO_OPEN: '1' },
@@ -52,24 +61,40 @@ export async function launchServer(filePath: string): Promise<ServerInstance> {
 
   proc.stdout?.on('data', (d: Buffer) => out.push(d.toString()));
   proc.stderr?.on('data', (d: Buffer) => err.push(d.toString()));
+  proc.once('exit', (code, signal) => {
+    exitInfo = { code, signal };
+  });
 
-  const url = `http://localhost:${PORT}`;
-  await waitForServer(url, 15000);
+  const url = `http://localhost:${port}`;
+  await waitForServer(url, 15000, () => {
+    if (!exitInfo) return null;
+    return new Error(
+      `Server exited before readiness: code=${exitInfo.code} signal=${exitInfo.signal}\n` +
+        `stdout:\n${out.join('')}\nstderr:\n${err.join('')}`,
+    );
+  });
 
   // Fetch the socket path and nvim PID from the server status endpoint
   const statusRes = await fetch(`${url}/api/status`);
   if (!statusRes.ok) {
     throw new Error(`Failed to get server status: ${statusRes.status} ${statusRes.statusText}`);
   }
-  const status = (await statusRes.json()) as { pid: number; socket: string };
+  const status = (await statusRes.json()) as {
+    pid: number;
+    socket: string;
+    file: string;
+  };
   if (!status.socket) {
     throw new Error('Server status response missing socket path');
   }
+  if (status.file !== absFilePath) {
+    throw new Error(`Server status file mismatch: expected ${absFilePath}, got ${status.file}`);
+  }
 
   return {
-    port: PORT,
+    port,
     process: proc,
-    filePath,
+    filePath: absFilePath,
     url,
     socketPath: status.socket,
     nvimPid: status.pid,
@@ -78,9 +103,15 @@ export async function launchServer(filePath: string): Promise<ServerInstance> {
   };
 }
 
-async function waitForServer(url: string, timeoutMs: number): Promise<void> {
+async function waitForServer(
+  url: string,
+  timeoutMs: number,
+  getEarlyFailure: () => Error | null = () => null,
+): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
+    const earlyFailure = getEarlyFailure();
+    if (earlyFailure) throw earlyFailure;
     try {
       const res = await fetch(`${url}/api/status`);
       if (res.ok) return;
@@ -92,12 +123,47 @@ async function waitForServer(url: string, timeoutMs: number): Promise<void> {
   throw new Error(`Server at ${url} not ready within ${timeoutMs}ms`);
 }
 
+async function findFreePort(): Promise<number> {
+  return new Promise((resolvePort, reject) => {
+    const server = createServer();
+    server.unref();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      server.close(() => {
+        if (address && typeof address === 'object') {
+          resolvePort(address.port);
+        } else {
+          reject(new Error('Unable to allocate a free TCP port'));
+        }
+      });
+    });
+  });
+}
+
 export function nvimDirectRPC(socketPath: string, expr: string): string {
   const stdout = execFileSync('nvim', ['--server', socketPath, '--remote-expr', expr], {
     encoding: 'utf-8',
     timeout: 5000,
   });
   return stdout.trim();
+}
+
+export async function waitForNvimReady(
+  socketPath: string,
+  timeoutMs = 10000,
+): Promise<void> {
+  const start = Date.now();
+  let lastErr = '';
+  while (Date.now() - start < timeoutMs) {
+    try {
+      if (nvimDirectRPC(socketPath, '1') === '1') return;
+    } catch (err: any) {
+      lastErr = err?.stderr || err?.message || String(err);
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  throw new Error(`nvim socket ${socketPath} not ready after ${timeoutMs}ms: ${lastErr}`);
 }
 
 export function nvimDirectSend(socketPath: string, keys: string): void {
@@ -150,11 +216,29 @@ export function pandocRender(markdown: string): PandocResult {
 }
 
 export async function killServer(instance: ServerInstance): Promise<void> {
-  instance.process.kill('SIGTERM');
-  await new Promise((r) => setTimeout(r, 500));
-  try {
-    instance.process.kill('SIGKILL');
-  } catch {
-    // already exited
-  }
+  const proc = instance.process;
+  if (proc.exitCode !== null || proc.signalCode !== null) return;
+
+  const exited = new Promise<void>((resolveExit) => {
+    proc.once('exit', () => resolveExit());
+  });
+
+  const signaled = proc.kill('SIGTERM');
+  if (!signaled && (proc.exitCode !== null || proc.signalCode !== null)) return;
+
+  await Promise.race([
+    exited,
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () =>
+          reject(
+            new Error(
+              `Server pid ${proc.pid} did not exit after SIGTERM\n` +
+                `stdout:\n${instance.out.join('')}\nstderr:\n${instance.err.join('')}`,
+            ),
+          ),
+        5000,
+      ),
+    ),
+  ]);
 }

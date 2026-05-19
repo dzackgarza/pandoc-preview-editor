@@ -14,8 +14,7 @@ import { tmpdir } from 'node:os';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WEB_DIR = resolve(__dirname, '..', 'web');
 
-const RUN_DIR = join(tmpdir(), 'pandoc-nvim-preview');
-const SOCKET_PATH = join(RUN_DIR, 'nvim.sock');
+const RUN_ROOT = join(tmpdir(), 'pandoc-nvim-preview');
 
 interface AppConfig {
   filePath: string;
@@ -26,19 +25,23 @@ interface AppConfig {
 }
 
 export async function startServer(config: AppConfig) {
-  if (!existsSync(RUN_DIR)) {
-    mkdirSync(RUN_DIR, { recursive: true });
+  const runDir = join(RUN_ROOT, `port-${config.port}`);
+  const socketPath = join(runDir, 'nvim.sock');
+
+  if (!existsSync(runDir)) {
+    mkdirSync(runDir, { recursive: true });
   }
 
-  // Remove stale socket
-  if (existsSync(SOCKET_PATH)) {
-    rmSync(SOCKET_PATH);
+  // Remove only this server's stale socket path.
+  if (existsSync(socketPath)) {
+    rmSync(socketPath);
   }
 
   const absFilePath = resolve(config.filePath);
 
-  // nvim is assigned after HTTP server starts, but before any requests arrive
-  let nvim: NvimPTY;
+  // nvim starts when the first WS client connects (not at boot),
+  // so all PTY output goes directly to a real listener
+  let nvim: NvimPTY | null = null;
 
   const app = express();
   app.use(express.json());
@@ -58,7 +61,7 @@ export async function startServer(config: AppConfig) {
   // Save endpoint: send :w, verify
   app.post('/api/save', async (_req, res) => {
     try {
-      await saveBuffer(SOCKET_PATH);
+      await saveBuffer(socketPath);
       const content = readFileSync(absFilePath, 'utf-8');
       res.json({ ok: true, bytes: content.length });
     } catch (err: any) {
@@ -70,18 +73,18 @@ export async function startServer(config: AppConfig) {
   // Current nvim buffer (for diagnostics)
   app.get('/api/buffer', async (_req, res) => {
     try {
-      const buffer = await getBuffer(SOCKET_PATH);
+      const buffer = await getBuffer(socketPath);
       const hash = createHash('sha256').update(buffer).digest('hex').slice(0, 12);
-      res.json({ buffer, hash, socketPath: SOCKET_PATH });
+      res.json({ buffer, hash, socketPath });
     } catch (err: any) {
       console.error('[pandoc-nvim-preview] buffer error:', err.message);
-      res.status(500).json({ error: err.message, socketPath: SOCKET_PATH });
+      res.status(500).json({ error: err.message, socketPath });
     }
   });
 
   // Health check
   app.get('/api/status', (_req, res) => {
-    res.json({ pid: nvim?.pid ?? 0, socket: SOCKET_PATH, file: absFilePath });
+    res.json({ pid: nvim?.pid ?? 0, socket: socketPath, file: absFilePath });
   });
 
   // Buffer update from nvim plugin (push-based, no polling)
@@ -104,8 +107,26 @@ export async function startServer(config: AppConfig) {
     },
   );
 
-  // WebSocket: handle client messages
+  // WebSocket: spawn nvim on first connection, handle client messages
+  let nvimSpawned = false;
   wss.on('connection', (ws) => {
+    if (!nvimSpawned) {
+      nvimSpawned = true;
+      nvim = spawnNvim(absFilePath, socketPath, config.port);
+      console.log(`[pandoc-nvim-preview] Starting nvim for ${absFilePath}`);
+      nvim.onData((data: string) => {
+        broadcast({ type: 'pty-output', data });
+      });
+      // Don't block connect — nvim spawns asynchronously
+      pollReady(socketPath).then((ready) => {
+        if (ready) {
+          console.log(`[pandoc-nvim-preview] Neovim ready (pid ${nvim!.pid})`);
+        } else {
+          console.error('[pandoc-nvim-preview] Neovim failed to start within timeout');
+        }
+      });
+    }
+
     ws.on('message', (raw) => {
       try {
         const msg = JSON.parse(raw.toString()) as {
@@ -129,7 +150,10 @@ export async function startServer(config: AppConfig) {
   });
 
   // Cleanup on exit
+  let cleaned = false;
   function cleanup() {
+    if (cleaned) return;
+    cleaned = true;
     try {
       wss.close();
     } catch {}
@@ -140,7 +164,7 @@ export async function startServer(config: AppConfig) {
       nvim?.kill();
     } catch {}
     try {
-      if (existsSync(SOCKET_PATH)) rmSync(SOCKET_PATH);
+      if (existsSync(runDir)) rmSync(runDir, { recursive: true, force: true });
     } catch {}
   }
 
@@ -158,9 +182,7 @@ export async function startServer(config: AppConfig) {
     process.exit(1);
   });
 
-  // Start HTTP server FIRST, then spawn nvim.
-  // The nvim plugin sends buffer content to /api/buffer-update on VimEnter,
-  // so the HTTP server must be listening before nvim starts.
+  // Start HTTP server — browser connects on its own via WS
   await new Promise<void>((resolve, reject) => {
     httpServer.listen(config.port, () => {
       console.log(`[pandoc-nvim-preview] Server on http://localhost:${config.port}`);
@@ -169,22 +191,8 @@ export async function startServer(config: AppConfig) {
     httpServer.on('error', reject);
   });
 
-  // Now spawn nvim — the plugin's VimEnter autocmd will POST to our server
-  console.log(`[pandoc-nvim-preview] Starting nvim for ${absFilePath}`);
-  nvim = spawnNvim(absFilePath, SOCKET_PATH, config.port);
-
-  // Global PTY listener - broadcast to all clients (ONE listener, not one per client)
-  nvim.onData((data: string) => {
-    broadcast({ type: 'pty-output', data });
-  });
-
-  console.log(`[pandoc-nvim-preview] Waiting for nvim to be ready...`);
-  const ready = await pollReady(SOCKET_PATH);
-  if (!ready) {
-    nvim.kill();
-    throw new Error('Neovim failed to start within timeout');
-  }
-  console.log(`[pandoc-nvim-preview] Neovim ready (pid ${nvim.pid})`);
+  // nvim is NOT spawned here — it spawns when the first WS client connects.
+  // This ensures all PTY output goes directly to a real listener.
 
   if (process.env.NO_OPEN !== '1') {
     try {

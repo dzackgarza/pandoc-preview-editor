@@ -7,9 +7,10 @@ import {
   nvimDirectRPC,
   nvimDirectSend,
   nvimDirectQuit,
+  waitForNvimReady,
   pandocRender,
-  ServerInstance,
-} from './helpers';
+  type ServerInstance,
+} from './helpers.js';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { writeFileSync, mkdtempSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -174,9 +175,14 @@ test.afterAll(async () => {
   }
 });
 
-test('L2.1 server_starts_nvim_and_status_reports_pid_socket', async () => {
+test('L2.1 browser_connection_starts_nvim_and_status_reports_pid_socket', async ({
+  page,
+}) => {
   const file = seedTempFile('l21', '# L2 Server\n\nStatus test.\n');
   serverL2 = await launchServer(file);
+  await page.goto(serverL2.url);
+  await page.waitForSelector('[data-testid="terminal"]', { timeout: 15000 });
+  await waitForNvimReady(serverL2.socketPath);
 
   const res = await fetch(`${serverL2.url}/api/status`);
   expect(res.status).toBe(200);
@@ -195,9 +201,12 @@ test('L2.1 server_starts_nvim_and_status_reports_pid_socket', async () => {
   expect(ps.stdout, 'ps must confirm nvim process').toContain('nvim');
 });
 
-test('L2.2 server_buffer_endpoint_reads_nvim_buffer', async () => {
+test('L2.2 server_buffer_endpoint_reads_nvim_buffer', async ({ page }) => {
   const file = seedTempFile('l22', '# L2 Buffer\n\nEndpoint test.\n');
   serverL2 = await launchServer(file);
+  await page.goto(serverL2.url);
+  await page.waitForSelector('[data-testid="terminal"]', { timeout: 15000 });
+  await waitForNvimReady(serverL2.socketPath);
 
   const res = await fetch(`${serverL2.url}/api/buffer`);
   expect(res.status).toBe(200);

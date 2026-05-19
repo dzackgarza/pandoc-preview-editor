@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
 import {
   launchServer,
   killServer,
@@ -8,27 +9,84 @@ import {
   nvimDirectRPC,
   type ServerInstance,
 } from './helpers.js';
+import { pngStats } from './png-stats.js';
 
 const FIXTURE = 'tests/fixtures/test-doc.md';
 
 let server: ServerInstance;
 
-// Terminal pane shows nvim content without requiring keystrokes
-test('terminal pane shows nvim on initial load', async ({ page }) => {
+// Terminal pane visibly paints nvim content without requiring keystrokes
+test('terminal pane visibly paints nvim on initial load', async ({
+  page,
+}, testInfo) => {
   server = await launchServer(FIXTURE);
   try {
     await page.goto(server.url);
-    await expect(page.getByTestId('terminal')).toBeVisible({ timeout: 10000 });
+    const terminal = page.getByTestId('terminal');
+    await expect(terminal).toBeVisible({ timeout: 10000 });
 
-    await page.waitForTimeout(2000);
+    await expect
+      .poll(
+        async () => {
+          const statusRes = await fetch(`${server.url}/api/status`);
+          return ((await statusRes.json()) as { pid: number }).pid;
+        },
+        { timeout: 10000 },
+      )
+      .toBeGreaterThan(0);
 
-    const hasText = await page.evaluate(() => {
-      const rows = document.querySelector('.xterm-rows');
-      if (!rows) return false;
-      return rows.textContent !== null && rows.textContent.trim().length > 0;
+    await expect
+      .poll(async () =>
+        page.evaluate(() => {
+          const terminalRect = document
+            .querySelector('[data-testid="terminal"]')
+            ?.getBoundingClientRect();
+          const rows = document.querySelector('.xterm-rows');
+          return {
+            width: terminalRect?.width ?? 0,
+            height: terminalRect?.height ?? 0,
+            rowsText: rows?.textContent ?? '',
+          };
+        }),
+      )
+      .toMatchObject({
+        rowsText: expect.stringContaining('test-doc.md'),
+      });
+
+    const terminalRect = await page.evaluate(() => {
+      const rect = document
+        .querySelector('[data-testid="terminal"]')
+        ?.getBoundingClientRect();
+      return { width: rect?.width ?? 0, height: rect?.height ?? 0 };
     });
 
-    expect(hasText).toBe(true);
+    const rowsText = await page.evaluate(() => {
+      const rows = document.querySelector('.xterm-rows');
+      return rows?.textContent ?? '';
+    });
+
+    expect(terminalRect.width, 'terminal must be fitted to real width').toBeGreaterThan(
+      40,
+    );
+    expect(
+      terminalRect.height,
+      'terminal must be fitted to real height',
+    ).toBeGreaterThan(10);
+    expect(rowsText, 'terminal DOM rows must contain visible nvim/file text').toContain(
+      'test-doc.md',
+    );
+
+    const screenshot = await terminal.screenshot();
+    writeFileSync(testInfo.outputPath('terminal-initial.png'), screenshot);
+    const stats = pngStats(screenshot);
+
+    expect(stats.uniqueColors, 'terminal screenshot must not be a flat fill').toBeGreaterThan(
+      10,
+    );
+    expect(
+      stats.nonDominantPixels,
+      'terminal screenshot must contain painted foreground glyphs',
+    ).toBeGreaterThan(1000);
   } finally {
     await killServer(server);
   }
@@ -76,11 +134,17 @@ test('preview updates on buffer change without save', async ({ page }) => {
     await page.waitForTimeout(2000);
 
     await page.getByTestId('terminal').click();
-    await page.keyboard.type('i# Auto Update Header');
+    await page.keyboard.type('ggO# Auto Update Header');
     await page.keyboard.press('Escape');
 
+    await expect
+      .poll(() =>
+        nvimDirectRPC(server.socketPath, 'join(getline(1, "$"), "\\n")'),
+      )
+      .toContain('# Auto Update Header');
+
     const preview = page.frameLocator('[data-testid="preview-frame"]');
-    await expect(preview.locator('h1').last()).toContainText('Auto Update Header', {
+    await expect(preview.locator('h1').first()).toContainText('Auto Update Header', {
       timeout: 5000,
     });
   } finally {

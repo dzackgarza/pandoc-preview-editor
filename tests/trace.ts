@@ -190,7 +190,7 @@ export class TraceContext {
 
   static assertTraceVersionOrder(
     trace: TraceContext,
-    expectFn: (actual: unknown, matcher: unknown, msg?: string) => void,
+    expectFn: ExpectLike,
     message: string,
   ): void {
     const events = trace.getEvents();
@@ -217,14 +217,12 @@ export class TraceContext {
       const matchingRead = bufferReads.find((r) => r.version === render.sourceVersion);
       expectFn(
         matchingRead,
-        true,
         `${message}: pandoc.render.success(v=${render.sourceVersion}) must have preceding nvim.buffer.read(v=${render.sourceVersion})`,
-      );
+      ).toBeDefined();
       expectFn(
         matchingRead!.index,
-        render.index,
         `${message}: nvim.buffer.read(v=${render.sourceVersion}) must precede pandoc.render.success`,
-      );
+      ).toBeLessThan(render.index);
     }
 
     for (const preview of previewUpdates) {
@@ -233,20 +231,18 @@ export class TraceContext {
       );
       expectFn(
         matchingRender,
-        true,
         `${message}: preview.dom.updated(v=${preview.sourceVersion}) must have preceding pandoc.render.success(v=${preview.sourceVersion})`,
-      );
+      ).toBeDefined();
       expectFn(
         matchingRender!.index,
-        preview.index,
         `${message}: pandoc.render.success(v=${preview.sourceVersion}) must precede preview.dom.updated`,
-      );
+      ).toBeLessThan(preview.index);
     }
   }
 
   static assertSaveInvariant(
     trace: TraceContext,
-    expectFn: (actual: unknown, matcher: unknown, msg?: string) => void,
+    expectFn: ExpectLike,
     message: string,
   ): void {
     const events = trace.getEvents();
@@ -266,14 +262,12 @@ export class TraceContext {
       const matchingRead = bufferReads.find((r) => r.version === save.savedVersion);
       expectFn(
         matchingRead,
-        true,
         `${message}: save.success(v=${save.savedVersion}) requires nvim.buffer.read(v=${save.savedVersion})`,
-      );
+      ).toBeDefined();
       expectFn(
         matchingRead!.index,
-        save.index,
         `${message}: nvim.buffer.read(v=${save.savedVersion}) must precede save.success`,
-      );
+      ).toBeLessThan(save.index);
     }
   }
 
@@ -336,9 +330,17 @@ export function traceEventsOf(trace: TraceContext, eventName: string): TraceEven
 // Version-aware trace assertion helpers
 // ============================================================
 
+type ExpectLike = (
+  actual: unknown,
+  message?: string,
+) => {
+  toBeDefined(): void;
+  toBeLessThan(expected: number): void;
+};
+
 export function assertTraceVersionOrder(
   trace: TraceContext,
-  expectFn: (actual: unknown, matcher: unknown, msg?: string) => void,
+  expectFn: ExpectLike,
   message: string,
 ): void {
   TraceContext.assertTraceVersionOrder(trace, expectFn, message);
@@ -346,7 +348,7 @@ export function assertTraceVersionOrder(
 
 export function assertSaveInvariant(
   trace: TraceContext,
-  expectFn: (actual: unknown, matcher: unknown, msg?: string) => void,
+  expectFn: ExpectLike,
   message: string,
 ): void {
   TraceContext.assertSaveInvariant(trace, expectFn, message);

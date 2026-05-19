@@ -6,52 +6,52 @@ set quiet := false
 install:
     npm install
 
-# Build web frontend bundle
-build:
+# Run Playwright tests; tests launch and stop their own CLI processes
+test *args: _build
+    npx playwright test {{args}}
+
+# Run the app
+run file='notes.md':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just _watch &
+    build_pid=$!
+    trap 'kill "$build_pid" 2>/dev/null || true' EXIT INT TERM
+    npx tsx server/cli.ts {{file}}
+
+[private]
+_build:
     bun build web/main.ts --outdir=web/dist --target=browser
 
-# Clean runtime state (sockets, temp dirs, processes) — run before tests
-clean-runtime:
-    -fuser -k 3141/tcp
-    -killall -9 nvim
-    -killall -9 node
-    -rm -rf /tmp/pandoc-nvim-preview
+[private]
+_watch:
+    bun build web/main.ts --outdir=web/dist --target=browser --watch
 
-# Clean build artifacts
-clean:
-    rm -rf dist web/dist node_modules
-    just clean-runtime
+[private]
+_clean:
+    rm -rf dist web/dist
 
-# Run Playwright E2E tests (provisions/decommissions server via webServer config)
-test: build clean-runtime
-    npx playwright test
-
-# Run Playwright tests in headed mode
-test-ui: build clean-runtime
+[private]
+_test-ui: _build
     npx playwright test --ui
 
-# Run proof ladder tests (no webServer — each test launches its own)
-test-ladder: build clean-runtime
+[private]
+_test-ladder: _build
     npx playwright test --config=playwright.ladder.config.ts
 
-# Run certification tests with witness traces
-test-cert: build clean-runtime
+[private]
+_test-cert: _build
     npx playwright test --config=playwright.cert.config.ts
 
-# Type-check project
-typecheck:
+[private]
+_typecheck:
     npx tsc --noEmit
 
-# Install nvim plugin to Neovim config
-install-plugin:
+[private]
+_install-plugin:
     mkdir -p ~/.config/nvim/plugin
     cp nvim/plugin/pandoc-preview.lua ~/.config/nvim/plugin/pandoc-preview.lua
     @echo "Installed nvim/plugin/pandoc-preview.lua -> ~/.config/nvim/plugin/pandoc-preview.lua"
 
-# Full setup: install + build + typecheck
-setup: install build typecheck
-
-# Start dev server (watches and rebuilds)
-dev file='notes.md':
-    bun build web/main.ts --outdir=web/dist --target=browser --watch &
-    npx tsx server/index.ts {{file}}
+[private]
+_setup: install _build _typecheck

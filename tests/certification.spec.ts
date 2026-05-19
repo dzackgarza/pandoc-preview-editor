@@ -7,9 +7,10 @@ import {
   nvimDirectRPC,
   nvimDirectSend,
   nvimDirectQuit,
+  waitForNvimReady,
   pandocRender,
-  ServerInstance,
-} from './helpers';
+  type ServerInstance,
+} from './helpers.js';
 import {
   TraceContext,
   traceHas,
@@ -17,14 +18,9 @@ import {
   traceNoEvent,
   sha256short,
   traceEventsOf,
-  recordBufferRead,
-  recordRenderSuccess,
-  recordPreviewUpdated,
-  recordSaveStart,
-  recordSaveSuccess,
   assertTraceVersionOrder,
   assertSaveInvariant,
-} from './trace';
+} from './trace.js';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { writeFileSync, mkdtempSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -58,6 +54,13 @@ test('cert_001 startup — real nvim (not headless), real browser, real file', a
 
   server001 = await launchServer(file);
   trace.record({ event: 'server.started', port: server001.port, url: server001.url });
+
+  // Open browser; nvim starts on the first WebSocket connection.
+  await page.goto(server001.url);
+  await page.waitForSelector('[data-testid="terminal"]', { timeout: 15000 });
+  await page.waitForSelector('[data-testid="preview"]', { timeout: 5000 });
+  trace.record({ event: 'browser.loaded', url: server001.url });
+  await waitForNvimReady(server001.socketPath);
 
   // Assert process tree contains real nvim
   const pTree = trace.captureProcessTree();
@@ -93,12 +96,6 @@ test('cert_001 startup — real nvim (not headless), real browser, real file', a
   const rpcOut = nvimDirectRPC(server001.socketPath, '1');
   expect(rpcOut, 'nvim socket must answer remote-expr').toBe('1');
   trace.record({ event: 'nvim.ready.success', socket: server001.socketPath });
-
-  // Open browser
-  await page.goto(server001.url);
-  await page.waitForSelector('[data-testid="terminal"]', { timeout: 15000 });
-  await page.waitForSelector('[data-testid="preview"]', { timeout: 5000 });
-  trace.record({ event: 'browser.loaded', url: server001.url });
 
   const terminal = page.locator('[data-testid="terminal"]');
   await expect(terminal, 'terminal pane must be visible').toBeVisible();
@@ -137,23 +134,11 @@ test('cert_002 initial file renders in preview before typing', async ({ page }) 
   server002 = await launchServer(file);
   trace.record({ event: 'server.started', port: server002.port });
 
-  // Wait for nvim readiness via socket
-  let nvimReady = false;
-  for (let i = 0; i < 20; i++) {
-    try {
-      const out = execFileSync(
-        'nvim',
-        ['--server', server002.socketPath, '--remote-expr', '1'],
-        { encoding: 'utf-8', timeout: 3000 },
-      );
-      if (out.trim() === '1') {
-        nvimReady = true;
-        break;
-      }
-    } catch {}
-    await new Promise((r) => setTimeout(r, 250));
-  }
-  expect(nvimReady, 'nvim must be ready via socket').toBe(true);
+  // Open browser; nvim starts on the first WebSocket connection.
+  await page.goto(server002.url);
+  await page.waitForSelector('[data-testid="terminal"]', { timeout: 15000 });
+  trace.record({ event: 'browser.loaded' });
+  await waitForNvimReady(server002.socketPath);
   trace.record({ event: 'nvim.ready.success', socket: server002.socketPath });
 
   // Give nvim a moment to actually load the file buffer
@@ -173,11 +158,7 @@ test('cert_002 initial file renders in preview before typing', async ({ page }) 
   trace.recordRenderSuccess(htmlHash);
   expect(pandocResult.status, 'pandoc must exit 0').toBe(0);
 
-  // Open browser
-  await page.goto(server002.url);
-  await page.waitForSelector('[data-testid="terminal"]', { timeout: 15000 });
   await page.waitForTimeout(2000);
-  trace.record({ event: 'browser.loaded' });
 
   // Assert preview DOM contains sentinel
   const previewFrame = page.frameLocator('[data-testid="preview-frame"]');
@@ -329,12 +310,13 @@ test('cert_004 keyboard input updates Pandoc preview DOM', async ({ page }) => {
     'LIVE_PREVIEW_SENTINEL',
     { timeout: 5000 },
   );
-  trace.recordRenderSuccess();
 
   const body = previewFrame.locator('body').first();
   const bodyText = await body.textContent();
   expect(bodyText, 'preview body must contain typed text').toContain('This is');
-  trace.recordPreviewUpdated();
+  const bodyHash = sha256short(bodyText || '');
+  trace.recordRenderSuccess(bodyHash);
+  trace.recordPreviewUpdated(bodyHash);
 
   const bold = previewFrame.locator('strong').first();
   await expect(bold, 'bold text must be rendered').toContainText('bold', {
@@ -401,8 +383,7 @@ test('cert_005 immediate save uses latest nvim buffer', async ({ page }) => {
 
   // Disk must contain sentinel
   const diskContent = readFile(file);
-  const diskHash = sha256short(diskContent);
-  trace.recordSaveSuccess(diskContent, diskHash);
+  trace.recordSaveSuccess(diskContent);
   expect(diskContent, 'disk must contain sentinel after immediate save').toContain(
     'IMMEDIATE_SAVE_SENTINEL',
   );
@@ -562,7 +543,8 @@ test('cert_blackbox_001 full open-type-preview-save against CLI', async ({ page 
     previewFrame.locator('body'),
     'initial preview must show heading',
   ).toContainText('Black-Box', { timeout: 5000 });
-  trace.recordRenderSuccess();
+  const initialBodyText = await previewFrame.locator('body').textContent();
+  trace.recordRenderSuccess(sha256short(initialBodyText || ''));
 
   // Type sentinel - keyboard happens AFTER initial render
   await page.locator('[data-testid="terminal"]').click();
@@ -576,7 +558,8 @@ test('cert_blackbox_001 full open-type-preview-save against CLI', async ({ page 
     previewFrame.locator('body'),
     'preview must update with BLACKBOX_SENTINEL_FINAL',
   ).toContainText('BLACKBOX_SENTINEL_FINAL', { timeout: 8000 });
-  trace.recordPreviewUpdated();
+  const updatedBodyText = await previewFrame.locator('body').textContent();
+  trace.recordPreviewUpdated(sha256short(updatedBodyText || ''));
 
   // Save - happens AFTER preview update
   trace.recordSaveStart();
@@ -592,7 +575,7 @@ test('cert_blackbox_001 full open-type-preview-save against CLI', async ({ page 
   expect(diskContent, 'disk must contain BLACKBOX_SENTINEL_FINAL').toContain(
     'BLACKBOX_SENTINEL_FINAL',
   );
-  trace.recordSaveSuccess(diskContent, sha256short(diskContent));
+  trace.recordSaveSuccess(diskContent);
 
   // Artifact
   await page.screenshot({ path: trace.artifactPath('screenshot.png') });
