@@ -3,6 +3,16 @@ import { FitAddon } from '@xterm/addon-fit';
 
 let terminal: Terminal | null = null;
 let fitAddon: FitAddon | null = null;
+let resizeObserver: ResizeObserver | null = null;
+
+function fitAndNotify(): void {
+  if (!fitAddon || !terminal) return;
+  try {
+    fitAddon.fit();
+  } catch {
+    // container may not be visible yet
+  }
+}
 
 export function createTerminal(
   container: HTMLElement,
@@ -33,7 +43,8 @@ export function createTerminal(
       brightCyan: '#94e2d5',
       brightWhite: '#a6adc8',
     },
-    fontFamily: "'JetBrainsMono Nerd Font Mono', 'JetBrainsMono Nerd Font', 'FiraCode Nerd Font', 'monospace', 'Menlo', 'Monaco', 'Courier New'",
+    fontFamily:
+      "'JetBrainsMono Nerd Font Mono', 'JetBrainsMono Nerd Font', 'FiraCode Nerd Font', 'monospace', 'Menlo', 'Monaco', 'Courier New'",
     fontSize: 14,
     allowProposedApi: true,
   });
@@ -41,7 +52,13 @@ export function createTerminal(
   fitAddon = new FitAddon();
   terminal.loadAddon(fitAddon);
   terminal.open(container);
-  fitAddon.fit();
+
+  // Deferred initial fit — layout may not be settled at open()
+  requestAnimationFrame(() => fitAndNotify());
+
+  // Observe container resizes (handles panel splits, window resize, tab switches)
+  resizeObserver = new ResizeObserver(() => fitAndNotify());
+  resizeObserver.observe(container);
 
   terminal.onData(onInput);
 
@@ -52,6 +69,14 @@ export function createTerminal(
   container.setAttribute('data-active', 'true');
 
   return terminal;
+}
+
+export function disposeTerminal(): void {
+  resizeObserver?.disconnect();
+  resizeObserver = null;
+  terminal?.dispose();
+  terminal = null;
+  fitAddon = null;
 }
 
 export function writeToTerminal(data: string): void {

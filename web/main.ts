@@ -80,10 +80,7 @@ saveBtn.addEventListener('click', async () => {
   }
 });
 
-// Handle window resize
-window.addEventListener('resize', () => {
-  fitTerminal();
-});
+// Window resize is handled by ResizeObserver in TerminalPane
 
 // Start
 connect();
