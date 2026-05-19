@@ -6,15 +6,13 @@
 
 # Test info
 
-- Name: certification.spec.ts >> cert_004 keyboard input updates Pandoc preview DOM
-- Location: tests/certification.spec.ts:284:1
+- Name: certification.spec.ts >> cert_001 startup — real nvim (not headless), real browser, real file
+- Location: tests/certification.spec.ts:50:1
 
 # Error details
 
 ```
-Error: Command failed: nvim --server /tmp/pandoc-nvim-preview/nvim.sock --remote-expr join(getline(1, "$"), "\n")
-E247: Failed to connect to '/tmp/pandoc-nvim-preview/nvim.sock': connection refused. Send expression failed.
-
+Error: spawnSync nvim ETIMEDOUT
 ```
 
 # Test source
@@ -121,7 +119,7 @@ E247: Failed to connect to '/tmp/pandoc-nvim-preview/nvim.sock': connection refu
   101 | 
   102 | export function nvimDirectRPC(socketPath: string, expr: string): string {
 > 103 |   const stdout = execFileSync('nvim', ['--server', socketPath, '--remote-expr', expr], {
-      |                  ^ Error: Command failed: nvim --server /tmp/pandoc-nvim-preview/nvim.sock --remote-expr join(getline(1, "$"), "\n")
+      |                  ^ Error: spawnSync nvim ETIMEDOUT
   104 |     encoding: 'utf-8',
   105 |     timeout: 5000,
   106 |   });

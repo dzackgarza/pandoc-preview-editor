@@ -16,21 +16,19 @@ Error: expect(locator).toContainText(expected) failed
 
 Locator: locator('[data-testid="preview-frame"]').contentFrame().locator('h1').first()
 Expected substring: "Test Document"
-Received string:    "INITIAL_PREVIEW_SENTINEL"
+Received string:    "L2 Server"
 Timeout: 5000ms
 
 Call log:
   - Expect "toContainText" with timeout 5000ms
   - waiting for locator('[data-testid="preview-frame"]').contentFrame().locator('h1').first()
-    10 × locator resolved to <h1 id="l2-buffer">L2 Buffer</h1>
-       - unexpected value "L2 Buffer"
-    - locator resolved to <h1 id="initial_preview_sentinel">INITIAL_PREVIEW_SENTINEL</h1>
-    - unexpected value "INITIAL_PREVIEW_SENTINEL"
+    13 × locator resolved to <h1 id="l2-server">L2 Server</h1>
+       - unexpected value "L2 Server"
 
 ```
 
 ```yaml
-- heading "INITIAL_PREVIEW_SENTINEL" [level=1]
+- heading "L2 Server" [level=1]
 ```
 
 # Test source

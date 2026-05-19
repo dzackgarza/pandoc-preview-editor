@@ -6,8 +6,8 @@
 
 # Test info
 
-- Name: certification.spec.ts >> cert_004 keyboard input updates Pandoc preview DOM
-- Location: tests/certification.spec.ts:284:1
+- Name: certification.spec.ts >> cert_003 keyboard input reaches real nvim buffer
+- Location: tests/certification.spec.ts:229:1
 
 # Error details
 

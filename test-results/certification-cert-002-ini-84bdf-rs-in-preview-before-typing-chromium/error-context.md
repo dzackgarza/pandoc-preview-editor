@@ -17,7 +17,7 @@ Error: h1 text must match seed heading
 expect(received).toContain(expected) // indexOf
 
 Expected substring: "INITIAL_PREVIEW_SENTINEL"
-Received string:    "L5 Type"
+Received string:    "WS Delivery"
 ```
 
 # Test source

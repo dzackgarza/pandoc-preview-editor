@@ -48,6 +48,11 @@ export async function startServer(config: AppConfig) {
   }
   console.log(`[pandoc-nvim-preview] Neovim ready (pid ${nvim.pid})`);
 
+  // Global PTY listener - broadcast to all clients (ONE listener, not one per client)
+  nvim.onData((data: string) => {
+    broadcast({ type: 'pty-output', data });
+  });
+
   // Poll buffer and broadcast preview updates
   let lastBuffer = '';
   const previewInterval = setInterval(async () => {
@@ -63,7 +68,10 @@ export async function startServer(config: AppConfig) {
         broadcast({ type: 'preview-update', html });
       }
     } catch (err: any) {
-      // nvim not ready or connection lost - ignore
+      // Expected during startup or shutdown - only log if unexpected
+      if (err.code !== 'ECONNREFUSED' && err.code !== 'ENOENT') {
+        console.error('[pandoc-nvim-preview] preview poll error:', err.message);
+      }
     }
   }, 500);
 
@@ -112,14 +120,8 @@ export async function startServer(config: AppConfig) {
     res.json({ pid: nvim.pid, socket: SOCKET_PATH, file: absFilePath });
   });
 
-  // WebSocket: relay PTY I/O + handle client messages
+  // WebSocket: handle client messages + send initial preview
   wss.on('connection', async (ws) => {
-    const onPtyData = (data: string) => {
-      broadcast({ type: 'pty-output', data });
-    };
-
-    nvim.onData(onPtyData);
-
     // Send initial preview update on connection
     try {
       const buffer = await getBuffer(SOCKET_PATH);
@@ -130,7 +132,7 @@ export async function startServer(config: AppConfig) {
       });
       ws.send(JSON.stringify({ type: 'preview-update', html }));
     } catch (err: any) {
-      // nvim not ready yet - will be sent by polling interval
+      console.error('[pandoc-nvim-preview] initial preview error:', err.message);
     }
 
     ws.on('message', (raw) => {
@@ -152,10 +154,6 @@ export async function startServer(config: AppConfig) {
           parseErr?.message || parseErr,
         );
       }
-    });
-
-    ws.on('close', () => {
-      nvim.removeListener(onPtyData);
     });
   });
 
