@@ -1,6 +1,7 @@
 import { spawnNvim } from './pty.js';
 import { getBuffer, saveBuffer, pollReady } from './nvim-rpc.js';
 import { createWSServer, broadcast } from './ws.js';
+import { renderMarkdown } from './render.js';
 import express from 'express';
 import { createServer } from 'node:http';
 import { readFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
@@ -39,14 +40,6 @@ export async function startServer(config: AppConfig) {
   console.log(`[pandoc-nvim-preview] Starting nvim for ${absFilePath}`);
   const nvim = spawnNvim(absFilePath, SOCKET_PATH);
 
-  // Buffer PTY output for clients that connect after startup
-  const ptyBuffer: string[] = [];
-  nvim.onData((data: string) => {
-    ptyBuffer.push(data);
-    // Trim buffer to avoid unbounded growth
-    if (ptyBuffer.length > 100) ptyBuffer.shift();
-  });
-
   console.log(`[pandoc-nvim-preview] Waiting for nvim to be ready...`);
   const ready = await pollReady(SOCKET_PATH);
   if (!ready) {
@@ -54,6 +47,25 @@ export async function startServer(config: AppConfig) {
     throw new Error('Neovim failed to start within timeout');
   }
   console.log(`[pandoc-nvim-preview] Neovim ready (pid ${nvim.pid})`);
+
+  // Poll buffer and broadcast preview updates
+  let lastBuffer = '';
+  const previewInterval = setInterval(async () => {
+    try {
+      const buffer = await getBuffer(SOCKET_PATH);
+      if (buffer !== lastBuffer) {
+        lastBuffer = buffer;
+        const html = renderMarkdown(buffer, {
+          bibliography: config.bibliography,
+          csl: config.csl,
+          katex: config.katex,
+        });
+        broadcast({ type: 'preview-update', html });
+      }
+    } catch (err: any) {
+      // nvim not ready or connection lost - ignore
+    }
+  }, 500);
 
   const app = express();
   app.use(express.json());
@@ -108,13 +120,6 @@ export async function startServer(config: AppConfig) {
 
     nvim.onData(onPtyData);
 
-    if (ptyBuffer.length > 0) {
-      // Replay buffered PTY output so the client sees the nvim startup screen
-      for (const chunk of ptyBuffer) {
-        ws.send(JSON.stringify({ type: 'pty-output', data: chunk }));
-      }
-    }
-
     ws.on('message', (raw) => {
       try {
         const msg = JSON.parse(raw.toString()) as {
@@ -137,12 +142,13 @@ export async function startServer(config: AppConfig) {
     });
 
     ws.on('close', () => {
-      // listener stays; we just stop forwarding to this client
+      nvim.removeListener(onPtyData);
     });
   });
 
   // Cleanup on exit
   function cleanup() {
+    clearInterval(previewInterval);
     nvim.kill();
     if (existsSync(SOCKET_PATH)) {
       rmSync(SOCKET_PATH);

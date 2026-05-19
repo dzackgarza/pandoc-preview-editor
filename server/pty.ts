@@ -6,6 +6,7 @@ export interface NvimPTY {
   pid: number;
   socketPath: string;
   onData: (cb: (data: string) => void) => void;
+  removeListener: (cb: (data: string) => void) => void;
   write: (data: string) => void;
   resize: (cols: number, rows: number) => void;
   kill: () => void;
@@ -37,6 +38,10 @@ export function spawnNvim(filePath: string, socketPath: string): NvimPTY {
     socketPath,
     onData(cb: (data: string) => void) {
       listeners.push(cb);
+    },
+    removeListener(cb: (data: string) => void) {
+      const idx = listeners.indexOf(cb);
+      if (idx !== -1) listeners.splice(idx, 1);
     },
     write(data: string) {
       ptyProcess.write(data);
