@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
+import { launchServer, killServer, type ServerInstance } from './helpers.js';
 
 /**
  * The bug: nvim's completion popup true-color escape sequences leak as
@@ -10,39 +10,14 @@ import { writeFileSync } from 'node:fs';
  * the rendered terminal DOM for leaked escape codes.
  */
 test('RED: completion popup true-color escapes do not leak as literal text', async ({ page }) => {
-  // Start server manually (helpers.ts has import.meta.dirname issues)
   const file = '/tmp/esc-leak-test5.md';
   writeFileSync(file, '# Test\n');
 
-  // Find free port
-  const net = await import('node:net');
-  const port = await new Promise<number>((resolve) => {
-    const s = net.createServer();
-    s.listen(0, () => { resolve((s.address() as any).port); s.close(); });
-  });
-
-  const server = spawn('npx', ['tsx', 'server/cli.ts', file, '--port', String(port), '--no-open'], {
-    cwd: '/home/dzack/gitclones/pandoc-preview',
-    env: { ...process.env, NO_OPEN: '1' },
-    stdio: 'pipe',
-  });
-  server.stdout.on('data', () => {});
-  server.stderr.on('data', () => {});
-
-  // Wait for server ready
-  await new Promise<void>((resolve, reject) => {
-    const deadline = Date.now() + 20000;
-    function check() {
-      if (Date.now() > deadline) { reject(new Error('Server timeout')); return; }
-      fetch(`http://localhost:${port}/api/status`)
-        .then(r => { if (r.ok) resolve(); else setTimeout(check, 200); })
-        .catch(() => setTimeout(check, 200));
-    }
-    check();
-  });
-
+  let server: ServerInstance | null = null;
   try {
-    await page.goto(`http://localhost:${port}`);
+    server = await launchServer(file);
+
+    await page.goto(server.url);
     await page.waitForSelector('[data-testid="terminal"]', { timeout: 15000 });
     await page.waitForSelector('.xterm', { timeout: 10000 });
     await page.waitForTimeout(3000);
@@ -82,6 +57,6 @@ test('RED: completion popup true-color escapes do not leak as literal text', asy
     await page.screenshot({ path: '/tmp/esc-leak-test5.png' });
 
   } finally {
-    server.kill('SIGKILL');
+    if (server) await killServer(server);
   }
 });

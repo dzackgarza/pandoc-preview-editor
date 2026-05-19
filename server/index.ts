@@ -15,6 +15,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const WEB_DIR = resolve(__dirname, '..', 'web');
 
 const RUN_DIR = join(tmpdir(), 'pandoc-nvim-preview');
+const SOCKET_PATH = join(RUN_DIR, 'nvim.sock');
 
 interface AppConfig {
   filePath: string;
@@ -28,9 +29,6 @@ export async function startServer(config: AppConfig) {
   if (!existsSync(RUN_DIR)) {
     mkdirSync(RUN_DIR, { recursive: true });
   }
-
-  // Use unique socket path per server instance to avoid test interference
-  const SOCKET_PATH = join(RUN_DIR, `nvim-${process.pid}.sock`);
 
   // Remove stale socket
   if (existsSync(SOCKET_PATH)) {
@@ -70,11 +68,10 @@ export async function startServer(config: AppConfig) {
     express.static(resolve(__dirname, '..', 'node_modules', '@xterm', 'xterm', 'css')),
   );
 
-  // Save endpoint: query buffer, send :w, verify
+  // Save endpoint: send :w, verify
   app.post('/api/save', async (_req, res) => {
     try {
       await saveBuffer(SOCKET_PATH);
-      // Verify file was written by reading it back
       const content = readFileSync(absFilePath, 'utf-8');
       res.json({ ok: true, bytes: content.length });
     } catch (err: any) {
@@ -83,7 +80,7 @@ export async function startServer(config: AppConfig) {
     }
   });
 
-  // Current nvim buffer (for certification layer diagnostics)
+  // Current nvim buffer (for diagnostics)
   app.get('/api/buffer', async (_req, res) => {
     try {
       const buffer = await getBuffer(SOCKET_PATH);
@@ -100,7 +97,7 @@ export async function startServer(config: AppConfig) {
     res.json({ pid: nvim.pid, socket: SOCKET_PATH, file: absFilePath });
   });
 
-  // Buffer update from nvim plugin
+  // Buffer update from nvim plugin (push-based, no polling)
   app.post('/api/buffer-update', express.text({ type: '*/*', limit: '10mb' }), (req, res) => {
     const buffer = req.body;
     const html = renderMarkdown(buffer, {
@@ -113,8 +110,7 @@ export async function startServer(config: AppConfig) {
   });
 
   // WebSocket: handle client messages
-  // Initial preview is sent by nvim plugin after 100ms
-  wss.on('connection', async (ws) => {
+  wss.on('connection', (ws) => {
     ws.on('message', (raw) => {
       try {
         const msg = JSON.parse(raw.toString()) as {
@@ -139,14 +135,19 @@ export async function startServer(config: AppConfig) {
 
   // Cleanup on exit
   function cleanup() {
-    nvim.kill();
-    if (existsSync(SOCKET_PATH)) {
-      rmSync(SOCKET_PATH);
-    }
+    try { wss.close(); } catch {}
+    try { httpServer.close(); } catch {}
+    try { nvim.kill(); } catch {}
+    try { if (existsSync(SOCKET_PATH)) rmSync(SOCKET_PATH); } catch {}
   }
 
-  process.on('SIGINT', cleanup);
-  process.on('SIGTERM', cleanup);
+  process.on('SIGINT', () => { cleanup(); process.exit(0); });
+  process.on('SIGTERM', () => { cleanup(); process.exit(0); });
+  process.on('uncaughtException', (err) => {
+    console.error('[pandoc-nvim-preview] uncaught exception:', err);
+    cleanup();
+    process.exit(1);
+  });
 
   return new Promise<void>((resolve, reject) => {
     httpServer.listen(config.port, async () => {

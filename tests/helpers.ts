@@ -2,24 +2,13 @@ import {
   spawn,
   ChildProcess,
   execFileSync,
-  execSync,
   spawnSync,
 } from 'node:child_process';
 import { writeFileSync, mkdtempSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { createServer } from 'node:net';
 
-export function getFreePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer();
-    server.listen(0, () => {
-      const port = (server.address() as { port: number }).port;
-      server.close(() => resolve(port));
-    });
-    server.on('error', reject);
-  });
-}
+const PORT = 3141;
 
 export function seedTempFile(slug: string, content: string): string {
   const dir = mkdtempSync(join(tmpdir(), `pnp-${slug}-`));
@@ -48,13 +37,12 @@ export interface ServerInstance {
 }
 
 export async function launchServer(filePath: string): Promise<ServerInstance> {
-  const port = await getFreePort();
   const out: string[] = [];
   const err: string[] = [];
 
   const proc = spawn(
     'npx',
-    ['tsx', 'server/cli.ts', filePath, '--port', String(port), '--no-open'],
+    ['tsx', 'server/cli.ts', filePath, '--no-open'],
     {
       cwd: join(import.meta.dirname, '..'),
       env: { ...process.env, NO_OPEN: '1' },
@@ -65,24 +53,29 @@ export async function launchServer(filePath: string): Promise<ServerInstance> {
   proc.stdout?.on('data', (d: Buffer) => out.push(d.toString()));
   proc.stderr?.on('data', (d: Buffer) => err.push(d.toString()));
 
-  const url = `http://localhost:${port}`;
+  const url = `http://localhost:${PORT}`;
   await waitForServer(url, 15000);
 
   // Fetch the socket path and nvim PID from the server status endpoint
-  let socketPath = '';
-  let nvimPid = 0;
   const statusRes = await fetch(`${url}/api/status`);
   if (!statusRes.ok) {
     throw new Error(`Failed to get server status: ${statusRes.status} ${statusRes.statusText}`);
   }
   const status = (await statusRes.json()) as { pid: number; socket: string };
-  nvimPid = status.pid;
-  socketPath = status.socket;
-  if (!socketPath) {
+  if (!status.socket) {
     throw new Error('Server status response missing socket path');
   }
 
-  return { port, process: proc, filePath, url, socketPath, nvimPid, out, err };
+  return {
+    port: PORT,
+    process: proc,
+    filePath,
+    url,
+    socketPath: status.socket,
+    nvimPid: status.pid,
+    out,
+    err,
+  };
 }
 
 async function waitForServer(url: string, timeoutMs: number): Promise<void> {
@@ -157,43 +150,11 @@ export function pandocRender(markdown: string): PandocResult {
 }
 
 export async function killServer(instance: ServerInstance): Promise<void> {
-  // First, try to gracefully kill the nvim child process
-  if (instance.nvimPid > 0) {
-    try {
-      execFileSync('kill', [String(instance.nvimPid)], { timeout: 2000 });
-    } catch {
-      // already dead
-    }
-    await new Promise((r) => setTimeout(r, 200));
-    try {
-      execFileSync('kill', ['-9', String(instance.nvimPid)], { timeout: 2000 });
-    } catch {
-      // already dead
-    }
-  }
-
   instance.process.kill('SIGTERM');
   await new Promise((r) => setTimeout(r, 500));
   try {
     instance.process.kill('SIGKILL');
   } catch {
     // already exited
-  }
-}
-
-// Clean up runtime artifacts for a server instance
-export function cleanServerArtifacts(instance: ServerInstance): void {
-  if (existsSync(instance.socketPath)) {
-    rmSync(instance.socketPath);
-  }
-  try {
-    const runDir = '/tmp/pandoc-nvim-preview';
-    if (existsSync(runDir)) {
-      // Only remove our socket, leave dir
-      const socketInDir = join(runDir, 'nvim.sock');
-      if (existsSync(socketInDir)) rmSync(socketInDir);
-    }
-  } catch {
-    // best effort
   }
 }
