@@ -8,8 +8,6 @@ import {
   nvimDirectSend,
   nvimDirectQuit,
   pandocRender,
-  getFreePort,
-  cleanServerArtifacts,
   ServerInstance,
 } from './helpers';
 import {
@@ -43,7 +41,7 @@ let server001: ServerInstance;
 test.afterAll(async () => {
   if (server001) {
     await killServer(server001);
-    cleanServerArtifacts(server001);
+    // cleanup handled by server
   }
 });
 
@@ -124,7 +122,7 @@ let server002: ServerInstance;
 test.afterAll(async () => {
   if (server002) {
     await killServer(server002);
-    cleanServerArtifacts(server002);
+    // cleanup handled by server
   }
 });
 
@@ -222,7 +220,7 @@ let server003: ServerInstance;
 test.afterAll(async () => {
   if (server003) {
     await killServer(server003);
-    cleanServerArtifacts(server003);
+    // cleanup handled by server
   }
 });
 
@@ -277,7 +275,7 @@ let server004: ServerInstance;
 test.afterAll(async () => {
   if (server004) {
     await killServer(server004);
-    cleanServerArtifacts(server004);
+    // cleanup handled by server
   }
 });
 
@@ -365,7 +363,7 @@ let server005: ServerInstance;
 test.afterAll(async () => {
   if (server005) {
     await killServer(server005);
-    cleanServerArtifacts(server005);
+    // cleanup handled by server
   }
 });
 
@@ -437,7 +435,7 @@ let server006: ServerInstance;
 test.afterAll(async () => {
   if (server006) {
     await killServer(server006);
-    cleanServerArtifacts(server006);
+    // cleanup handled by server
   }
 });
 
@@ -539,7 +537,7 @@ let serverBbox: ServerInstance;
 test.afterAll(async () => {
   if (serverBbox) {
     await killServer(serverBbox);
-    cleanServerArtifacts(serverBbox);
+    // cleanup handled by server
   }
 });
 

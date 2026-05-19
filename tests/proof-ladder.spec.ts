@@ -8,8 +8,6 @@ import {
   nvimDirectSend,
   nvimDirectQuit,
   pandocRender,
-  getFreePort,
-  cleanServerArtifacts,
   ServerInstance,
 } from './helpers';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
@@ -172,7 +170,7 @@ let serverL2: ServerInstance;
 test.afterAll(async () => {
   if (serverL2) {
     await killServer(serverL2);
-    cleanServerArtifacts(serverL2);
+    // cleanup handled by server
   }
 });
 
@@ -251,7 +249,7 @@ let serverL4: ServerInstance;
 test.afterAll(async () => {
   if (serverL4) {
     await killServer(serverL4);
-    cleanServerArtifacts(serverL4);
+    // cleanup handled by server
   }
 });
 
@@ -289,7 +287,7 @@ let serverL5: ServerInstance;
 test.afterAll(async () => {
   if (serverL5) {
     await killServer(serverL5);
-    cleanServerArtifacts(serverL5);
+    // cleanup handled by server
   }
 });
 
@@ -323,7 +321,7 @@ let serverL6: ServerInstance;
 test.afterAll(async () => {
   if (serverL6) {
     await killServer(serverL6);
-    cleanServerArtifacts(serverL6);
+    // cleanup handled by server
   }
 });
 

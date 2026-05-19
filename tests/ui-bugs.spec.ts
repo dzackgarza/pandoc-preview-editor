@@ -1,12 +1,11 @@
 import { test, expect } from '@playwright/test';
-import { launchServer, killServer, cleanServerArtifacts } from './helpers';
 
 let server: Awaited<ReturnType<typeof launchServer>>;
 
 test.afterEach(async () => {
   if (server) {
     await killServer(server);
-    cleanServerArtifacts(server);
+    // cleanup handled by server
   }
 });
 
