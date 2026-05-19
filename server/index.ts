@@ -1,5 +1,5 @@
 import { spawnNvim } from './pty.js';
-import { getBuffer, saveBuffer, pollReady } from './nvim-rpc.js';
+import { getBuffer, saveBuffer, pollReady, connectNvim, attachBuffer } from './nvim-rpc.js';
 import { createWSServer, broadcast } from './ws.js';
 import { renderMarkdown } from './render.js';
 import express from 'express';
@@ -55,30 +55,25 @@ export async function startServer(config: AppConfig) {
     broadcast({ type: 'pty-output', data });
   });
 
-  // Poll buffer and broadcast preview updates
+  // Connect to nvim via RPC and attach buffer listener for push-based updates
+  console.log(`[pandoc-nvim-preview] Connecting to nvim RPC...`);
+  const nvimClient = await connectNvim(SOCKET_PATH);
+
   let lastBuffer = '';
-  let pollErrors = 0;
-  const previewInterval = setInterval(async () => {
-    try {
-      const buffer = await getBuffer(SOCKET_PATH);
-      if (buffer !== lastBuffer) {
-        lastBuffer = buffer;
-        const html = renderMarkdown(buffer, {
-          bibliography: config.bibliography,
-          csl: config.csl,
-          katex: config.katex,
-        });
-        broadcast({ type: 'preview-update', html });
-      }
-      pollErrors = 0; // reset on success
-    } catch (err: any) {
-      pollErrors++;
-      console.error(
-        `[pandoc-nvim-preview] preview poll error (count: ${pollErrors}):`,
-        err.message || err,
+  await attachBuffer(nvimClient, (buffer: string) => {
+    if (buffer !== lastBuffer) {
+      lastBuffer = buffer;
+      const html = renderMarkdown(buffer, {
+        bibliography: config.bibliography,
+        csl: config.csl,
+        katex: config.katex,
+      });
+      broadcast({ type: 'preview-update', html });
+      console.log(
+        `[pandoc-nvim-preview] Preview updated (${buffer.length} bytes, ${buffer.split('\n').length} lines)`,
       );
     }
-  }, 500);
+  });
 
   const app = express();
   app.use(express.json());
@@ -164,7 +159,6 @@ export async function startServer(config: AppConfig) {
 
   // Cleanup on exit
   function cleanup() {
-    clearInterval(previewInterval);
     nvim.kill();
     if (existsSync(SOCKET_PATH)) {
       rmSync(SOCKET_PATH);
