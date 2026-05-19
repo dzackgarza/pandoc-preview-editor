@@ -11,12 +11,14 @@ Usage:
   pandoc-nvim-preview <file.md> [options]
 
 Options:
-  --port <N>           Port to listen on (default: 3141)
   --bibliography <bib> Path to bibliography file for citeproc
   --csl <file>         Path to CSL citation style file
   --katex              Use KaTeX instead of MathJax for math rendering
   --no-open            Don't auto-open browser
   --help, -h           Show this help
+
+Note:
+  Server runs on port 3141. Only one instance can run at a time.
 
 Examples:
   pandoc-nvim-preview notes.md
@@ -26,8 +28,8 @@ Examples:
   process.exit(0);
 }
 
-let filePath = args[0];
-let port = 3141;
+const filePath = args[0];
+const port = 3141; // Fixed port for singleton server
 let bibliography: string | undefined;
 let csl: string | undefined;
 let katex = false;
@@ -35,9 +37,6 @@ let noOpen = false;
 
 for (let i = 1; i < args.length; i++) {
   switch (args[i]) {
-    case '--port':
-      port = parseInt(args[++i], 10);
-      break;
     case '--bibliography':
       bibliography = args[++i];
       break;
@@ -50,6 +49,9 @@ for (let i = 1; i < args.length; i++) {
     case '--no-open':
       noOpen = true;
       break;
+    default:
+      console.error(`Unknown option: ${args[i]}`);
+      process.exit(1);
   }
 }
 
@@ -68,6 +70,10 @@ startServer({
   csl,
   katex,
 }).catch((err) => {
-  console.error('Fatal:', err.message);
+  if (err.code === 'EADDRINUSE') {
+    console.error(`Fatal: Port ${port} is already in use. Is another instance already running?`);
+  } else {
+    console.error('Fatal:', err.message);
+  }
   process.exit(1);
 });
