@@ -12,32 +12,35 @@
 # Error details
 
 ```
-Error: preview must show initial heading
+Error: preview must update with typed sentinel
 
 expect(locator).toContainText(expected) failed
 
 Locator: locator('[data-testid="preview-frame"]').contentFrame().locator('body')
-Timeout: 5000ms
+Timeout: 8000ms
 - Expected substring  - 1
-+ Received string     + 6
++ Received string     + 5
 
-- Contract Start
+- L6_CONTRACT_FINAL
 +
-+ Start
-+ .
++ before
 +
 +
 +
 
 Call log:
-  - preview must show initial heading with timeout 5000ms
+  - preview must update with typed sentinel with timeout 8000ms
   - waiting for locator('[data-testid="preview-frame"]').contentFrame().locator('body')
-    5 × locator resolved to <body></body>
-      - unexpected value ""
-    7 × locator resolved to <body>…</body>
+    4 × locator resolved to <body>…</body>
       - unexpected value "
-Start
-.
+Contract Start
+Initial text.
+
+
+"
+    15 × locator resolved to <body>…</body>
+       - unexpected value "
+before
 
 
 "
@@ -45,25 +48,12 @@ Start
 ```
 
 ```yaml
-- heading "Start" [level=1]
-- paragraph: .
+- paragraph: before
 ```
 
 # Test source
 
 ```ts
-  245 | // ============================================================
-  246 | // LAYER 4: WebSocket / preview delivery
-  247 | // ============================================================
-  248 | 
-  249 | let serverL4: ServerInstance;
-  250 | 
-  251 | test.afterAll(async () => {
-  252 |   if (serverL4) {
-  253 |     await killServer(serverL4);
-  254 |     cleanServerArtifacts(serverL4);
-  255 |   }
-  256 | });
   257 | 
   258 | test('L4.1 websocket_preview_delivery — iframe receives server-rendered HTML', async ({
   259 |   page,
@@ -152,8 +142,7 @@ Start
   342 |   await expect(
   343 |     previewFrame.locator('body'),
   344 |     'preview must show initial heading',
-> 345 |   ).toContainText('Contract Start', { timeout: 5000 });
-      |     ^ Error: preview must show initial heading
+  345 |   ).toContainText('Contract Start', { timeout: 5000 });
   346 | 
   347 |   // Type new content into nvim via terminal
   348 |   await page.locator('[data-testid="terminal"]').click();
@@ -165,7 +154,8 @@ Start
   354 |   await expect(
   355 |     previewFrame.locator('body'),
   356 |     'preview must update with typed sentinel',
-  357 |   ).toContainText('L6_CONTRACT_FINAL', { timeout: 8000 });
+> 357 |   ).toContainText('L6_CONTRACT_FINAL', { timeout: 8000 });
+      |     ^ Error: preview must update with typed sentinel
   358 | 
   359 |   // Save via API
   360 |   const saveRes = await page.evaluate(async () => {

@@ -16,19 +16,28 @@ Error: expect(locator).toContainText(expected) failed
 
 Locator: locator('[data-testid="preview-frame"]').contentFrame().locator('h1').first()
 Expected substring: "Test Document"
-Received string:    "L2 Server"
 Timeout: 5000ms
+Error: element(s) not found
 
 Call log:
   - Expect "toContainText" with timeout 5000ms
   - waiting for locator('[data-testid="preview-frame"]').contentFrame().locator('h1').first()
-    13 × locator resolved to <h1 id="l2-server">L2 Server</h1>
-       - unexpected value "L2 Server"
 
 ```
 
+# Page snapshot
+
 ```yaml
-- heading "L2 Server" [level=1]
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - generic [ref=e4]: connected
+    - button "Save" [ref=e5] [cursor=pointer]
+  - generic [ref=e6]:
+    - generic [ref=e10]:
+      - generic:
+        - textbox "Terminal input"
+    - iframe [ref=e51]:
+      
 ```
 
 # Test source

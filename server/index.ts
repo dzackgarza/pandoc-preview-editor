@@ -55,6 +55,7 @@ export async function startServer(config: AppConfig) {
 
   // Poll buffer and broadcast preview updates
   let lastBuffer = '';
+  let pollErrors = 0;
   const previewInterval = setInterval(async () => {
     try {
       const buffer = await getBuffer(SOCKET_PATH);
@@ -67,11 +68,13 @@ export async function startServer(config: AppConfig) {
         });
         broadcast({ type: 'preview-update', html });
       }
+      pollErrors = 0; // reset on success
     } catch (err: any) {
-      // Expected during startup or shutdown - only log if unexpected
-      if (err.code !== 'ECONNREFUSED' && err.code !== 'ENOENT') {
-        console.error('[pandoc-nvim-preview] preview poll error:', err.message);
-      }
+      pollErrors++;
+      console.error(
+        `[pandoc-nvim-preview] preview poll error (count: ${pollErrors}):`,
+        err.message || err,
+      );
     }
   }, 500);
 
