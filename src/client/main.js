@@ -49,19 +49,29 @@ async function doRender(markdown, version) {
 }
 
 async function doSave(markdown) {
-  if (!currentFile) return;
+  let filePath = currentFile;
+
+  // No file associated yet — prompt user for a path
+  if (!filePath) {
+    filePath = window.prompt('Save as (absolute path):');
+    if (!filePath) return; // user cancelled
+  }
+
   try {
     const res = await fetch('/api/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ markdown }),
+      body: JSON.stringify({ markdown, path: filePath }),
     });
     if (!res.ok) {
       const data = await res.json();
-      console.error('save failed:', data.error);
+      setStatus(`save failed: ${data.error}`, 'error');
+    } else {
+      currentFile = filePath;
+      setStatus('saved', 'ok');
     }
   } catch (err) {
-    console.error('save error:', err);
+    setStatus(`save error: ${err.message}`, 'error');
   }
 }
 

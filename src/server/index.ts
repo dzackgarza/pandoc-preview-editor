@@ -71,19 +71,21 @@ export function createApp(config: ServerConfig) {
   });
 
   // Save endpoint
-  app.post<{ markdown: string }>('/api/save', async (req, res) => {
-    if (!config.file) {
-      res.status(400).json({ error: 'no file associated with this session' });
-      return;
-    }
-    const { markdown } = req.body;
+  app.post<{ markdown: string; path?: string }>('/api/save', async (req, res) => {
+    const { markdown, path } = req.body;
     if (typeof markdown !== 'string') {
       res.status(400).json({ error: 'markdown field is required' });
       return;
     }
+    // Use explicit path if provided, otherwise the configured file path
+    const targetPath = path || config.file;
+    if (!targetPath) {
+      res.status(400).json({ error: 'no file path configured or provided' });
+      return;
+    }
     try {
-      writeFileSync(config.file, markdown, 'utf-8');
-      res.json({ ok: true, path: config.file });
+      writeFileSync(targetPath, markdown, 'utf-8');
+      res.json({ ok: true, path: targetPath });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: message });

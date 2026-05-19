@@ -9,6 +9,7 @@ import {
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { launchServer, killServer, type ServerInstance } from './helpers.js';
+import { randomUUID } from 'node:crypto';
 
 /**
  * Write a temp markdown file, launch the server with it, then clean up.
@@ -74,13 +75,53 @@ test.describe('file loading and saving', () => {
     expect(onDisk).not.toContain('# Original');
   });
 
-  test('no-arg launch shows empty textarea', async ({ page }) => {
-    // Launch WITHOUT a file argument
+  test('no-arg launch prompts for save path on Ctrl+S', async ({ page }) => {
+    // Launch WITHOUT a file argument — save should prompt for a path
     server = await launchServer();
 
     await page.goto(server.url);
     const editor = page.locator('#editor');
     await expect(editor).toHaveValue('', { timeout: 5000 });
+
+    // Set up dialog handler before pressing Ctrl+S
+    const saveDir = mkdtempSync(join(tmpdir(), 'pandoc-saveas-'));
+    const savePath = join(saveDir, 'new-doc.md');
+
+    page.on('dialog', async (dialog) => {
+      expect(dialog.type()).toBe('prompt');
+      await dialog.accept(savePath);
+    });
+
+    await editor.fill('# New Document\n\nCreated from save-as.');
+    await editor.press('Control+s');
+
+    // Wait for the file to appear on disk
+    await expect
+      .poll(() => existsSync(savePath), { timeout: 5000, intervals: [200, 200, 200] })
+      .toBe(true);
+
+    const onDisk = readFileSync(savePath, 'utf-8');
+    expect(onDisk).toContain('# New Document');
+    expect(onDisk).toContain('Created from save-as.');
+
+    // Second Ctrl+S should save to the same path without prompting
+    await editor.fill('# Updated');
+    await editor.press('Control+s');
+    await page.waitForTimeout(300);
+    const updated = readFileSync(savePath, 'utf-8');
+    expect(updated).toContain('# Updated');
+
+    // Cleanup
+    try {
+      unlinkSync(savePath);
+    } catch {
+      /* ok */
+    }
+    try {
+      unlinkSync(saveDir);
+    } catch {
+      /* ok */
+    }
   });
 
   test('file path preserved across page reload', async ({ page }) => {
