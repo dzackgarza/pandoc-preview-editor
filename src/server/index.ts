@@ -19,6 +19,7 @@ const DEFAULT_ARGS = [
   'markdown+tex_math_dollars+citations',
   '-t',
   'html',
+  '--standalone',
   '--mathjax',
 ];
 

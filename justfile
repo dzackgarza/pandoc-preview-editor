@@ -16,6 +16,26 @@ run file='':
     fi
     exec $cmd
 
-[private]
-_typecheck:
+# Type-check the project
+typecheck:
     npx tsc --noEmit
+
+# Run all tests (Playwright E2E + API tests)
+test:
+    npx playwright test
+
+# Run tests in headed mode (visible browser)
+test-headed:
+    npx playwright test --headed
+
+# Run tests with HTML reporter
+test-report:
+    npx playwright test --reporter=html
+
+# Run only API-level render tests (no browser needed)
+test-render:
+    npx playwright test src/tests/render.spec.ts
+
+# Run only browser E2E tests
+test-e2e:
+    npx playwright test src/tests/e2e.spec.ts
