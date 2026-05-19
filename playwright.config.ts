@@ -18,10 +18,4 @@ export default defineConfig({
       },
     },
   ],
-  webServer: {
-    command: 'NO_OPEN=1 npx tsx server/cli.ts tests/fixtures/test-doc.md',
-    port: 3141,
-    reuseExistingServer: false,
-    timeout: 15000,
-  },
 });
