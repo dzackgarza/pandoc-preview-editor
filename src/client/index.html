@@ -4,24 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>pandoc-preview</title>
-    <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
-    <div id="app">
-      <div id="toolbar">
-        <span id="status">ready</span>
-        <span id="duration"></span>
-      </div>
-      <div id="split">
-        <div id="editor-pane">
-          <textarea id="editor" placeholder="Type markdown here..."></textarea>
-        </div>
-        <div id="resizer"></div>
-        <div id="preview-pane">
-          <iframe id="preview"></iframe>
-        </div>
-      </div>
-    </div>
-    <script type="module" src="/main.js"></script>
+    <div id="root"></div>
+    <script type="module" src="/main.tsx"></script>
   </body>
 </html>

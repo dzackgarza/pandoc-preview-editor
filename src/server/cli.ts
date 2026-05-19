@@ -1,7 +1,9 @@
 import { Command } from 'commander';
-import { readFileSync, existsSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { readFileSync, existsSync, mkdirSync } from 'node:fs';
+import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { tmpdir } from 'node:os';
+import { randomUUID } from 'node:crypto';
 import { load } from 'js-toml';
 import { startServer, type ServerConfig } from './index.js';
 
@@ -55,7 +57,7 @@ program
     const cwd = process.cwd();
     const configOverrides = loadConfig(options.config, cwd);
 
-    // Read file content if a file argument is provided
+    // Determine file path and initial content
     let fileContent: string | undefined;
     let absPath: string | undefined;
     if (file) {
@@ -65,6 +67,12 @@ program
       } catch (err) {
         console.error(`Warning: could not read file ${absPath}: ${err}`);
       }
+    } else {
+      // No file arg — create a default temp path so the client always has one
+      const tmpDir = join(tmpdir(), 'pandoc-preview');
+      mkdirSync(tmpDir, { recursive: true });
+      absPath = join(tmpDir, `untitled-${randomUUID()}.md`);
+      fileContent = '';
     }
 
     const config: ServerConfig = {
@@ -75,6 +83,7 @@ program
       host: options.host ?? '127.0.0.1',
       file: absPath,
       fileContent,
+      workspaceRoot: file && absPath ? dirname(absPath) : cwd,
     };
 
     startServer(config);

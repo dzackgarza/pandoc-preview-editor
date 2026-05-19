@@ -49,13 +49,7 @@ async function doRender(markdown, version) {
 }
 
 async function doSave(markdown) {
-  let filePath = currentFile;
-
-  // No file associated yet — prompt user for a path
-  if (!filePath) {
-    filePath = window.prompt('Save as (absolute path):');
-    if (!filePath) return; // user cancelled
-  }
+  const filePath = currentFile;
 
   try {
     const res = await fetch('/api/save', {

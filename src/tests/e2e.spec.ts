@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { launchServer, killServer, type ServerInstance } from './helpers.js';
+import { pressSave, setEditorMarkdown } from './editor-helpers.js';
 
 let server: ServerInstance;
 
@@ -23,9 +24,10 @@ test.describe('preview E2E', () => {
     }
   });
 
-  test('page loads with editor and preview elements', async ({ page }) => {
+  test('page loads with CodeMirror editor and preview iframe', async ({ page }) => {
     await page.goto(server.url);
     await expect(page.locator('#editor')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('#editor .cm-content')).toBeVisible({ timeout: 5000 });
     await expect(page.locator('#preview')).toBeAttached();
   });
 
@@ -38,22 +40,19 @@ test.describe('preview E2E', () => {
     });
   });
 
-  test('typing in textarea updates preview', async ({ page }) => {
+  test('typing Markdown updates preview', async ({ page }) => {
     await page.goto(server.url);
-    const editor = page.locator('#editor');
     const frame = previewFrame(page);
 
-    await editor.fill('# Hello World\n\nThis is a test.');
-    // Wait for debounce (400ms) plus render
+    await setEditorMarkdown(page, '# Hello World\n\nThis is a test.');
     await expect(frame.locator('body')).toContainText('Hello World', { timeout: 5000 });
     await expect(frame.locator('body')).toContainText('test');
   });
 
   test('renders markdown headings', async ({ page }) => {
     await page.goto(server.url);
-    const editor = page.locator('#editor');
 
-    await editor.fill('## Section Title');
+    await setEditorMarkdown(page, '## Section Title');
     const frame = previewFrame(page);
     await expect(frame.locator('h2')).toContainText('Section Title', {
       timeout: 5000,
@@ -62,9 +61,8 @@ test.describe('preview E2E', () => {
 
   test('renders bold text', async ({ page }) => {
     await page.goto(server.url);
-    const editor = page.locator('#editor');
 
-    await editor.fill('This is **very important**.');
+    await setEditorMarkdown(page, 'This is **very important**.');
     const frame = previewFrame(page);
     await expect(frame.locator('strong')).toContainText('very important', {
       timeout: 5000,
@@ -73,18 +71,16 @@ test.describe('preview E2E', () => {
 
   test('renders math', async ({ page }) => {
     await page.goto(server.url);
-    const editor = page.locator('#editor');
 
-    await editor.fill('The formula $E=mc^2$ is famous.');
+    await setEditorMarkdown(page, 'The formula $E=mc^2$ is famous.');
     const frame = previewFrame(page);
     await expect(frame.locator('.math')).toBeAttached({ timeout: 5000 });
   });
 
   test('renders code blocks', async ({ page }) => {
     await page.goto(server.url);
-    const editor = page.locator('#editor');
 
-    await editor.fill('```js\nconst x = 1;\n```');
+    await setEditorMarkdown(page, '```js\nconst x = 1;\n```');
     const frame = previewFrame(page);
     await expect(frame.locator('code')).toContainText('const x = 1', {
       timeout: 5000,
@@ -93,9 +89,8 @@ test.describe('preview E2E', () => {
 
   test('renders lists', async ({ page }) => {
     await page.goto(server.url);
-    const editor = page.locator('#editor');
 
-    await editor.fill('- alpha\n- beta\n- gamma');
+    await setEditorMarkdown(page, '- alpha\n- beta\n- gamma');
     const frame = previewFrame(page);
     const items = frame.locator('li');
     await expect(items).toHaveCount(3, { timeout: 5000 });
@@ -106,27 +101,23 @@ test.describe('preview E2E', () => {
 
   test('status indicator shows ready after render', async ({ page }) => {
     await page.goto(server.url);
-    const editor = page.locator('#editor');
 
-    await editor.fill('# Status Test');
-    await expect(page.locator('#status.ok')).toBeAttached({ timeout: 5000 });
+    await setEditorMarkdown(page, '# Status Test');
+    await expect(page.locator('#status')).toContainText('ready', { timeout: 5000 });
   });
 
   test('duration displays render time', async ({ page }) => {
     await page.goto(server.url);
-    const editor = page.locator('#editor');
 
-    await editor.fill('# Duration Test');
+    await setEditorMarkdown(page, '# Duration Test');
     await expect(page.locator('#duration')).toContainText('ms', { timeout: 5000 });
   });
 
   test('Ctrl+S triggers immediate render', async ({ page }) => {
     await page.goto(server.url);
-    const editor = page.locator('#editor');
 
-    // Fill then immediately Ctrl+S (bypasses debounce)
-    await editor.fill('## Ctrl+S test');
-    await editor.press('Control+s');
+    await setEditorMarkdown(page, '## Ctrl+S test');
+    await pressSave(page);
 
     const frame = previewFrame(page);
     await expect(frame.locator('h2')).toContainText('Ctrl+S test', {
@@ -136,15 +127,13 @@ test.describe('preview E2E', () => {
 
   test('rapid typing triggers one render after debounce', async ({ page }) => {
     await page.goto(server.url);
-    const editor = page.locator('#editor');
 
-    // Type characters rapidly (simulates fast typing)
-    await editor.fill('');
+    await setEditorMarkdown(page, '');
+    await page.locator('#editor .cm-content').click();
     for (const ch of 'abcdefghij') {
-      await editor.press(ch);
+      await page.keyboard.press(ch);
     }
 
-    // After debounce, the final content should render
     const frame = previewFrame(page);
     await expect(frame.locator('body')).toContainText('abcdefghij', { timeout: 5000 });
   });
@@ -152,21 +141,19 @@ test.describe('preview E2E', () => {
   test('version tracking discards stale renders', async ({ page }) => {
     // Rapidly submit two different markdowns and verify final content wins
     await page.goto(server.url);
-    const editor = page.locator('#editor');
 
-    await editor.fill('# First');
+    await setEditorMarkdown(page, '# First');
     await page.waitForTimeout(100);
 
-    await editor.fill('# Second');
+    await setEditorMarkdown(page, '# Second');
     const frame = previewFrame(page);
     await expect(frame.locator('h1')).toContainText('Second', { timeout: 5000 });
   });
 
   test('renders links', async ({ page }) => {
     await page.goto(server.url);
-    const editor = page.locator('#editor');
 
-    await editor.fill('[Example](https://example.com)');
+    await setEditorMarkdown(page, '[Example](https://example.com)');
     const frame = previewFrame(page);
     const link = frame.locator('a');
     await expect(link).toContainText('Example', { timeout: 5000 });
@@ -175,9 +162,8 @@ test.describe('preview E2E', () => {
 
   test('renders blockquotes', async ({ page }) => {
     await page.goto(server.url);
-    const editor = page.locator('#editor');
 
-    await editor.fill('> This is a quotation.');
+    await setEditorMarkdown(page, '> This is a quotation.');
     const frame = previewFrame(page);
     await expect(frame.locator('blockquote')).toContainText('quotation', {
       timeout: 5000,
