@@ -6,28 +6,20 @@
 
 # Test info
 
-- Name: certification.spec.ts >> cert_003 keyboard input reaches real nvim buffer
-- Location: tests/certification.spec.ts:229:1
+- Name: certification.spec.ts >> cert_004 keyboard input updates Pandoc preview DOM
+- Location: tests/certification.spec.ts:284:1
 
 # Error details
 
 ```
-Error: Command failed: nvim --server /tmp/pandoc-nvim-preview/nvim.sock --remote-expr join(getline(1, "$"), "\n")
-E247: Failed to connect to '/tmp/pandoc-nvim-preview/nvim.sock': connection refused. Send expression failed.
+Error: Command failed: nvim --server /tmp/pandoc-nvim-preview/nvim.sock --remote-send :%d<CR>
+E247: Failed to connect to '/tmp/pandoc-nvim-preview/nvim.sock': connection refused. Send failed.
 
 ```
 
 # Test source
 
 ```ts
-  3   |   ChildProcess,
-  4   |   execFileSync,
-  5   |   execSync,
-  6   |   spawnSync,
-  7   | } from 'node:child_process';
-  8   | import { writeFileSync, mkdtempSync, readFileSync, existsSync, rmSync } from 'node:fs';
-  9   | import { join } from 'node:path';
-  10  | import { tmpdir } from 'node:os';
   11  | import { createServer } from 'node:net';
   12  | 
   13  | export function getFreePort(): Promise<number> {
@@ -120,8 +112,7 @@ E247: Failed to connect to '/tmp/pandoc-nvim-preview/nvim.sock': connection refu
   100 | }
   101 | 
   102 | export function nvimDirectRPC(socketPath: string, expr: string): string {
-> 103 |   const stdout = execFileSync('nvim', ['--server', socketPath, '--remote-expr', expr], {
-      |                  ^ Error: Command failed: nvim --server /tmp/pandoc-nvim-preview/nvim.sock --remote-expr join(getline(1, "$"), "\n")
+  103 |   const stdout = execFileSync('nvim', ['--server', socketPath, '--remote-expr', expr], {
   104 |     encoding: 'utf-8',
   105 |     timeout: 5000,
   106 |   });
@@ -129,7 +120,8 @@ E247: Failed to connect to '/tmp/pandoc-nvim-preview/nvim.sock': connection refu
   108 | }
   109 | 
   110 | export function nvimDirectSend(socketPath: string, keys: string): void {
-  111 |   execFileSync('nvim', ['--server', socketPath, '--remote-send', keys], {
+> 111 |   execFileSync('nvim', ['--server', socketPath, '--remote-send', keys], {
+      |   ^ Error: Command failed: nvim --server /tmp/pandoc-nvim-preview/nvim.sock --remote-send :%d<CR>
   112 |     timeout: 5000,
   113 |   });
   114 | }

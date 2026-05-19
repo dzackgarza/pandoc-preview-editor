@@ -6,13 +6,13 @@
 
 # Test info
 
-- Name: certification.spec.ts >> cert_002 initial file renders in preview before typing
-- Location: tests/certification.spec.ts:131:1
+- Name: certification.spec.ts >> cert_001 startup — real nvim (not headless), real browser, real file
+- Location: tests/certification.spec.ts:50:1
 
 # Error details
 
 ```
-Error: nvim must be ready via socket
+Error: socket must exist at /tmp/pandoc-nvim-preview/nvim.sock
 
 expect(received).toBe(expected) // Object.is equality
 
@@ -23,6 +23,63 @@ Received: false
 # Test source
 
 ```ts
+  1   | import { test, expect } from '@playwright/test';
+  2   | import {
+  3   |   seedTempFile,
+  4   |   readFile,
+  5   |   launchServer,
+  6   |   killServer,
+  7   |   nvimDirectRPC,
+  8   |   nvimDirectSend,
+  9   |   nvimDirectQuit,
+  10  |   pandocRender,
+  11  |   getFreePort,
+  12  |   cleanServerArtifacts,
+  13  |   ServerInstance,
+  14  | } from './helpers';
+  15  | import {
+  16  |   TraceContext,
+  17  |   traceHas,
+  18  |   traceOrder,
+  19  |   traceNoEvent,
+  20  |   sha256short,
+  21  |   traceEventsOf,
+  22  |   recordBufferRead,
+  23  |   recordRenderSuccess,
+  24  |   recordPreviewUpdated,
+  25  |   recordSaveStart,
+  26  |   recordSaveSuccess,
+  27  |   assertTraceVersionOrder,
+  28  |   assertSaveInvariant,
+  29  | } from './trace';
+  30  | import { execFileSync, spawn, spawnSync } from 'node:child_process';
+  31  | import { writeFileSync, mkdtempSync, existsSync } from 'node:fs';
+  32  | import { tmpdir } from 'node:os';
+  33  | import { join } from 'node:path';
+  34  | 
+  35  | // Each test gets its own TraceContext, ServerInstance, temp file, port
+  36  | 
+  37  | // ============================================================
+  38  | // cert_001: startup with real nvim, real browser, real file
+  39  | // ============================================================
+  40  | 
+  41  | let server001: ServerInstance;
+  42  | 
+  43  | test.afterAll(async () => {
+  44  |   if (server001) {
+  45  |     await killServer(server001);
+  46  |     cleanServerArtifacts(server001);
+  47  |   }
+  48  | });
+  49  | 
+  50  | test('cert_001 startup — real nvim (not headless), real browser, real file', async ({
+  51  |   page,
+  52  | }) => {
+  53  |   const trace = new TraceContext('cert_001');
+  54  |   trace.record({ event: 'cert.start', test: 'cert_001' });
+  55  | 
+  56  |   const SEED = '# Startup Sentinel\n\nInitial body.\n';
+  57  |   const file = seedTempFile('c001', SEED);
   58  |   trace.writeInitialFile(file, SEED);
   59  |   trace.record({ event: 'app.start', file, test: 'cert_001' });
   60  | 
@@ -59,7 +116,8 @@ Received: false
   91  |   expect(
   92  |     existsSync(server001.socketPath),
   93  |     `socket must exist at ${server001.socketPath}`,
-  94  |   ).toBe(true);
+> 94  |   ).toBe(true);
+      |     ^ Error: socket must exist at /tmp/pandoc-nvim-preview/nvim.sock
   95  |   const rpcOut = nvimDirectRPC(server001.socketPath, '1');
   96  |   expect(rpcOut, 'nvim socket must answer remote-expr').toBe('1');
   97  |   trace.record({ event: 'nvim.ready.success', socket: server001.socketPath });
@@ -123,8 +181,7 @@ Received: false
   155 |     } catch {}
   156 |     await new Promise((r) => setTimeout(r, 250));
   157 |   }
-> 158 |   expect(nvimReady, 'nvim must be ready via socket').toBe(true);
-      |                                                      ^ Error: nvim must be ready via socket
+  158 |   expect(nvimReady, 'nvim must be ready via socket').toBe(true);
   159 |   trace.record({ event: 'nvim.ready.success', socket: server002.socketPath });
   160 | 
   161 |   // Give nvim a moment to actually load the file buffer
@@ -161,68 +218,4 @@ Received: false
   192 |     'INITIAL_PREVIEW_SENTINEL',
   193 |   );
   194 | 
-  195 |   // Get body text and record preview update with version link
-  196 |   const body = previewFrame.locator('body').first();
-  197 |   const bodyText = await body.textContent();
-  198 |   trace.recordPreviewUpdated(sha256short(bodyText || ''));
-  199 | 
-  200 |   // Assert math element exists
-  201 |   const mathEl = previewFrame.locator('span.math, .MathJax_Preview, .math').first();
-  202 |   const mathExists = await mathEl.count();
-  203 |   trace.record({ event: 'preview.dom.math', elementCount: mathExists });
-  204 |   expect(mathExists, 'preview must contain math-rendered element').toBeGreaterThan(0);
-  205 | 
-  206 |   // Enforce trace ordering
-  207 |   assertTraceVersionOrder(trace, expect, 'cert_002');
-  208 | 
-  209 |   // Artifacts
-  210 |   await page.screenshot({ path: trace.artifactPath('screenshot.png') });
-  211 |   trace.writePreviewHtml(pandocResult.stdout);
-  212 | 
-  213 |   trace.record({ event: 'cert.pass', test: 'cert_002' });
-  214 | });
-  215 | 
-  216 | // ============================================================
-  217 | // cert_003: keyboard input reaches real nvim buffer
-  218 | // ============================================================
-  219 | 
-  220 | let server003: ServerInstance;
-  221 | 
-  222 | test.afterAll(async () => {
-  223 |   if (server003) {
-  224 |     await killServer(server003);
-  225 |     cleanServerArtifacts(server003);
-  226 |   }
-  227 | });
-  228 | 
-  229 | test('cert_003 keyboard input reaches real nvim buffer', async ({ page }) => {
-  230 |   const trace = new TraceContext('cert_003');
-  231 |   trace.record({ event: 'cert.start', test: 'cert_003' });
-  232 | 
-  233 |   const SEED = '# Type Test\n\n';
-  234 |   const file = seedTempFile('c003', SEED);
-  235 |   trace.writeInitialFile(file, SEED);
-  236 | 
-  237 |   server003 = await launchServer(file);
-  238 |   trace.record({ event: 'server.started', port: server003.port });
-  239 | 
-  240 |   await page.goto(server003.url);
-  241 |   await page.waitForSelector('[data-testid="terminal"]', { timeout: 15000 });
-  242 |   await page.waitForTimeout(1500);
-  243 |   trace.record({ event: 'browser.loaded' });
-  244 | 
-  245 |   // Focus terminal and type through xterm.js
-  246 |   await page.locator('[data-testid="terminal"]').click();
-  247 |   trace.record({ event: 'terminal.focused' });
-  248 | 
-  249 |   await page.keyboard.type('iKEYBOARD_TO_NVIM_SENTINEL_CHARLIE');
-  250 |   trace.record({
-  251 |     event: 'browser.keyboard.sent',
-  252 |     text: 'iKEYBOARD_TO_NVIM_SENTINEL_CHARLIE',
-  253 |   });
-  254 |   await page.keyboard.press('Escape');
-  255 |   await page.waitForTimeout(1000);
-  256 | 
-  257 |   // Query real nvim socket independently — NOT via server API
-  258 |   const nvimBuf = nvimDirectRPC(server003.socketPath, 'join(getline(1, "$"), "\\n")');
 ```
