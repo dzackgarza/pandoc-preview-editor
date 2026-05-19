@@ -1,0 +1,19 @@
+[render]
+# Full-document Pandoc preview is eventually consistent. Debounce avoids
+# compiling incomplete math blocks and coalesces rapid editing bursts.
+debounce_ms = 750
+
+# Slow filters, citations, cross-reference passes, and external tools can take seconds.
+timeout_ms = 30000
+
+[pandoc]
+command = "pandoc"
+args = [
+  "-f",
+  "markdown+tex_math_dollars+citations",
+  "-t",
+  "html",
+  "--standalone",
+  "--citeproc",
+  "--mathjax",
+]

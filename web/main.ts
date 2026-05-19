@@ -46,6 +46,14 @@ function connect(): WebSocket {
         writeToTerminal(msg.data);
       } else if (msg.type === 'preview-update') {
         updatePreview(msg.html);
+        if (typeof msg.renderTimeMs === 'number') {
+          setStatus(`rendered ${msg.seq ?? ''} (${msg.renderTimeMs}ms)`);
+        }
+      } else if (msg.type === 'preview-status') {
+        if (msg.state === 'queued') setStatus(`queued render ${msg.seq}`);
+        else if (msg.state === 'rendering') setStatus(`rendering ${msg.seq}...`);
+        else if (msg.state === 'skipped') setStatus(`skipped unchanged ${msg.seq}`);
+        else if (msg.state === 'idle') setStatus('connected');
       }
     } catch {
       // ignore malformed messages

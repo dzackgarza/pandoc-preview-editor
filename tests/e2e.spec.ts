@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   launchServer,
   killServer,
@@ -14,6 +16,102 @@ import { pngStats } from './png-stats.js';
 const FIXTURE = 'tests/fixtures/test-doc.md';
 
 let server: ServerInstance;
+
+interface RenderStatus {
+  completed: number;
+  completedSeq: number | null;
+  inFlight: boolean;
+  skippedUnchanged: number;
+  started: number;
+}
+
+test('slow pandoc renders coalesce to first then latest and skip unchanged', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pnp-render-queue-'));
+  const file = join(dir, 'doc.md');
+  const filter = join(dir, 'slow-log.lua');
+  const log = join(dir, 'render.log');
+  const config = join(dir, 'pandoc-preview.toml');
+  const previousLogEnv = process.env.PANDOC_PREVIEW_TEST_LOG;
+
+  writeFileSync(file, '# Initial\n\nBody.\n', 'utf-8');
+  writeFileSync(
+    filter,
+    [
+      'function Pandoc(doc)',
+      '  local text = pandoc.utils.stringify(doc)',
+      '  local marker = string.match(text, "FIFO_FIRST") or string.match(text, "LATEST_%d+") or text',
+      '  local log = os.getenv("PANDOC_PREVIEW_TEST_LOG")',
+      '  local f = io.open(log, "a")',
+      '  f:write(marker .. "\\n")',
+      '  f:close()',
+      '  os.execute("sleep 0.4")',
+      '  return doc',
+      'end',
+      '',
+    ].join('\n'),
+    'utf-8',
+  );
+  chmodSync(filter, 0o755);
+  writeFileSync(
+    config,
+    [
+      '[render]',
+      'debounce_ms = 50',
+      'timeout_ms = 10000',
+      '',
+      '[pandoc]',
+      'command = "pandoc"',
+      'args = [',
+      '  "-f",',
+      '  "markdown+tex_math_dollars+citations",',
+      '  "-t",',
+      '  "html",',
+      '  "--standalone",',
+      '  "--citeproc",',
+      '  "--mathjax",',
+      '  "--lua-filter",',
+      `  "${tomlString(filter)}",`,
+      ']',
+      '',
+    ].join('\n'),
+    'utf-8',
+  );
+
+  process.env.PANDOC_PREVIEW_TEST_LOG = log;
+  server = await launchServer(file, { configPath: config });
+  try {
+    await postBuffer(server.url, '# FIFO_FIRST\n\nThe first render starts.\n');
+
+    await expect
+      .poll(() => renderStatus(server.url), { timeout: 5000 })
+      .toMatchObject({ inFlight: true, started: 1 });
+
+    for (let i = 2; i <= 10; i++) {
+      await postBuffer(server.url, `# LATEST_${i}\n\nThe latest state is ${i}.\n`);
+    }
+
+    await expect
+      .poll(() => renderStatus(server.url), { timeout: 15000 })
+      .toMatchObject({ completed: 2, completedSeq: 10, inFlight: false });
+
+    expect(readLogLines(log)).toEqual(['FIFO_FIRST', 'LATEST_10']);
+
+    await postBuffer(server.url, '# LATEST_10\n\nThe latest state is 10.\n');
+
+    await expect
+      .poll(() => renderStatus(server.url), { timeout: 5000 })
+      .toMatchObject({ completed: 2, skippedUnchanged: 1 });
+
+    expect(readLogLines(log)).toEqual(['FIFO_FIRST', 'LATEST_10']);
+  } finally {
+    if (previousLogEnv === undefined) {
+      delete process.env.PANDOC_PREVIEW_TEST_LOG;
+    } else {
+      process.env.PANDOC_PREVIEW_TEST_LOG = previousLogEnv;
+    }
+    await killServer(server);
+  }
+});
 
 // Terminal pane visibly paints nvim content without requiring keystrokes
 test('terminal pane visibly paints nvim on initial load', async ({
@@ -307,3 +405,26 @@ test('certification uses production runtime only', async ({ page }) => {
     await killServer(server);
   }
 });
+
+async function postBuffer(url: string, markdown: string): Promise<void> {
+  const res = await fetch(`${url}/api/buffer-update`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: markdown,
+  });
+  expect(res.status).toBe(202);
+}
+
+async function renderStatus(url: string): Promise<RenderStatus> {
+  const res = await fetch(`${url}/api/render-status`);
+  expect(res.status).toBe(200);
+  return (await res.json()) as RenderStatus;
+}
+
+function readLogLines(path: string): string[] {
+  return readFileSync(path, 'utf-8').trim().split('\n').filter(Boolean);
+}
+
+function tomlString(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}

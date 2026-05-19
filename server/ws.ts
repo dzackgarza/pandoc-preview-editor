@@ -3,7 +3,21 @@ import type { Server } from 'node:http';
 
 export type ServerMessage =
   | { type: 'pty-output'; data: string }
-  | { type: 'preview-update'; html: string };
+  | {
+      type: 'preview-update';
+      html: string;
+      seq?: number;
+      sourceHash?: string;
+      renderTimeMs?: number;
+      ok?: boolean;
+      skippedPending?: boolean;
+    }
+  | {
+      type: 'preview-status';
+      state: 'queued' | 'rendering' | 'skipped' | 'idle';
+      seq?: number;
+      pendingSeq?: number | null;
+    };
 
 export type ClientMessage = { type: 'pty-input'; data: string };
 

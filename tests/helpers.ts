@@ -37,6 +37,7 @@ export interface ServerInstance {
 
 export interface LaunchServerOptions {
   port?: number;
+  configPath?: string;
 }
 
 export async function launchServer(
@@ -51,7 +52,15 @@ export async function launchServer(
 
   const proc = spawn(
     'npx',
-    ['tsx', 'server/cli.ts', absFilePath, '--no-open', '--port', String(port)],
+    [
+      'tsx',
+      'server/cli.ts',
+      absFilePath,
+      '--no-open',
+      '--port',
+      String(port),
+      ...(options.configPath ? ['--config', options.configPath] : []),
+    ],
     {
       cwd: join(import.meta.dirname, '..'),
       env: { ...process.env, NO_OPEN: '1' },

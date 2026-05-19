@@ -1,49 +1,76 @@
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 
 export interface RenderOptions {
-  bibliography?: string;
-  csl?: string;
-  katex?: boolean;
+  command: string;
+  args: string[];
+  timeoutMs: number;
 }
 
-export function renderMarkdown(markdown: string, options: RenderOptions = {}): string {
-  const args = [
-    '-f',
-    'markdown+tex_math_dollars+citations',
-    '-t',
-    'html',
-    '--standalone',
-    '--citeproc',
-  ];
+export interface RenderResult {
+  html: string;
+  durationMs: number;
+  ok: boolean;
+  stderr: string;
+}
 
-  if (options.katex) {
-    args.push('--katex');
-  } else {
-    args.push('--mathjax');
-  }
+export function renderMarkdown(
+  markdown: string,
+  options: RenderOptions,
+): Promise<RenderResult> {
+  const startedAt = performance.now();
 
-  if (options.bibliography) {
-    args.push('--bibliography', options.bibliography);
-  }
+  return new Promise((resolve) => {
+    const child = spawn(options.command, options.args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    let settled = false;
 
-  if (options.csl) {
-    args.push('--csl', options.csl);
-  }
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill('SIGTERM');
+      const message = `pandoc timed out after ${options.timeoutMs}ms`;
+      resolve(renderError(message, startedAt));
+    }, options.timeoutMs);
 
-  const result = spawnSync('pandoc', args, {
-    input: markdown,
-    encoding: 'utf-8',
-    timeout: 5000,
-    maxBuffer: 10 * 1024 * 1024,
+    child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
+    child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
+    child.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      resolve(renderError(err.message, startedAt));
+    });
+    child.on('close', (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+
+      const stderrText = Buffer.concat(stderr).toString('utf-8');
+      if (code !== 0) {
+        resolve(renderError(stderrText || `pandoc exited with status ${code}`, startedAt));
+        return;
+      }
+
+      resolve({
+        html: Buffer.concat(stdout).toString('utf-8'),
+        durationMs: Math.round(performance.now() - startedAt),
+        ok: true,
+        stderr: stderrText,
+      });
+    });
+
+    child.stdin.end(markdown);
   });
+}
 
-  if (result.error) {
-    return `<!-- pandoc error: ${result.error.message} -->`;
-  }
-
-  if (result.status !== 0) {
-    return `<!-- pandoc error:\n${result.stderr}\n-->`;
-  }
-
-  return result.stdout;
+function renderError(message: string, startedAt: number): RenderResult {
+  return {
+    html: `<!-- pandoc error:\n${message}\n-->`,
+    durationMs: Math.round(performance.now() - startedAt),
+    ok: false,
+    stderr: message,
+  };
 }

@@ -5,6 +5,7 @@ local port = vim.env.PANDOC_PREVIEW_PORT
 if not port then return end
 
 port = tonumber(port)
+local debounce_ms = tonumber(vim.env.PANDOC_PREVIEW_DEBOUNCE_MS) or 750
 
 local function send_buffer_update()
   local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
@@ -34,7 +35,7 @@ local timer = vim.loop.new_timer()
 vim.api.nvim_create_autocmd({ 'TextChanged', 'TextChangedI' }, {
   callback = function()
     timer:stop()
-    timer:start(200, 0, vim.schedule_wrap(send_buffer_update))
+    timer:start(debounce_ms, 0, vim.schedule_wrap(send_buffer_update))
   end,
 })
 

@@ -33,7 +33,8 @@ export function createTerminal(
       brightCyan: '#94e2d5',
       brightWhite: '#a6adc8',
     },
-    fontFamily: "'JetBrainsMono Nerd Font Mono', 'JetBrainsMono Nerd Font', 'FiraCode Nerd Font', 'monospace', 'Menlo', 'Monaco', 'Courier New'",
+    fontFamily:
+      "'JetBrainsMono Nerd Font Mono', 'JetBrainsMono Nerd Font', 'FiraCode Nerd Font', 'monospace', 'Menlo', 'Monaco', 'Courier New'",
     fontSize: 14,
     allowProposedApi: true,
   });
@@ -42,6 +43,7 @@ export function createTerminal(
   terminal.loadAddon(fitAddon);
   terminal.open(container);
   fitAddon.fit();
+  (window as any).term = terminal;
 
   terminal.onData(onInput);
 

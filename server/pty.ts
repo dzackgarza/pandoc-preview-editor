@@ -12,13 +12,19 @@ export interface NvimPTY {
   kill: () => void;
 }
 
-export function spawnNvim(filePath: string, socketPath: string, port: number): NvimPTY {
+export function spawnNvim(
+  filePath: string,
+  socketPath: string,
+  port: number,
+  cols = 80,
+  rows = 24,
+): NvimPTY {
   const [nvimCmd, ...nvimArgs] = process.env.NVIM ? [process.env.NVIM] : ['nvim'];
 
   const ptyProcess = pty.spawn(nvimCmd, ['--listen', socketPath, filePath], {
     name: 'xterm-256color',
-    cols: 80,
-    rows: 24,
+    cols,
+    rows,
     cwd: process.cwd(),
     env: {
       ...process.env,
