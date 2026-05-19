@@ -112,21 +112,9 @@ export async function startServer(config: AppConfig) {
     res.status(200).end();
   });
 
-  // WebSocket: handle client messages + send initial preview
+  // WebSocket: handle client messages
+  // Initial preview is sent by nvim plugin after 100ms
   wss.on('connection', async (ws) => {
-    // Send initial preview update on connection
-    try {
-      const buffer = await getBuffer(SOCKET_PATH);
-      const html = renderMarkdown(buffer, {
-        bibliography: config.bibliography,
-        csl: config.csl,
-        katex: config.katex,
-      });
-      ws.send(JSON.stringify({ type: 'preview-update', html }));
-    } catch (err: any) {
-      console.error('[pandoc-nvim-preview] initial preview error:', err.message);
-    }
-
     ws.on('message', (raw) => {
       try {
         const msg = JSON.parse(raw.toString()) as {
