@@ -251,9 +251,7 @@ export function App() {
           {
             id: crypto.randomUUID(),
             title: pluginMeta?.name ?? pluginId,
-            body: data.stderr
-              ? `stderr: ${data.stderr.slice(0, 200)}`
-              : 'completed successfully',
+            body: data.stderr ? `stderr: ${data.stderr}` : 'completed successfully',
             variant: 'success' as const,
             createdAt: Date.now(),
           },
