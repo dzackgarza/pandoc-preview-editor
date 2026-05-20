@@ -7,9 +7,23 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  findPlugin,
+  loadBundledPlugins,
+  pluginMetadata,
+  runPlugin,
+} from './plugins.js';
 import { renderMarkdown } from './render.js';
+import {
+  compareEntries,
+  isTextLikeFile,
+  resolveInside,
+  shouldIgnore,
+  toClientPath,
+  type FileTreeEntry,
+} from './workspace.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SOURCE_CLIENT_DIR = resolve(__dirname, '..', 'client');
@@ -26,20 +40,14 @@ export interface ServerConfig {
   workspaceRoot?: string;
 }
 
-const DEFAULT_ARGS = [
-  '-f',
-  'markdown+tex_math_dollars+citations',
-  '-t',
-  'html',
-  '--standalone',
-  '--mathjax',
-];
-
 export function createApp(config: ServerConfig) {
   const app = express();
   app.use(express.json({ limit: '50mb' }));
   const clientDir = getClientDir();
-  const workspaceRoot = resolve(config.workspaceRoot ?? dirname(config.file ?? process.cwd()));
+  const workspaceRoot = resolve(
+    config.workspaceRoot ?? dirname(config.file ?? process.cwd()),
+  );
+  const plugins = loadBundledPlugins();
 
   // Serve index.html with inlined initial content if a file was specified
   // (must be before express.static to intercept / before it serves index.html raw)
@@ -183,6 +191,46 @@ export function createApp(config: ServerConfig) {
     }
   });
 
+  app.get('/api/plugins', (_req, res) => {
+    res.json({ plugins: plugins.map(pluginMetadata) });
+  });
+
+  app.post('/api/plugins/:id/run', async (req, res) => {
+    const plugin = findPlugin(plugins, req.params.id);
+    if (!plugin) {
+      res.status(404).json({ error: 'plugin not found' });
+      return;
+    }
+
+    const { markdown, path } = req.body as { markdown?: unknown; path?: unknown };
+    if (typeof markdown !== 'string') {
+      res.status(400).json({ error: 'markdown field is required' });
+      return;
+    }
+
+    const requestedPath = typeof path === 'string' ? path : config.file;
+    if (!requestedPath) {
+      res.status(400).json({ error: 'no file path configured or provided' });
+      return;
+    }
+
+    try {
+      const targetPath = resolveInside(workspaceRoot, requestedPath);
+      const targetStat = statSync(targetPath);
+      if (!targetStat.isFile()) {
+        res.status(400).json({ error: 'path must reference a file' });
+        return;
+      }
+
+      writeFileSync(targetPath, markdown, 'utf-8');
+      const result = await runPlugin(plugin, targetPath, config.timeoutMs);
+      res.status(result.ok ? 200 : 500).json(result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(400).json({ error: message });
+    }
+  });
+
   return app;
 }
 
@@ -194,72 +242,6 @@ export function startServer(config: ServerConfig) {
   });
 }
 
-// Run directly
-const isMain =
-  process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
-if (isMain) {
-  const port = parseInt(process.env.PORT ?? '3000', 10);
-  startServer({
-    pandocCommand: 'pandoc',
-    pandocArgs: DEFAULT_ARGS,
-    timeoutMs: 30000,
-    port,
-    host: '127.0.0.1',
-    workspaceRoot: process.cwd(),
-  });
-}
-
-type FileTreeEntry = {
-  name: string;
-  path: string;
-  kind: 'directory' | 'file';
-};
-
-const IGNORE_NAMES = new Set(['.git', 'node_modules', 'dist', 'build', 'coverage']);
-const TEXT_EXTENSIONS = new Set([
-  '.bib',
-  '.css',
-  '.csv',
-  '.htm',
-  '.html',
-  '.js',
-  '.json',
-  '.jsx',
-  '.log',
-  '.lua',
-  '.md',
-  '.mdown',
-  '.markdown',
-  '.mjs',
-  '.rst',
-  '.sh',
-  '.tex',
-  '.toml',
-  '.ts',
-  '.tsx',
-  '.txt',
-  '.yaml',
-  '.yml',
-]);
-const BINARY_EXTENSIONS = new Set([
-  '.7z',
-  '.avif',
-  '.bin',
-  '.exe',
-  '.gif',
-  '.gz',
-  '.ico',
-  '.jpeg',
-  '.jpg',
-  '.pdf',
-  '.png',
-  '.tar',
-  '.tgz',
-  '.webp',
-  '.zip',
-  '.zst',
-]);
-
 function getClientDir() {
   if (existsSync(resolve(BUILT_CLIENT_DIR, 'index.html'))) {
     return BUILT_CLIENT_DIR;
@@ -269,46 +251,4 @@ function getClientDir() {
 
 function safeJson(value: unknown) {
   return JSON.stringify(value).replace(/<\//g, '<\\/');
-}
-
-function resolveInside(root: string, pathFromClient: string) {
-  const target = resolve(root, pathFromClient || '.');
-  const rel = relative(root, target);
-  if (rel.startsWith('..') || isAbsolute(rel)) {
-    throw new Error('path escapes workspace root');
-  }
-  return target;
-}
-
-function toClientPath(root: string, absolutePath: string) {
-  return relative(root, absolutePath).split(sep).join('/');
-}
-
-function shouldIgnore(root: string, absolutePath: string) {
-  const rel = toClientPath(root, absolutePath);
-  if (rel === 'archive/test-results' || rel.startsWith('archive/test-results/')) {
-    return true;
-  }
-  return rel.split('/').some((part) => IGNORE_NAMES.has(part));
-}
-
-function isTextLikeFile(absolutePath: string) {
-  const name = absolutePath.split(sep).at(-1)?.toLowerCase() ?? '';
-  if (name === 'justfile') return true;
-
-  const ext = extname(name);
-  if (BINARY_EXTENSIONS.has(ext)) return false;
-  if (TEXT_EXTENSIONS.has(ext)) return true;
-
-  try {
-    const sample = readFileSync(absolutePath).subarray(0, 1024);
-    return !sample.includes(0);
-  } catch {
-    return false;
-  }
-}
-
-function compareEntries(a: FileTreeEntry, b: FileTreeEntry) {
-  if (a.kind !== b.kind) return a.kind === 'directory' ? -1 : 1;
-  return a.name.localeCompare(b.name);
 }

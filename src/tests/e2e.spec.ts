@@ -10,6 +10,9 @@ function previewFrame(page: import('@playwright/test').Page) {
 }
 
 test.describe('preview E2E', () => {
+  let pageErrors: Error[] = [];
+  let consoleErrors: string[] = [];
+
   test.beforeAll(async () => {
     server = await launchServer();
   });
@@ -22,6 +25,25 @@ test.describe('preview E2E', () => {
       if (stderr) console.log('\n=== SERVER STDERR ===\n' + stderr);
       await killServer(server);
     }
+  });
+
+  test.beforeEach(async ({ page }) => {
+    pageErrors = [];
+    consoleErrors = [];
+    page.on('pageerror', (err) => pageErrors.push(err));
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') {
+        consoleErrors.push(`[${msg.type()}] ${msg.text()}`);
+      }
+    });
+  });
+
+  test.afterEach(async () => {
+    expect(
+      pageErrors,
+      `page errors: ${pageErrors.map((e) => e.message).join('; ')}`,
+    ).toEqual([]);
+    expect(consoleErrors, `console errors: ${consoleErrors.join('; ')}`).toEqual([]);
   });
 
   test('page loads with CodeMirror editor and preview iframe', async ({ page }) => {
@@ -74,7 +96,9 @@ test.describe('preview E2E', () => {
 
     await setEditorMarkdown(page, 'The formula $E=mc^2$ is famous.');
     const frame = previewFrame(page);
-    await expect(frame.locator('.math')).toBeAttached({ timeout: 5000 });
+    // Verify MathJax actually rendered (mjx-container), not just static pandoc span
+    await expect(frame.locator('mjx-container')).toBeAttached({ timeout: 10000 });
+    await expect(frame.locator('mjx-container').first()).toContainText('E');
   });
 
   test('renders code blocks', async ({ page }) => {

@@ -1,0 +1,17 @@
+id = "export-html"
+name = "Export to HTML"
+description = "Convert the current markdown file to standalone HTML with Pandoc"
+category = "Export"
+command = "pandoc"
+args = [
+  "${FILE}",
+  "-f",
+  "markdown+tex_math_dollars+citations",
+  "-t",
+  "html",
+  "--standalone",
+  "--mathjax",
+  "-o",
+  "${FILE_DIR}/${FILE_STEM}.html",
+]
+output = "${FILE_DIR}/${FILE_STEM}.html"

@@ -5,17 +5,33 @@ status: active
 tags: [pandoc-preview, feature-evaluation, design-philosophy]
 ---
 
-Every feature MUST be evaluated against two questions, in order:
+Evaluate each feature against the current shipped model:
 
-1. **Can nvim natively do this?** — Does the feature already exist as an nvim plugin, built-in command, or statusline element?
-2. **Does this need to be in the glued GUI?** — If nvim handles it, the GUI should NOT build a parallel system.
+- The default app is a browser-based plain text editor with live Pandoc preview.
+- Firenvim may take over the editor textarea, but it only syncs text with that textarea.
+- The app owns file-system interaction: opening files, creating files, saving textarea
+  content to disk, listing the workspace, and passing file paths to server-side tools.
+- Nvim remains relevant for editing behavior inside the textarea, not for app file
+  ownership or server state.
 
 ### How to Apply
 
-- **Define the feature by user outcome, not by GUI widget.** Wrong: "Display buffer modified status in the GUI." Right: "The user knows when the buffer != disk." (nvim-airline handles this.)
+- **Delete obviated feature cards from active plans.** If Firenvim, nvim, the textarea,
+  or Pandoc already handles the full user outcome, the app does not need that feature.
+  Do not preserve it as a candidate, and do not reframe it as nearby app work.
 
-- **Extend the existing protocol, don't build parallel systems.** The app has a bidirectional TCP connection to nvim. If the GUI needs editor state, extend that protocol — don't poll disk, don't add file-watchers, don't build state tracking parallel to nvim's.
+- **Define the feature by user outcome, not by GUI widget.** "The user saves the current
+  document to disk" belongs to the app because Firenvim does not connect the textarea to
+  a project file.
 
-- **Research before claiming.** "Can This Already Be Done?" sections require actual research — verify nvim plugins, check their docs, get real star counts. Fabricated claims short-circuit the entire evaluation process.
+- **Use nvim research only for editor behavior.** Motions, text objects, completion,
+  snippets, and buffer-local editing affordances can be delegated to Firenvim/nvim.
+  File open/save, workspace browsing, render timing, Pandoc configuration, and external
+  command execution are app concerns.
 
-- **Flag for human decision, don't unilaterally skip.** If nvim handles the outcome, present the research and flag for human decision. The card verdict must be "Research → Human Decision" unless the decision is truly trivial.
+- **Avoid parallel ownership.** The canonical document text is the textarea value. Save,
+  render, export, and plugin actions must read that value or the currently selected file
+  tracked by the app.
+
+- **Research before claiming.** "Can This Already Be Done?" sections require actual
+  evidence. Do not use old nvim/TCP assumptions as evidence for the Firenvim app.

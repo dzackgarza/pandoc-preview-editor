@@ -3,101 +3,112 @@
 Every proposed feature for pandoc-preview must pass through this framework before being
 added to a card.
 
-## The Five Questions
+## Current Architecture Assumption
 
-### 1. What is the user outcome?
+The shipped app is a browser-based plain text editor plus live Pandoc preview. Firenvim
+can edit the textarea, but Firenvim does not give the app a project file, file picker,
+workspace tree, or save target. It synchronizes text between nvim and the textarea.
+
+Therefore:
+
+- The textarea value is the canonical in-app document text.
+- The app owns file-system operations: open, new, save, workspace listing, selected-file
+  tracking, and file-path delivery to server-side tools.
+- Nvim/Firenvim owns editor mechanics inside the textarea: modal editing, motions,
+  mappings, snippets, completion, and other text-editing behavior.
+- Pandoc rendering, render status, templates, filters, exports, and command execution are
+  server/app concerns.
+
+## Questions
+
+### What is the user outcome?
 
 Define the feature by the outcome the user needs, not by the widget that delivers it.
 The outcome frames everything else.
 
-**Wrong**: "Display a warning indicator in the GUI when the buffer content differs from
-the on-disk file."
+**Wrong**: "Add an Explorer drawer."
 
-**Right**: "The user knows when the buffer != disk."
+**Right**: "The user can choose which project file the textarea edits and saves."
 
-### 2. Can nvim natively produce this outcome?
+### Is the outcome still needed?
 
-If nvim already handles the outcome, the real feature is **researching the nvim
-solution, documenting options, and flagging for human decision** — the card should NOT
-unilaterally decide to skip.
+The first decision is whether the new shipped model makes the feature unnecessary. If
+Firenvim, nvim, the browser textarea, or Pandoc already owns the complete user outcome,
+remove the card from the active feature set. Do not rewrite an obviated feature as a new
+candidate merely because the app has a nearby responsibility.
 
-Check:
-- Does a nvim plugin expose this?
-  (vim-airline, lightline, etc.)
-- Does a nvim built-in provide this?
-  (`:ls`, `b:changedtick`, statusline)
-- Does a terminal sequence communicate this?
-  (OSC sequences, statusline escapes, etc.)
+Obviated cards are not backlog items. They belong in git history, not in active plans.
 
-If yes: **Research the options, present them in the card, and flag for human decision.**
-Do not conclude "skip" unilaterally.
-The human decides between (a) relying on the nvim solution, (b) surfacing through the
-TCP protocol, or (c) implementing independently.
+### Which layer owns the remaining outcome?
 
-### 3. Does this need to be in the glued GUI?
+Use these ownership rules:
 
-"Glued GUI" = the Electron/Chrome window that displays pandoc output and connects to
-nvim via the TCP plugin.
+| Outcome | Owner | Reason |
+| --- | --- | --- |
+| Text editing behavior | Firenvim/nvim | Obviated as app work. Do not keep a feature card. |
+| Current document text | App textarea | Firenvim syncs text, not file identity. |
+| Open/new/save | App/server | The browser app must map textarea text to disk. |
+| Workspace file list | App/server | Firenvim does not expose a workspace tree to the app. |
+| Render timing/status | App/server | Pandoc runs in the preview server. |
+| Pandoc args/templates/filters | App/server | These configure the server render pipeline. |
+| Export/plugin commands | App/server | Commands need file paths and filesystem access. |
 
-Features belong in the GUI only if they:
-- Display server-side state that nvim cannot access (pandoc errors, render time, plugin
-  output)
-- Provide a UI affordance for a server operation (refresh, export)
-- Configure server behavior (pandoc command, template path)
-- Orchestrate actions across both nvim and server (workspace operations)
+### Can an existing tool already provide the owned layer?
 
-If the feature operates entirely within nvim's domain (saving, buffer status, file
-tree): **Research and document the nvim options, flag for human decision.**
+Research mature dependencies before building:
 
-### 4. How does it flow through the existing protocol?
+- For editor mechanics, check nvim built-ins and plugins.
+- For UI controls, prefer established React/Radix/CodeMirror patterns already in the app.
+- For rendering and document conversion, use Pandoc features rather than reimplementing
+  markdown, math, templates, or filters.
+- For filesystem access, keep it on the server side and constrain it to the workspace
+  root.
 
-Features must extend the existing nvim plugin TCP protocol wherever possible.
-Do not build parallel systems:
+### Does the app need a durable state model?
 
-- **No**: Polling `fs.stat()` on disk every 2 seconds
-- **No**: Separate HTTP endpoint for data that the nvim plugin has
-- **Yes**: Send `{ type: 'modified', value: true }` in the existing WebSocket message
-  alongside buffer content
+If a feature changes file identity, workspace root, save target, command config, or plugin
+execution, define the canonical server/client state before adding UI. Do not infer file
+identity from Firenvim buffers or temporary files.
 
-If the data already exists on the nvim side, extend the plugin to send it.
-Do not create a second data pipeline.
+Do not create a new app-owned feature from an old card unless the user outcome still
+exists after Firenvim/plain-text editing. A deleted nvim-plugin recommendation does not
+automatically become an app feature.
 
-### 5. Has this been researched?
+### Has this been researched?
 
-Before writing any "Can This Already Be Done?"
-section:
+Before writing any "Can This Already Be Done?" section:
 
-1. Search for nvim plugins that address the outcome
-2. Verify claims (star counts, features, availability) using `gh repo view`
-3. Cite the actual evidence, not a guess
-4. If the plugin ecosystem handles it, state that clearly
+- Check Firenvim behavior when the feature depends on textarea vs filesystem semantics.
+- Check current app code and tests for the existing owned surface.
+- Check library/tool docs for any dependency-specific behavior.
+- State gaps explicitly when evidence is incomplete.
 
 ## Decision Tree
 
 ```
 User outcome defined
-        │
-        ▼
-Can nvim natively do this?
-   YES ──► Research nvim options, document in card, flag for human decision.
-   NO ──► Does this need to be in the glued GUI?
-                │
-                ▼
-             YES ──► Can it flow through existing protocol?
-                          │
-                          ▼
-                       YES ──► Implement as protocol extension.
-                       NO ──► Flag for human decision: worth a new system?
-                               (almost always no for MVP)
-             NO ──► Flag for human decision: wrong layer? or pipedream?
+        |
+        v
+Is the complete outcome already handled by Firenvim, nvim, the textarea, or Pandoc?
+   YES ---> Delete the active card. It is obviated.
+   NO ----> Does it need file identity, filesystem access, render state, or commands?
+               |
+               v
+            YES ---> App/server owns it. Build on existing endpoints/state.
+            NO ----> Research whether an existing app dependency handles it cleanly.
 ```
 
 ## Examples
 
-| Feature | User Outcome | nvim Does It? | GUI Needed? | Verdict |
-| --- | --- | --- | --- | --- |
-| Buffer ≠ disk warning | User knows buffer != disk | YES (airline `[+]`, `b:changedtick`) | — | Research → human decision |
-| Last saved timestamp | User knows when file last saved | YES (statusline, `:w` message) | — | Research → human decision |
-| File tree | User navigates files | YES (nvim-tree, telescope) | — | Research → human decision |
-| Compilation time | User knows how long render took | NO (server has this data) | YES | Build in GUI |
-| Pandoc command config | User sets pandoc flags | NO (server uses this) | YES | Build in GUI |
+| Feature | User Outcome | Owner | Verdict |
+| --- | --- | --- | --- |
+| Save current document | Textarea content reaches disk | App/server | Already incorporated |
+| File tree | User chooses project file | App/server | Already incorporated as Explorer |
+| Last saved state | User knows textarea differs from disk | App/client | Keep status indicator |
+| Compilation time | User knows how long render took | App/server | Already incorporated |
+| Pandoc command config | User sets render pipeline | App/server | Candidate |
+| Manual refresh | User re-renders after external inputs change | App/server | Candidate |
+| Editor autosave plugin research | Editor writes its own buffer automatically | Firenvim/nvim | Obviated as app work; no active card |
+| Terminal shortcut shielding | Browser forwards terminal chords | Removed layer | Obviated; no active card |
+| Editor session restore | Editor restores buffers/layout | Firenvim/nvim | Obviated as app work; no active card |
+| Nvim motions/snippets | User edits text efficiently | Firenvim/nvim | Obviated as app work; no active card |

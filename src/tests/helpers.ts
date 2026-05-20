@@ -95,32 +95,3 @@ export async function killServer(instance: ServerInstance): Promise<void> {
     ),
   ]);
 }
-
-/** Direct pandoc render for layer-3 style tests */
-import { spawnSync } from 'node:child_process';
-
-export const PANDOC_ARGS = [
-  '-f',
-  'markdown+tex_math_dollars+citations',
-  '-t',
-  'html',
-  '--mathjax',
-];
-
-export function pandocRender(markdown: string): {
-  stdout: string;
-  stderr: string;
-  status: number | null;
-} {
-  const result = spawnSync('pandoc', PANDOC_ARGS, {
-    input: markdown,
-    encoding: 'utf-8',
-    timeout: 5000,
-    maxBuffer: 10 * 1024 * 1024,
-  });
-  return {
-    stdout: result.stdout?.trim() || '',
-    stderr: (result.stderr || '').trim(),
-    status: result.status ?? null,
-  };
-}

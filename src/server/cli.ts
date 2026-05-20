@@ -8,13 +8,6 @@ import { load } from 'js-toml';
 import { startServer, type ServerConfig } from './index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DEFAULT_ARGS = [
-  '-f',
-  'markdown+tex_math_dollars+citations',
-  '-t',
-  'html',
-  '--mathjax',
-];
 
 interface CliOptions {
   port?: string;
@@ -22,26 +15,33 @@ interface CliOptions {
   config?: string;
 }
 
-function loadConfig(
-  configPath: string | undefined,
-  cwd: string,
-): Partial<ServerConfig> {
+function loadConfig(configPath: string | undefined, cwd: string): ServerConfig | null {
   const candidates = configPath
     ? [resolve(cwd, configPath)]
     : [resolve(cwd, 'pandoc-preview.toml')];
 
   const found = candidates.find((p) => existsSync(p));
-  if (!found) return {};
+  if (!found) {
+    console.error('No pandoc-preview.toml found. Configuration is required.');
+    return null;
+  }
 
   const raw = load(readFileSync(found, 'utf-8')) as Record<string, unknown>;
   const pandoc = (raw.pandoc ?? {}) as Record<string, unknown>;
   const render = (raw.render ?? {}) as Record<string, unknown>;
 
-  const cfg: Partial<ServerConfig> = {};
-  if (typeof pandoc.command === 'string') cfg.pandocCommand = pandoc.command;
-  if (Array.isArray(pandoc.args)) cfg.pandocArgs = pandoc.args as string[];
-  if (typeof render.timeout_ms === 'number') cfg.timeoutMs = render.timeout_ms;
-  return cfg;
+  if (typeof pandoc.command !== 'string' || !Array.isArray(pandoc.args)) {
+    console.error('pandoc-preview.toml must specify [pandoc] command and args.');
+    return null;
+  }
+
+  return {
+    pandocCommand: pandoc.command as string,
+    pandocArgs: pandoc.args as string[],
+    timeoutMs: typeof render.timeout_ms === 'number' ? render.timeout_ms : 30000,
+    port: 3000,
+    host: '127.0.0.1',
+  };
 }
 
 const program = new Command();
@@ -55,9 +55,14 @@ program
   .option('-c, --config <path>', 'Config file path')
   .action((file: string | undefined, options: CliOptions) => {
     const cwd = process.cwd();
-    const configOverrides = loadConfig(options.config, cwd);
+    const cfg = loadConfig(options.config, cwd);
+    if (!cfg) {
+      process.exit(1);
+    }
 
-    // Determine file path and initial content
+    cfg.port = parseInt(options.port ?? '3000', 10);
+    cfg.host = options.host ?? '127.0.0.1';
+
     let fileContent: string | undefined;
     let absPath: string | undefined;
     if (file) {
@@ -68,7 +73,6 @@ program
         console.error(`Warning: could not read file ${absPath}: ${err}`);
       }
     } else {
-      // No file arg — create a default temp path so the client always has one
       const tmpDir = join(tmpdir(), 'pandoc-preview');
       mkdirSync(tmpDir, { recursive: true });
       absPath = join(tmpDir, `untitled-${randomUUID()}.md`);
@@ -76,11 +80,7 @@ program
     }
 
     const config: ServerConfig = {
-      pandocCommand: configOverrides.pandocCommand ?? 'pandoc',
-      pandocArgs: configOverrides.pandocArgs ?? DEFAULT_ARGS,
-      timeoutMs: configOverrides.timeoutMs ?? 30000,
-      port: parseInt(options.port ?? '3000', 10),
-      host: options.host ?? '127.0.0.1',
+      ...cfg,
       file: absPath,
       fileContent,
       workspaceRoot: file && absPath ? dirname(absPath) : cwd,

@@ -16,6 +16,7 @@ import {
   GripVertical,
   Loader2,
   PanelLeftOpen,
+  Plug,
   RefreshCcw,
   Save,
   XCircle,
@@ -27,6 +28,7 @@ import { basename, cn, lineCount } from './lib/utils.js';
 
 type RenderStatus = 'ready' | 'rendering' | 'error' | 'saved';
 type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
+type PluginState = 'idle' | 'running' | 'complete' | 'error';
 
 type FileEntry = {
   name: string;
@@ -38,6 +40,13 @@ type OpenFileResult = {
   path: string;
   absolutePath: string;
   content: string;
+};
+
+type PluginMetadata = {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
 };
 
 declare global {
@@ -68,6 +77,8 @@ export function App() {
   const [status, setStatus] = useState<RenderStatus>('ready');
   const [durationMs, setDurationMs] = useState<number | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [pluginState, setPluginState] = useState<PluginState>('idle');
+  const [plugins, setPlugins] = useState<PluginMetadata[]>([]);
   const [explorerOpen, setExplorerOpen] = useState(false);
   const renderVersion = useRef(0);
   const debounceTimer = useRef<number | null>(null);
@@ -76,6 +87,24 @@ export function App() {
   useEffect(() => {
     window.__PANDOC_PREVIEW_STATE__ = { markdown: markdownText, currentFile };
   }, [currentFile, markdownText]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/plugins')
+      .then((res) => {
+        if (!res.ok) throw new Error(`server returned ${res.status}`);
+        return res.json() as Promise<{ plugins?: PluginMetadata[] }>;
+      })
+      .then((data) => {
+        if (!cancelled) setPlugins(data.plugins ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setPluginState('error');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const clearRenderTimer = useCallback(() => {
     if (debounceTimer.current != null) {
@@ -176,6 +205,37 @@ export function App() {
     }
   }, [currentFile, markdownText, renderImmediate]);
 
+  const runPluginAction = useCallback(
+    async (pluginId: string) => {
+      setPluginState('running');
+      setSaveState('saving');
+
+      try {
+        const res = await fetch(`/api/plugins/${encodeURIComponent(pluginId)}/run`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ markdown: markdownText, path: currentFile }),
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          ok?: boolean;
+          error?: string;
+        };
+
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error ?? `server returned ${res.status}`);
+        }
+
+        setSaveState('saved');
+        setPluginState('complete');
+      } catch (err) {
+        setSaveState('error');
+        setPluginState('error');
+        setStatus('error');
+      }
+    },
+    [currentFile, markdownText],
+  );
+
   const createNewFile = useCallback(async () => {
     setSaveState('saving');
 
@@ -222,9 +282,11 @@ export function App() {
           explorerOpen={explorerOpen}
           onNewFile={createNewFile}
           onOpenExplorer={() => setExplorerOpen(true)}
+          onRunPlugin={runPluginAction}
           onResetSplit={resetSplit}
           onSave={saveCurrent}
           onToggleExplorer={() => setExplorerOpen((open) => !open)}
+          plugins={plugins}
         />
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <AnimatePresence initial={false}>
@@ -266,6 +328,7 @@ export function App() {
           currentFile={currentFile}
           durationMs={durationMs}
           lineCountValue={lineCount(markdownText)}
+          pluginState={pluginState}
           saveState={saveState}
           status={status}
         />
@@ -278,17 +341,23 @@ function TopMenuBar({
   explorerOpen,
   onNewFile,
   onOpenExplorer,
+  onRunPlugin,
   onResetSplit,
   onSave,
   onToggleExplorer,
+  plugins,
 }: {
   explorerOpen: boolean;
   onNewFile: () => void;
   onOpenExplorer: () => void;
+  onRunPlugin: (pluginId: string) => void;
   onResetSplit: () => void;
   onSave: () => void;
   onToggleExplorer: () => void;
+  plugins: PluginMetadata[];
 }) {
+  const pluginsByCategory = useMemo(() => groupPluginsByCategory(plugins), [plugins]);
+
   return (
     <div className="flex h-10 shrink-0 items-center border-b border-[#2b2f38] bg-[#20232b] px-2">
       <Menubar.Root className="flex items-center gap-1 text-sm text-[#d6d9df]">
@@ -329,6 +398,47 @@ function TopMenuBar({
                 <RefreshCcw className="h-4 w-4" />
                 Reset Split
               </MenuItem>
+            </Menubar.Content>
+          </Menubar.Portal>
+        </Menubar.Menu>
+        <Menubar.Menu>
+          <Menubar.Trigger className="rounded px-3 py-1.5 outline-none hover:bg-[#303541] focus:bg-[#303541] data-[state=open]:bg-[#303541]">
+            Plugin
+          </Menubar.Trigger>
+          <Menubar.Portal>
+            <Menubar.Content className="z-50 min-w-52 rounded border border-[#343946] bg-[#22262f] p-1 text-sm text-[#e7eaf0] shadow-xl">
+              {pluginsByCategory.length === 0 ? (
+                <Menubar.Item
+                  className="flex cursor-default select-none items-center gap-2 rounded px-2 py-1.5 text-[#788190] outline-none"
+                  disabled
+                >
+                  <Plug className="h-4 w-4" />
+                  No plugins
+                </Menubar.Item>
+              ) : (
+                pluginsByCategory.map(({ category, items }) => (
+                  <Menubar.Sub key={category}>
+                    <Menubar.SubTrigger className="flex cursor-default select-none items-center gap-2 rounded px-2 py-1.5 outline-none hover:bg-[#344154] focus:bg-[#344154] data-[state=open]:bg-[#344154]">
+                      <Plug className="h-4 w-4" />
+                      {category}
+                      <ChevronRight className="ml-auto h-4 w-4" />
+                    </Menubar.SubTrigger>
+                    <Menubar.Portal>
+                      <Menubar.SubContent className="z-50 min-w-56 rounded border border-[#343946] bg-[#22262f] p-1 text-sm text-[#e7eaf0] shadow-xl">
+                        {items.map((plugin) => (
+                          <MenuItem
+                            key={plugin.id}
+                            onSelect={() => onRunPlugin(plugin.id)}
+                          >
+                            <FileText className="h-4 w-4" />
+                            {plugin.name}
+                          </MenuItem>
+                        ))}
+                      </Menubar.SubContent>
+                    </Menubar.Portal>
+                  </Menubar.Sub>
+                ))
+              )}
             </Menubar.Content>
           </Menubar.Portal>
         </Menubar.Menu>
@@ -430,7 +540,7 @@ function EditorPane({
       data-testid="editor"
     >
       <PaneHeader title="Editor" detail={fileName} />
-      <div className="min-h-0 flex-1" data-testid="editor-frame">
+      <div className="min-h-0 flex-1 overflow-auto" data-testid="editor-frame">
         <CodeMirror
           basicSetup
           extensions={extensions}
@@ -456,7 +566,7 @@ function PreviewPane({ html }: { html: string }) {
         <iframe
           id="preview"
           data-testid="preview"
-          sandbox="allow-same-origin"
+          sandbox="allow-scripts allow-same-origin"
           srcDoc={html}
           title="Pandoc preview"
         />
@@ -493,21 +603,27 @@ function StatusCluster({
   currentFile,
   durationMs,
   lineCountValue,
+  pluginState,
   saveState,
   status,
 }: {
   currentFile: string | null;
   durationMs: number | null;
   lineCountValue: number;
+  pluginState: PluginState;
   saveState: SaveState;
   status: RenderStatus;
 }) {
   const statusView = statusDisplay(status);
   const saveView = saveDisplay(saveState);
+  const pluginView = pluginDisplay(pluginState);
 
   return (
     <footer className="flex h-8 shrink-0 items-center gap-4 border-t border-[#2b2f38] bg-[#20232b] px-3 text-xs text-[#aab2c0]">
-      <span id="status" className={cn('flex items-center gap-1.5', statusView.className)}>
+      <span
+        id="status"
+        className={cn('flex items-center gap-1.5', statusView.className)}
+      >
         {statusView.icon}
         {statusView.label}
       </span>
@@ -515,9 +631,19 @@ function StatusCluster({
         <Clock3 className="h-3.5 w-3.5" />
         {durationMs == null ? 'pending' : `${durationMs}ms`}
       </span>
-      <span id="save-state" className={cn('flex items-center gap-1.5', saveView.className)}>
+      <span
+        id="save-state"
+        className={cn('flex items-center gap-1.5', saveView.className)}
+      >
         {saveView.icon}
         {saveView.label}
+      </span>
+      <span
+        id="plugin-state"
+        className={cn('flex items-center gap-1.5', pluginView.className)}
+      >
+        {pluginView.icon}
+        {pluginView.label}
       </span>
       <span className="ml-auto truncate">{basename(currentFile)}</span>
       <span className="tabular-nums">{lineCountValue} lines</span>
@@ -593,9 +719,7 @@ function ExplorerDrawer({
     >
       <div className="flex h-full w-[300px] flex-col">
         <div className="border-b border-[#2b2f38] px-3 py-2">
-          <div className="text-xs uppercase text-[#aab2c0]">
-            Explorer
-          </div>
+          <div className="text-xs uppercase text-[#aab2c0]">Explorer</div>
           <div className="mt-1 truncate text-xs text-[#788190]" title={root}>
             {root || 'Workspace'}
           </div>
@@ -610,7 +734,9 @@ function ExplorerDrawer({
             onToggleDirectory={toggleDirectory}
             path=""
           />
-          {error ? <div className="px-3 py-2 text-xs text-[#ff9b8f]">{error}</div> : null}
+          {error ? (
+            <div className="px-3 py-2 text-xs text-[#ff9b8f]">{error}</div>
+          ) : null}
         </div>
       </div>
     </motion.aside>
@@ -771,6 +897,49 @@ function saveDisplay(saveState: SaveState) {
         icon: <Save className="h-3.5 w-3.5" />,
       };
   }
+}
+
+function pluginDisplay(pluginState: PluginState) {
+  switch (pluginState) {
+    case 'running':
+      return {
+        label: 'plugin running',
+        className: 'text-[#e5c76b]',
+        icon: <Loader2 className="h-3.5 w-3.5 animate-spin" />,
+      };
+    case 'complete':
+      return {
+        label: 'plugin complete',
+        className: 'text-[#86d59f]',
+        icon: <CheckCircle2 className="h-3.5 w-3.5" />,
+      };
+    case 'error':
+      return {
+        label: 'plugin error',
+        className: 'text-[#ff9b8f]',
+        icon: <XCircle className="h-3.5 w-3.5" />,
+      };
+    default:
+      return {
+        label: 'plugins idle',
+        className: 'text-[#aab2c0]',
+        icon: <Plug className="h-3.5 w-3.5" />,
+      };
+  }
+}
+
+function groupPluginsByCategory(plugins: PluginMetadata[]) {
+  const grouped = new Map<string, PluginMetadata[]>();
+  for (const plugin of plugins) {
+    const items = grouped.get(plugin.category) ?? [];
+    items.push(plugin);
+    grouped.set(plugin.category, items);
+  }
+
+  return Array.from(grouped, ([category, items]) => ({
+    category,
+    items: items.toSorted((a, b) => a.name.localeCompare(b.name)),
+  })).toSorted((a, b) => a.category.localeCompare(b.category));
 }
 
 function errorDocument(message: string) {

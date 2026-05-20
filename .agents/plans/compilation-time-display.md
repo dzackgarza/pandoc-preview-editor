@@ -12,9 +12,9 @@ Showing the elapsed time gives users:
 
 ## Can This Already Be Done?
 
-No. The render time is computed on the server but not surfaced anywhere in the GUI. The
-nvim plugin has no feedback channel for render timing.
-This is purely a GUI-side display feature.
+No. The render time is computed by the app/server Pandoc pipeline. Firenvim only edits
+the textarea and has no render-timing state.
+This is an app-side display feature.
 
 ## Proposed Solution
 

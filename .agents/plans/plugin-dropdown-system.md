@@ -14,9 +14,9 @@ The app does not need to provide export functionality.
 What it needs is a *generic mechanism* for users to add custom commands that receive the
 current file path and execute.
 
-Existing nvim plugins like `vim-dispatch` or `toggleterm` can run shell commands, but
-they don't surface in the GUI and don't provide a configuration format that plugin
-authors can distribute.
+Existing nvim plugins like `vim-dispatch` or `toggleterm` can run shell commands inside
+nvim, but they do not receive the app's tracked file path, do not surface in the browser
+GUI, and do not provide a configuration format that app plugin authors can distribute.
 This feature is about GUI discoverability of external tools.
 
 **The plugin ecosystem is the goal.
