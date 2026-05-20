@@ -18,8 +18,14 @@
 - **Status bar**: Render status, duration (ms), save state, plugin state, line count
   (`StatusCluster` in `App.tsx`)
 - **Stale render prevention**: Version-based discard of late render responses
-- **Tests**: `file.spec.ts` (6 tests), `render.spec.ts`, `e2e.spec.ts`,
-  `plugins.spec.ts`, `math.spec.ts`, `editor-height.spec.ts`, `user-behaviors.spec.ts`
+- **Plugin save-before-run**: Removed unnecessary `resolveInside`/`statSync` guards from
+  plugin endpoint; manager now saves markdown to tracked path before executing CLI
+  commands
+- **Toast notifications**: Success/error toasts for plugin execution with motion
+  animation and manual dismiss (`Toasts` component in `App.tsx`)
+- **Tests**: `file.spec.ts` (7 tests), `render.spec.ts` (10 tests), `e2e.spec.ts` (16
+  tests), `plugins.spec.ts` (3 tests), `math.spec.ts` (2 tests),
+  `editor-height.spec.ts`, `user-behaviors.spec.ts`
 
 ## Partly Done
 
