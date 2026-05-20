@@ -193,4 +193,18 @@ test.describe('preview E2E', () => {
       timeout: 5000,
     });
   });
+
+  test('plugin execution shows toast with result', async ({ page }) => {
+    await page.goto(server.url);
+    await setEditorMarkdown(page, '# Plugin Toast Test\n\nContent from plugin E2E.');
+
+    // Navigate Radix submenu: Plugin > Export > Export to HTML
+    await page.getByRole('menuitem', { name: 'Plugin' }).click();
+    await page.getByRole('menuitem', { name: 'Export' }).hover();
+    await page.getByRole('menuitem', { name: 'Export to HTML' }).click();
+
+    // A toast should appear after plugin completes
+    await expect(page.locator('[data-testid="toast"]')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('[data-testid="toast"]')).toContainText('Export to HTML');
+  });
 });
