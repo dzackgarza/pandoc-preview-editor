@@ -56,6 +56,35 @@ test.describe('plugin API', () => {
     }
   });
 
+  test('plugin saves unsaved content to disk before running CLI command', async () => {
+    let server: ServerInstance | undefined;
+
+    try {
+      server = await launchServer(); // no file arg → temp file path configured but not yet written
+
+      const res = await fetch(`${server.url}/api/plugins/export-html/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          markdown: '# Saved Before Run\n\nPlugin interface saves first.',
+        }),
+      });
+      const data = (await res.json()) as {
+        ok: boolean;
+        exitCode: number;
+        outputPath?: string;
+      };
+
+      expect(data.ok).toBe(true);
+      expect(data.exitCode).toBe(0);
+      expect(data.outputPath).toBeDefined();
+      expect(existsSync(data.outputPath!)).toBe(true);
+      expect(readFileSync(data.outputPath!, 'utf-8')).toContain('Saved Before Run');
+    } finally {
+      if (server) await killServer(server);
+    }
+  });
+
   test('runs export plugin against the app tracked file', async () => {
     const { dir, file } = createWorkspace('# Exported Title\n\nFrom plugin API.');
     const output = join(dir, 'source.html');

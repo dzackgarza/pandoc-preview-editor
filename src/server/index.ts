@@ -208,20 +208,15 @@ export function createApp(config: ServerConfig) {
       return;
     }
 
-    const requestedPath = typeof path === 'string' ? path : config.file;
-    if (!requestedPath) {
-      res.status(400).json({ error: 'no file path configured or provided' });
+    const targetPath = typeof path === 'string' ? path : config.file;
+    if (!targetPath) {
+      res
+        .status(400)
+        .json({ ok: false, error: 'no file path: save the document first' });
       return;
     }
 
     try {
-      const targetPath = resolveInside(workspaceRoot, requestedPath);
-      const targetStat = statSync(targetPath);
-      if (!targetStat.isFile()) {
-        res.status(400).json({ error: 'path must reference a file' });
-        return;
-      }
-
       writeFileSync(targetPath, markdown, 'utf-8');
       const result = await runPlugin(plugin, targetPath, config.timeoutMs);
       res.status(result.ok ? 200 : 500).json(result);
