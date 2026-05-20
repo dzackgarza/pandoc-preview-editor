@@ -3,7 +3,6 @@ import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { languages } from '@codemirror/language-data';
 import { keymap } from '@codemirror/view';
 import * as Menubar from '@radix-ui/react-menubar';
-import * as Toast from '@radix-ui/react-toast';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import {
   CheckCircle2,
@@ -20,25 +19,25 @@ import {
   Plug,
   RefreshCcw,
   Save,
-  X,
   XCircle,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Group, Panel, Separator, useGroupRef } from 'react-resizable-panels';
 import { basename, cn, lineCount } from './lib/utils.js';
+import { useToast, toast } from './lib/toast.js';
+import {
+  Toast,
+  ToastClose,
+  ToastDescription,
+  ToastProvider,
+  ToastTitle,
+  ToastViewport,
+} from './lib/toast-ui.jsx';
 
 type RenderStatus = 'ready' | 'rendering' | 'error' | 'saved';
 type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
 type PluginState = 'idle' | 'running' | 'complete' | 'error';
-
-type ToastMessage = {
-  id: string;
-  title: string;
-  body: string;
-  variant: 'success' | 'error';
-  createdAt: number;
-};
 
 type FileEntry = {
   name: string;
@@ -90,14 +89,9 @@ export function App() {
   const [pluginState, setPluginState] = useState<PluginState>('idle');
   const [plugins, setPlugins] = useState<PluginMetadata[]>([]);
   const [explorerOpen, setExplorerOpen] = useState(false);
-  const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const renderVersion = useRef(0);
   const debounceTimer = useRef<number | null>(null);
   const groupRef = useGroupRef();
-
-  const dismissToast = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  }, []);
 
   useEffect(() => {
     window.__PANDOC_PREVIEW_STATE__ = { markdown: markdownText, currentFile };
@@ -247,32 +241,24 @@ export function App() {
         setSaveState('saved');
         setPluginState('complete');
 
-        setToasts((prev) => [
-          {
-            id: crypto.randomUUID(),
-            title: pluginMeta?.name ?? pluginId,
-            body: data.stderr ? `stderr: ${data.stderr}` : 'completed successfully',
-            variant: 'success' as const,
-            createdAt: Date.now(),
-          },
-          ...prev,
-        ]);
+        toast({
+          title: pluginMeta?.name ?? pluginId,
+          description: data.stderr
+            ? `stderr: ${data.stderr}`
+            : 'completed successfully',
+          variant: 'default',
+        });
       } catch (err) {
         setSaveState('error');
         setPluginState('error');
         setStatus('error');
 
         const message = err instanceof Error ? err.message : String(err);
-        setToasts((prev) => [
-          {
-            id: crypto.randomUUID(),
-            title: pluginMeta?.name ?? pluginId,
-            body: message,
-            variant: 'error' as const,
-            createdAt: Date.now(),
-          },
-          ...prev,
-        ]);
+        toast({
+          title: pluginMeta?.name ?? pluginId,
+          description: message,
+          variant: 'destructive',
+        });
       }
     },
     [currentFile, markdownText, plugins],
@@ -374,7 +360,7 @@ export function App() {
           saveState={saveState}
           status={status}
         />
-        <Toasts toasts={toasts} onDismiss={dismissToast} />
+        <Toaster />
       </div>
     </Tooltip.Provider>
   );
@@ -999,49 +985,21 @@ function escapeHtml(value: string) {
     .replace(/"/g, '&quot;');
 }
 
-function Toasts({
-  toasts,
-  onDismiss,
-}: {
-  toasts: ToastMessage[];
-  onDismiss: (id: string) => void;
-}) {
+function Toaster() {
+  const { toasts } = useToast();
+
   return (
-    <Toast.Provider swipeDirection="right">
-      {toasts.map((toast) => (
-        <Toast.Root
-          key={toast.id}
-          className={cn(
-            'data-[state=open]:animate-slide-in data-[state=closed]:animate-hide data-[swipe=end]:animate-swipe-out flex items-start gap-3 rounded-lg border p-3 text-sm shadow-lg',
-            toast.variant === 'success'
-              ? 'border-[#2d5438] bg-[#192b21] text-[#d2f0d4]'
-              : 'border-[#542d2d] bg-[#2b1919] text-[#f0c2c2]',
-          )}
-          data-testid="toast"
-          duration={Infinity}
-          open
-          onOpenChange={(open) => {
-            if (!open) onDismiss(toast.id);
-          }}
-        >
-          <div className="min-w-0 flex-1">
-            <Toast.Title className="font-medium">{toast.title}</Toast.Title>
-            <Toast.Description className="mt-0.5 text-xs opacity-80">
-              {toast.body}
-            </Toast.Description>
+    <ToastProvider>
+      {toasts.map(({ id, title, description, ...props }) => (
+        <Toast key={id} data-testid="toast" {...props}>
+          <div className="grid gap-1">
+            {title ? <ToastTitle>{title}</ToastTitle> : null}
+            {description ? <ToastDescription>{description}</ToastDescription> : null}
           </div>
-          <Toast.Close
-            aria-label="Dismiss"
-            className="shrink-0 rounded p-0.5 opacity-70 hover:opacity-100"
-          >
-            <X className="h-3.5 w-3.5" />
-          </Toast.Close>
-        </Toast.Root>
+          <ToastClose />
+        </Toast>
       ))}
-      <Toast.Viewport
-        className="fixed right-4 bottom-4 z-50 flex max-w-sm flex-col gap-2"
-        data-testid="toast-container"
-      />
-    </Toast.Provider>
+      <ToastViewport className="fixed top-0 z-[100] flex max-h-screen w-full flex-col-reverse p-4 sm:bottom-0 sm:right-0 sm:top-auto sm:flex-col md:max-w-[420px]" />
+    </ToastProvider>
   );
 }
