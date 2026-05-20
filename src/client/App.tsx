@@ -19,6 +19,7 @@ import {
   Plug,
   RefreshCcw,
   Save,
+  X,
   XCircle,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
@@ -29,6 +30,14 @@ import { basename, cn, lineCount } from './lib/utils.js';
 type RenderStatus = 'ready' | 'rendering' | 'error' | 'saved';
 type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
 type PluginState = 'idle' | 'running' | 'complete' | 'error';
+
+type ToastMessage = {
+  id: string;
+  title: string;
+  body: string;
+  variant: 'success' | 'error';
+  createdAt: number;
+};
 
 type FileEntry = {
   name: string;
@@ -80,9 +89,14 @@ export function App() {
   const [pluginState, setPluginState] = useState<PluginState>('idle');
   const [plugins, setPlugins] = useState<PluginMetadata[]>([]);
   const [explorerOpen, setExplorerOpen] = useState(false);
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const renderVersion = useRef(0);
   const debounceTimer = useRef<number | null>(null);
   const groupRef = useGroupRef();
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
 
   useEffect(() => {
     window.__PANDOC_PREVIEW_STATE__ = { markdown: markdownText, currentFile };
@@ -207,6 +221,7 @@ export function App() {
 
   const runPluginAction = useCallback(
     async (pluginId: string) => {
+      const pluginMeta = plugins.find((p) => p.id === pluginId);
       setPluginState('running');
       setSaveState('saving');
 
@@ -219,6 +234,9 @@ export function App() {
         const data = (await res.json().catch(() => ({}))) as {
           ok?: boolean;
           error?: string;
+          stdout?: string;
+          stderr?: string;
+          outputPath?: string;
         };
 
         if (!res.ok || !data.ok) {
@@ -227,13 +245,38 @@ export function App() {
 
         setSaveState('saved');
         setPluginState('complete');
+
+        setToasts((prev) => [
+          {
+            id: crypto.randomUUID(),
+            title: pluginMeta?.name ?? pluginId,
+            body: data.stderr
+              ? `stderr: ${data.stderr.slice(0, 200)}`
+              : 'completed successfully',
+            variant: 'success' as const,
+            createdAt: Date.now(),
+          },
+          ...prev,
+        ]);
       } catch (err) {
         setSaveState('error');
         setPluginState('error');
         setStatus('error');
+
+        const message = err instanceof Error ? err.message : String(err);
+        setToasts((prev) => [
+          {
+            id: crypto.randomUUID(),
+            title: pluginMeta?.name ?? pluginId,
+            body: message,
+            variant: 'error' as const,
+            createdAt: Date.now(),
+          },
+          ...prev,
+        ]);
       }
     },
-    [currentFile, markdownText],
+    [currentFile, markdownText, plugins],
   );
 
   const createNewFile = useCallback(async () => {
@@ -332,6 +375,7 @@ export function App() {
           saveState={saveState}
           status={status}
         />
+        <Toasts toasts={toasts} onDismiss={dismissToast} />
       </div>
     </Tooltip.Provider>
   );
@@ -954,4 +998,54 @@ function escapeHtml(value: string) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function Toasts({
+  toasts,
+  onDismiss,
+}: {
+  toasts: ToastMessage[];
+  onDismiss: (id: string) => void;
+}) {
+  if (toasts.length === 0) return null;
+
+  return (
+    <div
+      aria-label="Notifications"
+      className="fixed right-4 bottom-4 z-50 flex max-w-sm flex-col gap-2"
+      data-testid="toast-container"
+      role="region"
+    >
+      <AnimatePresence>
+        {toasts.map((toast) => (
+          <motion.div
+            key={toast.id}
+            animate={{ opacity: 1, y: 0 }}
+            className={cn(
+              'flex items-start gap-3 rounded-lg border p-3 text-sm shadow-lg',
+              toast.variant === 'success'
+                ? 'border-[#2d5438] bg-[#192b21] text-[#d2f0d4]'
+                : 'border-[#542d2d] bg-[#2b1919] text-[#f0c2c2]',
+            )}
+            data-testid="toast"
+            exit={{ opacity: 0, y: 16 }}
+            initial={{ opacity: 0, y: 16 }}
+            role="alert"
+          >
+            <div className="min-w-0 flex-1">
+              <div className="font-medium">{toast.title}</div>
+              <div className="mt-0.5 text-xs opacity-80">{toast.body}</div>
+            </div>
+            <button
+              className="shrink-0 rounded p-0.5 opacity-70 hover:opacity-100"
+              type="button"
+              onClick={() => onDismiss(toast.id)}
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </motion.div>
+        ))}
+      </AnimatePresence>
+    </div>
+  );
 }
