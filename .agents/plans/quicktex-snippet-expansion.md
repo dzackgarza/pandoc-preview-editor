@@ -1,8 +1,16 @@
-# Feature Card: QuickTex-Style Snippet Expansion
-
-## User Outcome
+# High-Performance QuickTex-Style Snippet Expansion
 
 The user can type short abbreviations (e.g., `st`, `cts`, `sseq`, `ga`, `mcc`) and have them instantly expand into full mathematical prose or LaTeX math symbols as they type, significantly accelerating document composition in both the Neovim and CodeMirror editor surfaces.
+
+## Provenance and Reference Material
+
+This feature is directly modelled on the user's existing Vim setup and configuration files:
+
+* **Neovim Configuration**: Loader configuration is defined in [/home/dzack/dotfiles/.config-sync/nvim/init.vim#L39](file:///home/dzack/dotfiles/.config-sync/nvim/init.vim#L39) (`Plug 'dzackgarza/quicktex'`) and enabled for markdown/pandoc in [/home/dzack/dotfiles/.config-sync/nvim/init.vim#L529-L530](file:///home/dzack/dotfiles/.config-sync/nvim/init.vim#L529-L530).
+* **Snippet Dictionaries**: 
+  * **Prose abbreviations** are defined in [/home/dzack/dotfiles/.config-sync/nvim/after/ftplugin/pandoc/quicktex_dict.vim#L1-L109](file:///home/dzack/dotfiles/.config-sync/nvim/after/ftplugin/pandoc/quicktex_dict.vim#L1-L109).
+  * **Math abbreviations** are defined in [/home/dzack/dotfiles/.config-sync/nvim/after/ftplugin/pandoc/quicktex_dict.vim#L110-L200](file:///home/dzack/dotfiles/.config-sync/nvim/after/ftplugin/pandoc/quicktex_dict.vim#L110-L200).
+* **Reference Plugin**: [dzackgarza/quicktex](https://github.com/dzackgarza/quicktex)
 
 ## Editor Integrations
 
@@ -31,3 +39,4 @@ For the browser-native CodeMirror editor, snippet and abbreviation expansion is 
 
 * Verify that typing `st` followed by a space inside the CodeMirror editor expands to `such that `.
 * Verify that typing math-mode abbreviations does not expand when outside a math boundary, and expands correctly when inside `\(` or `\[`.
+
