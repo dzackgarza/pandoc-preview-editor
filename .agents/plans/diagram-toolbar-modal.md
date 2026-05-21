@@ -3,10 +3,12 @@
 ## User Outcome
 
 The user can create, edit, and inject diagrams into their markdown document using
-multiple tools — clipboard images, web-based TikZ editors, desktop TikZ editors, and
-Inkscape — without manually managing file paths, figure directories, or filter
-integration. The injected content produces correct output through the configured render
-pipeline because it respects the existing TikZ lua filter infrastructure.
+multiple tools — clipboard images, web-based TikZ editors, desktop TikZ editors,
+Inkscape, and free-form handwriting in Xournal — without manually managing file paths,
+figure directories, or filter integration.
+The injected content produces correct output through the configured render pipeline
+because it respects the existing TikZ lua filter infrastructure and custom Xournal
+filter.
 
 A companion filters configuration modal lets the user choose which `~/.pandoc/filters/`
 Lua filters are enabled, synced with the app's CLI config.
@@ -23,6 +25,8 @@ Each of these *can* be done manually outside the app:
   `\tikzfig{}` or `\input{}` reference by hand.
 - **Inkscape**: Create an SVG in `./figures/`, open in Inkscape, draw, export to
   PDF+LaTeX via CLI, type the `\input{}` reference by hand.
+- **Xournal**: Create a `.xopp` file manually, open in Xournal++, draw, save, install a
+  custom pandoc filter to convert it at render time, type the fenced code block by hand.
 
 What the app provides is **one-button access** to all of these, awareness of the current
 file's workspace, cursor-relative injection, and guaranteed compatibility with the
@@ -43,10 +47,11 @@ errors (wrong path, wrong markup, missing tikzcd filter in pandoc args).
 | Cursor injection of generated TikZ/image markup | Client (CodeMirror API) | Only the browser has cursor position |
 | Clipboard image read | Client (navigator.clipboard.read) | Browser Clipboard API |
 | Clipboard image file write to `./figures/` | Server (new endpoint) | Filesystem access lives on the server |
-| Desktop app file creation + launch (Qtikz, Tikzit, Inkscape) | Server (plugin system) | `spawn` with file path needs filesystem |
+| Desktop app file creation + launch (Qtikz, Tikzit, Inkscape, Xournal) | Server (plugin system) | `spawn` with file path needs filesystem |
 | TikZ code block detection and SVG rendering | Pandoc lua filter | Already owned by `~/.pandoc/bin/tikzcd*.lua` |
+| Xournal `.xopp` → SVG conversion at render time | Pandoc lua filter (`xournal.lua`) | Custom filter intercepts `` ``` {.xournal} `` blocks |
 | Filter configuration (checkbox list + CLI sync) | Client + config file | UI renders from file scan; writes back to config |
-| Portable default filters shipped with app | Server (bundled assets) | App installs them to `~/.pandoc/filters/` on first run |
+| Portable default filters shipped with app (tikzcd, xournal) | Server (bundled assets) | App installs them to `~/.pandoc/filters/` on first run |
 | Save gate (block until file is real) | Client + server | Standard flow: temp file → save-as → proceed |
 | `./figures/` directory auto-creation | Server (in figure endpoints) | Created relative to saved file's directory |
 
@@ -100,6 +105,7 @@ errors (wrong path, wrong markup, missing tikzcd filter in pandoc args).
 | Qtikz | Desktop (Qt) | N/A — file-based | `.tex` file with `tikzpicture` | Standard TikZ |
 | Tikzit | Desktop (Qt) | N/A — file-based | `.tikz` file + `\ctikzfig{stem}` | `tikzit.sty` (in `~/.pandoc/styles/`) |
 | Inkscape | Desktop (SVG editor) | N/A — file-based | SVG → PDF+LaTeX via `\input{./figures/<stem>.pdf_tex}` | Standard TikZ / `svg` package |
+| Xournal | Desktop (handwriting) | N/A — file-based | `` ``` {.xournal}\n./figures/<stem>.xopp\n``` `` → SVG via lua filter | `xournal.lua` (bundled filter) |
 | Clipboard | OS clipboard | N/A | `![](./figures/filename.png)` | None |
 
 ### Common Iframe Protocol for Web Tools
@@ -236,6 +242,57 @@ Extraction is straightforward once the element is located.
   `tikzpicture` environment rather than as a PDF image.
 - **Template**: Optionally ship a starter SVG with pre-configured page dimensions
   matching the document's text width (e.g., `\textwidth`-aligned viewBox).
+
+#### Xournal
+
+Xournal is fundamentally different from the other desktop tools: it produces hand-drawn
+content in `.xopp` format rather than TikZ code.
+The primary inclusion mechanism is a **pandoc lua filter** (`xournal.lua`) that
+intercepts fenced code blocks tagged `{.xournal}` and converts the referenced `.xopp`
+file to an SVG at render time.
+This means the `.xopp` file becomes a source-tracked asset alongside the markdown.
+
+- CLI: `xournalpp <filename>.xopp` (opens GUI); `xournalpp -i <output>.svg <input>.xopp`
+  for headless SVG export
+
+- The app creates an empty `<stem>.xopp` in `./figures/` and launches Xournal++ detached
+
+- **Filter-based injection** (primary):
+  ````markdown
+  ``` {.xournal}
+  ./figures/<stem>.xopp
+  ```
+  ````
+  A bundled `xournal.lua` filter intercepts this `CodeBlock([".xournal"], ...)` and at
+  render time:
+  1. Reads the path from the code block body
+  2. Runs `xournalpp -i <output>.svg <path>.xopp --export-no-background`
+  3. Converts the SVG to a data URI or writes it alongside the document
+  4. Emits `<img src="...">` in HTML output; `\includegraphics{}` in LaTeX
+
+  This avoids any intermediate export step — the user just draws and saves in Xournal,
+  and the filter handles the conversion.
+
+- **Screenshot export** (alternative): Three strategies for getting Xournal content into
+  the document as a static image:
+
+| Strategy | Tools | Flow | Notes |
+| --- | --- | --- | --- |
+| System region capture | `flameshot gui` | Launch flameshot GUI, select region → clipboard → app's "From Clipboard" | Works on X11/Wayland; post-crop is manual |
+| Bundled lightweight capture | `grim + slurp` (Wayland-native) | App runs `grim -g "$(slurp)"` → captures selection → saves to `./figures/` | No external GUI; entirely scriptable; needs `wl-clipboard` for clipboard |
+| Auto-crop export | Scripted `xournalpp -i` + crop | Export to SVG, then run `inkscape --export-area-drawing` to trim whitespace | Fully automated; best for committed assets |
+
+If the screenshot route is taken, Xournal acts as a "launch → draw → capture → inject"
+pipeline similar to the clipboard image flow, but with an Xournal launch step before the
+capture.
+
+- **Re-editable source**: The `.xopp` file persists in `./figures/` and can be reopened
+  from the app later. Changes to the `.xopp` take effect on next render (filter-based) or
+  require a new screenshot (image-based).
+
+- **Template**: Optionally ship a starter `.xopp` with a single blank page sized to
+  match the document's text width, so the user doesn't need to configure page
+  dimensions.
 
 ### Clipboard Image Injection
 
@@ -385,6 +442,7 @@ styles. This matches what `render_figures.py` already does.
 | `tikzcd.lua` (audited) | `src/server/filters/tikzcd.lua` |
 | `tikzcd_figure_filter.lua` | `src/server/filters/tikzcd-figure.lua` |
 | `wrap_tikzcd_semantic.lua` | `src/server/filters/tikzcd-semantic.lua` |
+| `xournal.lua` (new) | `src/server/filters/xournal.lua` |
 
 ### 3. Common Iframe Protocol
 
@@ -476,6 +534,9 @@ The save gate applies to:
 - Clipboard image injection (needs a real path to know where `./figures/` goes)
 - Qtikz file creation (file goes in `./figures/` relative to saved document)
 - Tikzit file creation (same)
+- Inkscape file creation (same)
+- Xournal file creation (same)
+- Region capture (needs to know where to save the screenshot)
 - Web tool exports (the injected code references the document context; the save gate
   ensures there IS a document context)
 
@@ -487,7 +548,7 @@ The proxy endpoint fetches the remote page at runtime and injects only the light
 content script. If the remote tool is unavailable, the user sees the connection error in
 the iframe (same as any embedded page).
 The app has no offline fallback for web tools — that is acceptable since desktop editors
-(Qtikz/Tikzit) and clipboard images don't depend on network.
+(Qtikz, Tikzit, Inkscape, Xournal) and clipboard images don't depend on network.
 
 ### UI Components
 
@@ -511,6 +572,13 @@ The app has no offline fallback for web tools — that is acceptable since deskt
      spawns Inkscape detached; after user saves, optionally runs
      `inkscape --export-latex` to produce PDF+LaTeX pair; also has "Export as PDF (with
      LaTeX overlay)" button for headless re-export
+   - Xournal row: name + "Create & Edit" → creates empty `<stem>.xopp` in `./figures/`,
+     spawns xournalpp detached; two injection options:
+     - "Insert as Xournal block" → injects
+       `` ``` {.xournal}\n./figures/<stem>.xopp\n``` `` (recommended — filter-based,
+       re-renders on each preview)
+     - "Capture screenshot" → runs `grim -g "$(slurp)"` (or `flameshot gui`) to capture
+       a region, saves to `./figures/<stem>.png`, injects `![](...)`
 
    Section 3 — **From Clipboard**:
    - Single button: "Paste Image from Clipboard" → save-gate → clipboard read → inject
@@ -532,6 +600,8 @@ New endpoints:
 | `/api/diagram/file` | POST | Accept `{ type: 'qtikz' |
 | `/api/diagram/launch` | POST | Accept `{ file: string, command: string }`, spawn desktop editor detached |
 | `/api/diagram/export-inkscape` | POST | Accept `{ file: string }`, run `inkscape --export-latex` on the SVG, return path to `.pdf_tex` |
+| `/api/diagram/export-xournal` | POST | Accept `{ file: string }`, run `xournalpp -i` on the `.xopp` to produce SVG/PNG, return path |
+| `/api/diagram/capture-region` | POST | Run `grim -g "$(slurp)"` (or `flameshot gui --clipboard`), save to `./figures/`, return path |
 | `/api/diagram/proxy` | GET | Fetch remote URL, inject content script, serve same-origin |
 | `/api/filters` | GET | Scan `~/.pandoc/filters/` and `~/.pandoc/bin/`, return enabled/available |
 | `/api/filters` | POST | Accept `{ enabled: string[] }`, write filter args to config |
@@ -560,6 +630,8 @@ Injection format per tool:
 | Qtikz | ` ``` {.tex}\n\\begin{tikzpicture}\n% edit in ./figures/<stem>.tikz.tex\n\\end{tikzpicture}\n``` \n` |
 | Tikzit | `\\ctikzfig{<stem>}\n` |
 | Inkscape | `\\input{./figures/<stem>.pdf_tex}\n` |
+| Xournal (filter) | ` ``` {.xournal}\n./figures/<stem>.xopp\n``` \n` |
+| Xournal (capture) | `![](./figures/<stem>.png)\n` |
 
 ## Open Questions / Gaps
 
@@ -585,9 +657,29 @@ Injection format per tool:
    could reconstruct the diagram or forward the hash to the quiver "import from URL"
    feature. This is more stable across versions but less direct.
 
-5. **Desktop app not found**: If Qtikz, Tikzit, or Inkscape is not installed, the launch
-   button should show a helpful error.
+5. **Desktop app not found**: If Qtikz, Tikzit, Inkscape, or Xournal is not installed,
+   the launch button should show a helpful error.
    The feature card currently assumes they're installed.
+
+6. **Xournal lua filter design**: The `xournal.lua` filter needs to:
+   - Intercept `CodeBlock` with class `.xournal`
+   - Resolve the `.xopp` path relative to the document directory
+   - Run `xournalpp -i` as an external command (pandoc lua's `os.execute` or
+     `pandoc.pipe`)
+   - Cache the SVG output to avoid re-rendering on every preview
+   - Handle the case where `xournalpp` is not installed (degrade gracefully) The filter
+     is app-owned and ships as a bundled default.
+
+7. **Xournal XML format drift**: The `.xopp` format is compressed XML that may change
+   across Xournal++ versions.
+   The filter-based approach is robust to this since `xournalpp -i` is always the
+   version that produced the file, but the filter should warn if the conversion fails.
+
+8. **Region capture tool selection**: The screenshot approach needs a runtime check:
+   - Wayland: use `grim + slurp` (bundled approach) or `flameshot gui` (if installed)
+   - X11: use `flameshot gui` or `import` from ImageMagick
+   - Fallback: prompt user to take screenshot manually and paste The capture endpoint
+     should detect the display server and choose the appropriate tool.
 
 ## Verification
 
@@ -603,7 +695,7 @@ Injection format per tool:
    a file in `./figures/` and returns the correct relative path.
 
 4. **Desktop file creation**: Assert `POST /api/diagram/file` creates valid `.tex`,
-   `.tikz`, and `.svg` files in the expected location.
+   `.tikz`, `.svg`, and `.xopp` files in the expected location.
 
 5. **Filter scan**: API test that `GET /api/filters` returns the expected filter list
    given a known directory structure.
@@ -633,6 +725,12 @@ Injection format per tool:
 - [ ] Tikzit: save-gate → file created → Tikzit launched → `\ctikzfig{}` injected
 - [ ] Inkscape: save-gate → SVG created in `./figures/` → Inkscape launched → export to
   PDF+LaTeX → `\input{}` injected
+- [ ] Xournal: save-gate → `.xopp` created in `./figures/` → xournalpp launched
+- [ ] Xournal filter injection: `` ``` {.xournal}\n./figures/<stem>.xopp\n``` ``
+  inserted at cursor
+- [ ] Xournal screenshot capture: region capture via grim+slurp saves to `./figures/` →
+  `![](...)` injected
+- [ ] `xournal.lua` bundled filter converts `.xopp` → SVG at render time
 - [ ] `./figures/` created automatically relative to saved file
 - [ ] All diagram options gated by save-as when file is temp
 - [ ] Injected tikz content renders as SVG in preview (with filter enabled)
