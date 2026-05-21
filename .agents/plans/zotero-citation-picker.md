@@ -1,8 +1,12 @@
-# Feature Card: Zotero Bibliography Citation Picker
-
-## User Outcome
+# High-Performance Zotero Bibliography Citation Picker
 
 The user can quickly search their Zotero bibliography database and insert citations in Pandoc format (like `[@citationKey]`) at the editor cursor position without manually looking up keys or typing formatting boilerplate. 
+
+## Provenance and Reference Material
+
+This feature replicates the exact Better BibTeX CAYW integration from the user's active Vim configuration:
+
+* **Neovim Configuration**: The CAYW curl call and keyboard mapping are defined in [/home/dzack/dotfiles/.config-sync/nvim/init.vim#L376-L386](file:///home/dzack/dotfiles/.config-sync/nvim/init.vim#L376-L386) (`ZoteroCite()`), mapped to `<leader>z` and `<C-z>`.
 
 ## Implementation Details
 
@@ -37,3 +41,4 @@ To bypass browser-native CORS limitations when communicating with loopback servi
 ### Manual Verification
 
 * Open the Zotero picker via the app's toolbar, choose a reference, and verify that the formatted `[@key]` is appended at the cursor.
+
