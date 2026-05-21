@@ -1,8 +1,16 @@
-# Feature Card: Interactive Project Image and Figure Editing
+# High-Performance Interactive Project Image and Figure Editing
 
-## User Outcome
+The user can quickly launch desktop-native image editors (like GIMP, Inkscape, Pinta, or Xournal) to edit any SVG, PNG, or XOJournal figure attached to the current project/workspace, paste images from clipboard directly, or pull diagrams from quiver.app.
 
-The user can quickly launch desktop-native image editors (like GIMP, Inkscape, Pinta, or Xournal) to edit any SVG, PNG, or XOJournal figure attached to the current project/workspace, without leaving the app or manually searching through the filesystem.
+## Provenance and Reference Material
+
+This feature replicates and centralizes the existing terminal-native image workflows:
+
+* **Clipboard Image Pasting**: Saves clipboard screenshots to the `./figures` directory as defined in [/home/dzack/dotfiles/.config-sync/nvim/init.vim#L356-L368](file:///home/dzack/dotfiles/.config-sync/nvim/init.vim#L356-L368) (`PasteImage()`), using `xclip` to pull the raw PNG streams.
+* **Inkscape Figure Handling**: 
+  * The Neovim macro triggering the shell wizard is configured in [/home/dzack/dotfiles/.config-sync/nvim/init.vim#L562-L572](file:///home/dzack/dotfiles/.config-sync/nvim/init.vim#L562-L572) (`CreateInkscape()`), mapped to keybind `<leader>i` at line 203.
+  * The central bash script managing SVG/XOJ listing via `dmenu`, template copies, and re-exporting to PDF LaTeX blocks is located in [/home/dzack/dotfiles/bin/notes/inkscape-figures.sh](file:///home/dzack/dotfiles/bin/notes/inkscape-figures.sh).
+* **quiver.app Integration**: Pastes and formats complex commutative quiver diagrams from the clipboard as defined in [/home/dzack/dotfiles/.config-sync/nvim/init.vim#L370-L374](file:///home/dzack/dotfiles/.config-sync/nvim/init.vim#L370-L374) (`PasteQuiverDiagram()`), mapped to `<leader>qp`.
 
 ## Implementation Details
 
@@ -38,3 +46,4 @@ The Express backend implements a new interactive trigger endpoint:
 * Attach figures (SVG, PNG, XOJournal) to a project.
 * Click the "Edit Figures" action in the toolbar and verify that a `dmenu` window appears on screen showing the figures list.
 * Select an item and assert that GIMP, Inkscape, or Xournal opens with the chosen file loaded.
+
