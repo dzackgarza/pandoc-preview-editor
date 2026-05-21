@@ -36,20 +36,10 @@ test-headed: build-client
 test-report: build-client
     npx playwright test --reporter=html
 
-# Run only API-level render tests (no browser needed)
+# Run focused preview rendering workflow tests
 test-render:
-    npx playwright test src/tests/render.spec.ts
+    npx playwright test src/tests/e2e.spec.ts --grep "complex document"
 
 # Run only browser E2E tests
 test-e2e: build-client
     npx playwright test src/tests/e2e.spec.ts
-
-# Run only file workflow tests
-test-file filter='': build-client
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if [ -n "{{filter}}" ]; then
-        npx playwright test src/tests/file.spec.ts --grep "{{filter}}"
-    else
-        npx playwright test src/tests/file.spec.ts
-    fi

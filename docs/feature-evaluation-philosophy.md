@@ -26,8 +26,9 @@ Evaluate each feature against the current shipped model:
 
 - **Use nvim research only for editor behavior.** Motions, text objects, completion,
   snippets, and buffer-local editing affordances can be delegated to Firenvim/nvim.
-  File open/save, workspace browsing, render timing, Pandoc configuration, and external
-  command execution are app concerns.
+  File open/save, workspace browsing, render timing, renderer invocation, and external
+  command execution are app concerns. Renderer-specific arguments belong in config or
+  wrapper commands.
 
 - **Avoid parallel ownership.** The canonical document text is the textarea value. Save,
   render, export, and plugin actions must read that value or the currently selected file

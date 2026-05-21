@@ -86,6 +86,7 @@ export function App() {
   const [status, setStatus] = useState<RenderStatus>('ready');
   const [durationMs, setDurationMs] = useState<number | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [pluginState, setPluginState] = useState<PluginState>('idle');
   const [plugins, setPlugins] = useState<PluginMetadata[]>([]);
   const [explorerOpen, setExplorerOpen] = useState(false);
@@ -207,6 +208,7 @@ export function App() {
 
       setCurrentFile(data.path ?? currentFile);
       setSaveState('saved');
+      setSavedAt(new Date());
       setStatus('saved');
     } catch (err) {
       setSaveState('error');
@@ -239,6 +241,7 @@ export function App() {
         }
 
         setSaveState('saved');
+        setSavedAt(new Date());
         setPluginState('complete');
 
         toast({
@@ -281,6 +284,7 @@ export function App() {
       setMarkdownText(data.content);
       setCurrentFile(data.absolutePath);
       setSaveState('saved');
+      setSavedAt(new Date());
       setStatus('saved');
     } catch (err) {
       setSaveState('error');
@@ -291,12 +295,14 @@ export function App() {
   const updateMarkdown = useCallback((value: string) => {
     setMarkdownText(value);
     setSaveState('dirty');
+    setSavedAt(null);
   }, []);
 
   const openFile = useCallback((result: OpenFileResult) => {
     setMarkdownText(result.content);
     setCurrentFile(result.absolutePath);
     setSaveState('idle');
+    setSavedAt(null);
   }, []);
 
   const resetSplit = useCallback(() => {
@@ -310,6 +316,7 @@ export function App() {
           explorerOpen={explorerOpen}
           onNewFile={createNewFile}
           onOpenExplorer={() => setExplorerOpen(true)}
+          onRefresh={() => renderImmediate(markdownText)}
           onRunPlugin={runPluginAction}
           onResetSplit={resetSplit}
           onSave={saveCurrent}
@@ -357,6 +364,7 @@ export function App() {
           durationMs={durationMs}
           lineCountValue={lineCount(markdownText)}
           pluginState={pluginState}
+          savedAt={savedAt}
           saveState={saveState}
           status={status}
         />
@@ -370,6 +378,7 @@ function TopMenuBar({
   explorerOpen,
   onNewFile,
   onOpenExplorer,
+  onRefresh,
   onRunPlugin,
   onResetSplit,
   onSave,
@@ -379,6 +388,7 @@ function TopMenuBar({
   explorerOpen: boolean;
   onNewFile: () => void;
   onOpenExplorer: () => void;
+  onRefresh: () => void;
   onRunPlugin: (pluginId: string) => void;
   onResetSplit: () => void;
   onSave: () => void;
@@ -426,6 +436,10 @@ function TopMenuBar({
               <MenuItem onSelect={onResetSplit}>
                 <RefreshCcw className="h-4 w-4" />
                 Reset Split
+              </MenuItem>
+              <MenuItem onSelect={onRefresh}>
+                <RefreshCcw className="h-4 w-4" />
+                Refresh Preview
               </MenuItem>
             </Menubar.Content>
           </Menubar.Portal>
@@ -478,6 +492,9 @@ function TopMenuBar({
         </IconButton>
         <IconButton label="Save" onClick={onSave}>
           <Save className="h-4 w-4" />
+        </IconButton>
+        <IconButton label="Refresh Preview" onClick={onRefresh}>
+          <RefreshCcw className="h-4 w-4" />
         </IconButton>
       </div>
     </div>
@@ -633,6 +650,7 @@ function StatusCluster({
   durationMs,
   lineCountValue,
   pluginState,
+  savedAt,
   saveState,
   status,
 }: {
@@ -640,6 +658,7 @@ function StatusCluster({
   durationMs: number | null;
   lineCountValue: number;
   pluginState: PluginState;
+  savedAt: Date | null;
   saveState: SaveState;
   status: RenderStatus;
 }) {
@@ -674,6 +693,15 @@ function StatusCluster({
         {pluginView.icon}
         {pluginView.label}
       </span>
+      {savedAt ? (
+        <span
+          data-testid="saved-timestamp"
+          className="flex items-center gap-1.5 tabular-nums"
+        >
+          <Clock3 className="h-3.5 w-3.5" />
+          saved {formatSavedAt(savedAt)}
+        </span>
+      ) : null}
       <span className="ml-auto truncate">{basename(currentFile)}</span>
       <span className="tabular-nums">{lineCountValue} lines</span>
     </footer>
@@ -969,6 +997,13 @@ function groupPluginsByCategory(plugins: PluginMetadata[]) {
     category,
     items: items.toSorted((a, b) => a.name.localeCompare(b.name)),
   })).toSorted((a, b) => a.category.localeCompare(b.category));
+}
+
+function formatSavedAt(value: Date) {
+  return new Intl.DateTimeFormat(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(value);
 }
 
 function errorDocument(message: string) {

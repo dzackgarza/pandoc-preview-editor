@@ -36,12 +36,14 @@ async function findFreePort(): Promise<number> {
 export async function launchServer(
   port?: number,
   file?: string,
+  configPath?: string,
 ): Promise<ServerInstance> {
   const p = port ?? (await findFreePort());
   const out: string[] = [];
   const err: string[] = [];
 
   const args = ['tsx', 'src/server/cli.ts', '--port', String(p)];
+  if (configPath) args.push('--config', configPath);
   if (file) args.push(file);
 
   const proc = spawn('npx', args, {

@@ -1,0 +1,13 @@
+id = "export-pdf"
+name = "Export to PDF"
+description = "Convert the current markdown file to PDF with Pandoc"
+category = "Export"
+command = "pandoc"
+args = [
+  "${FILE}",
+  "-f",
+  "markdown+tex_math_dollars+citations",
+  "-o",
+  "${FILE_DIR}/${FILE_STEM}.pdf",
+]
+output = "${FILE_DIR}/${FILE_STEM}.pdf"

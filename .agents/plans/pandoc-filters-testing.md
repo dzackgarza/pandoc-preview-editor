@@ -1,28 +1,35 @@
-# Feature: Test All Filters in ~/.pandoc
+# Feature: Centralized Pandoc Filter QA
 
 ## Problem
 
-Users may have custom pandoc filters installed in `~/.pandoc/filters/` (or on the
-`PANODC_FILTERS_PATH`). These filters can do anything post-processing of the AST,
+Users may have custom Pandoc filters installed in `~/.pandoc/filters/`. These filters
+can do any post-processing of the AST,
 including:
 - Inlining tikz diagrams as rendered images
 - Executing code blocks and inserting results (literate programming)
 - Custom cross-references, footnotes, or bibliography processing
 - Embedding external content
 
-The app's preview pipeline (pandoc -> HTML) should correctly handle these filters.
-But there is no test suite that exercises filters, so regressions go unnoticed.
+The app should not discover, own, or inject these filters. A Pandoc-based renderer
+wrapper or config should reference centralized filters under `~/.pandoc/filters/`.
 
 ## Can This Already Be Done?
 
-Running pandoc with `--filter FILTER` on the command line already works if the user
-configures it. The question is whether the integration is tested.
+Yes. Running Pandoc with `--filter ~/.pandoc/filters/FILTER` works if the configured
+renderer command or wrapper includes that argument.
 
-This feature is about creating test documents that exercise specific filter behaviors
-and verifying the output contains expected HTML patterns.
-These are integration tests for the pandoc pipeline, not unit tests for the app.
+This feature is not about app-owned filter request fields or project-local filter
+folders. It is about proving the app invokes the configured renderer and surfaces its
+stdout/stderr.
 
 ## Proposed Solution
+
+Keep filter selection in the configured renderer command or wrapper. For Pandoc, the
+central location is `~/.pandoc/filters/`.
+
+App-level regression tests should use a real wrapper command that behaves like a renderer
+and proves the renderer boundary. Pandoc filter correctness belongs to the centralized
+Pandoc setup, not to app logic.
 
 ### Test: Tikz Image Inlining
 
@@ -44,10 +51,10 @@ images (e.g., using `pandoc-tikz`, `panttikz`, or a custom script calling `pdfla
 **Expected output**: The HTML should contain an `<img>` tag or inline `<svg>`
 element (depending on the filter), not the raw tikz source.
 
-**Setup**: Requires:
+**Manual setup**: Requires:
 - A tikz filter installed (e.g., `pandoc-tikz` via `pip install pandoc-tikz`)
 - LaTeX distribution for `pdflatex`
-- The filter configured in the pandoc command
+- The filter referenced by the configured renderer command or wrapper
 
 ### Test: Live Code Block Execution
 
@@ -75,40 +82,11 @@ Test that multiple filters work together:
 
 ### Implementation
 
-1. Create `tests/filters/` directory with test markdown files
-2. Each test file has an associated `.expected.html` file (the expected
-   pandoc output with filters applied)
-3. Test script runs pandoc with the configured filters and compares output
-   to expected
-
-```typescript
-// tests/filters.test.ts
-import { execSync } from 'child_process';
-
-const filtersDir = path.join(__dirname, 'filters');
-
-function runPandocWithFilters(mdFile: string): string {
-  const filters = fs.readdirSync(expandHome('~/.pandoc/filters'))
-    .filter(f => f.endsWith('.lua') || f.endsWith('.py'))
-    .map(f => `--filter=${path.join(expandHome('~/.pandoc/filters'), f)}`);
-
-  return execSync(
-    `pandoc ${mdFile} --from markdown --to html ${filters.join(' ')}`,
-    { encoding: 'utf-8' }
-  );
-}
-
-test('tikz filter renders SVG', () => {
-  const html = runPandocWithFilters('tests/filters/tikz.md');
-  expect(html).toContain('<svg');
-  expect(html).toContain('</svg>');
-});
-
-test('code execution filter inserts output', () => {
-  const html = runPandocWithFilters('tests/filters/run-code.md');
-  expect(html).toContain('Hello from python');
-});
-````
+- Do not create app-owned filter discovery logic.
+- Do not add `/api/render` fields for filters.
+- Test configured renderer invocation with a real wrapper.
+- Use manual QA or a separate centralized Pandoc setup to validate the actual filters in
+  `~/.pandoc/filters/`.
 
 ### Hardware/Sandboxing Note for Code Execution Filters
 
@@ -130,14 +108,12 @@ Before implementing tests, survey the user's `~/.pandoc/filters/` directory:
 
 ## Human Decisions Needed
 
-1. **Test scope**: Test all discovered filters, or just the common ones (tikz, code
-   execution)? Test all discovered filters, with skip annotations for broken ones.
-2. **Filter survey**: Run the survey and report findings before building tests.
-3. **CI integration**: Should filter tests run in CI? They require pandoc + specific
-   filter packages. Likely CI-skip unless the CI image has them.
+- Whether to add a separate manual QA script for the centralized `~/.pandoc/filters/`
+  setup outside the app test suite.
 
 ## Non-Goals
 
 - Installing or managing pandoc filters (user responsibility)
 - Writing filters for the user
 - Testing filters that require external services (network, databases)
+- App-owned filter discovery or filter injection

@@ -16,8 +16,9 @@ Therefore:
   tracking, and file-path delivery to server-side tools.
 - Nvim/Firenvim owns editor mechanics inside the textarea: modal editing, motions,
   mappings, snippets, completion, and other text-editing behavior.
-- Pandoc rendering, render status, templates, filters, exports, and command execution are
-  server/app concerns.
+- Renderer invocation, render status, exports, and command execution are server/app
+  concerns. Renderer-specific templates, filters, formats, and flags belong in config or
+  wrapper commands, not app-owned request fields.
 
 ## Questions
 
@@ -50,7 +51,7 @@ Use these ownership rules:
 | Open/new/save | App/server | The browser app must map textarea text to disk. |
 | Workspace file list | App/server | Firenvim does not expose a workspace tree to the app. |
 | Render timing/status | App/server | Pandoc runs in the preview server. |
-| Pandoc args/templates/filters | App/server | These configure the server render pipeline. |
+| Renderer command configuration | Config/server | The app invokes the configured command without knowing renderer-specific flags. |
 | Export/plugin commands | App/server | Commands need file paths and filesystem access. |
 
 ### Can an existing tool already provide the owned layer?
@@ -106,8 +107,9 @@ Is the complete outcome already handled by Firenvim, nvim, the textarea, or Pand
 | File tree | User chooses project file | App/server | Already incorporated as Explorer |
 | Last saved state | User knows textarea differs from disk | App/client | Keep status indicator |
 | Compilation time | User knows how long render took | App/server | Already incorporated |
-| Pandoc command config | User sets render pipeline | App/server | Candidate |
-| Manual refresh | User re-renders after external inputs change | App/server | Candidate |
+| Renderer command config | User sets render pipeline | Config/server | Already incorporated; test as renderer-agnostic invocation |
+| Centralized Pandoc templates/filters | User reuses one Pandoc setup | Config/wrapper | Keep in `~/.pandoc`, not app request fields |
+| Manual refresh | User re-renders after external inputs change | App/server | Already incorporated |
 | Editor autosave plugin research | Editor writes its own buffer automatically | Firenvim/nvim | Obviated as app work; no active card |
 | Terminal shortcut shielding | Browser forwards terminal chords | Removed layer | Obviated; no active card |
 | Editor session restore | Editor restores buffers/layout | Firenvim/nvim | Obviated as app work; no active card |

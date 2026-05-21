@@ -1,0 +1,15 @@
+id = "export-latex"
+name = "Export to LaTeX"
+description = "Convert the current markdown file to LaTeX source with Pandoc"
+category = "Export"
+command = "pandoc"
+args = [
+  "${FILE}",
+  "-f",
+  "markdown+tex_math_dollars+citations",
+  "-t",
+  "latex",
+  "-o",
+  "${FILE_DIR}/${FILE_STEM}.tex",
+]
+output = "${FILE_DIR}/${FILE_STEM}.tex"

@@ -29,6 +29,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const SOURCE_CLIENT_DIR = resolve(__dirname, '..', 'client');
 const BUILT_CLIENT_DIR = resolve(process.cwd(), 'dist', 'client');
 
+function currentFileContent(config: ServerConfig): string {
+  if (config.file && existsSync(config.file)) {
+    return readFileSync(config.file, 'utf-8');
+  }
+  return config.fileContent ?? '';
+}
+
 export interface ServerConfig {
   pandocCommand: string;
   pandocArgs: string[];
@@ -56,7 +63,7 @@ export function createApp(config: ServerConfig) {
     let html = readFileSync(indexPath, 'utf-8');
 
     const initialScript = [
-      `window.__INITIAL_CONTENT = ${safeJson(config.fileContent ?? '')};`,
+      `window.__INITIAL_CONTENT = ${safeJson(currentFileContent(config))};`,
       `window.__INITIAL_FILE = ${safeJson(config.file ?? null)};`,
       `window.__WORKSPACE_ROOT = ${safeJson(workspaceRoot)};`,
     ].join(' ');
@@ -70,7 +77,9 @@ export function createApp(config: ServerConfig) {
 
   // Pandoc render endpoint
   app.post<{ html: string; durationMs: number }>('/api/render', async (req, res) => {
-    const { markdown } = req.body;
+    const { markdown } = req.body as {
+      markdown?: unknown;
+    };
     if (typeof markdown !== 'string') {
       res.status(400).json({ error: 'markdown field is required' });
       return;
@@ -83,7 +92,12 @@ export function createApp(config: ServerConfig) {
       config.timeoutMs,
     );
 
-    res.json({ html: result.html, durationMs: result.durationMs, ok: result.ok });
+    res.json({
+      html: result.html,
+      durationMs: result.durationMs,
+      ok: result.ok,
+      stderr: result.stderr,
+    });
   });
 
   // Save endpoint

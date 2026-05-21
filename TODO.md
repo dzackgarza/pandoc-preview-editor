@@ -13,8 +13,12 @@
   filtering, ignore rules (`ExplorerDrawer` in `App.tsx`, `/api/files`,
   `/api/files/content`, `src/server/workspace.ts`)
 - **Plugin system**: TOML manifests, category-grouped menu, spawn-based execution with
-  variable interpolation (`src/server/plugins.ts`,
-  `src/server/plugins/export-html.toml`)
+  variable interpolation and bundled HTML/LaTeX/PDF export plugins
+  (`src/server/plugins.ts`, `src/server/plugins/*.toml`)
+- **Refresh button**: toolbar and View menu action for immediate re-render
+- **Last saved timestamp**: status bar timestamp after successful app-owned saves
+- **Renderer config regression tests**: wrapper-based tests prove configured renderer
+  invocation and stderr/nonzero exit handling without app-owned renderer flags
 - **Status bar**: Render status, duration (ms), save state, plugin state, line count
   (`StatusCluster` in `App.tsx`)
 - **Stale render prevention**: Version-based discard of late render responses
@@ -23,9 +27,8 @@
   commands
 - **Toast notifications**: Success/error toasts for plugin execution with motion
   animation and manual dismiss (`Toasts` component in `App.tsx`)
-- **Tests**: `file.spec.ts` (7 tests), `render.spec.ts` (10 tests), `e2e.spec.ts` (16
-  tests), `plugins.spec.ts` (3 tests), `math.spec.ts` (2 tests),
-  `editor-height.spec.ts`, `user-behaviors.spec.ts`
+- **Tests**: API and browser suites cover render, file workflows, plugins, renderer
+  config, math, editor height, and user behavior.
 
 ## Partly Done
 
@@ -35,10 +38,8 @@
 
 ## Not Done
 
-- **Refresh button** — `.agents/plans/refresh-button.md`
-- **Last saved timestamp** — `.agents/plans/last-saved-timestamp.md`
-- **Settings dropdown / configurable pandoc command** —
-  `.agents/plans/settings-dropdown-pandoc-command.md`
-- **HTML template rendering QA** — `.agents/plans/html-template-rendering.md`
-- **AMSthm rendering tests** — `.agents/plans/amsthm-rendering.md`
-- **Pandoc filters testing** — `.agents/plans/pandoc-filters-testing.md`
+- **Renderer diagnostics UI** — richer stderr/nonzero-exit display beyond the current
+  error document, if needed.
+- **Centralized Pandoc template/filter QA** — optional manual QA around
+  `~/.pandoc/templates/` and `~/.pandoc/filters/`; app tests should stay
+  renderer-agnostic.
