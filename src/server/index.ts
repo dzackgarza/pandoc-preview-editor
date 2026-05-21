@@ -45,6 +45,7 @@ export interface ServerConfig {
   file?: string;
   fileContent?: string;
   workspaceRoot?: string;
+  isTempFile?: boolean;
 }
 
 export function createApp(config: ServerConfig) {
@@ -66,6 +67,7 @@ export function createApp(config: ServerConfig) {
       `window.__INITIAL_CONTENT = ${safeJson(currentFileContent(config))};`,
       `window.__INITIAL_FILE = ${safeJson(config.file ?? null)};`,
       `window.__WORKSPACE_ROOT = ${safeJson(workspaceRoot)};`,
+      `window.__IS_TEMP_FILE = ${safeJson(config.isTempFile ?? false)};`,
     ].join(' ');
     html = html.replace('</head>', `<script>${initialScript}<\/script></head>`);
 
@@ -107,8 +109,18 @@ export function createApp(config: ServerConfig) {
       res.status(400).json({ error: 'markdown field is required' });
       return;
     }
-    // Use explicit path if provided, otherwise the configured file path
-    const targetPath = path || config.file;
+    // Resolve workspace-relative paths, absolute paths, or use configured file
+    let targetPath: string | undefined;
+    if (typeof path === 'string' && path.length > 0) {
+      try {
+        targetPath = resolveInside(workspaceRoot, path);
+      } catch {
+        // path may be an absolute path outside workspace; use as-is
+        targetPath = path;
+      }
+    } else {
+      targetPath = config.file;
+    }
     if (!targetPath) {
       res.status(400).json({ error: 'no file path configured or provided' });
       return;
@@ -189,9 +201,15 @@ export function createApp(config: ServerConfig) {
     }
   });
 
-  app.post('/api/files/new', (_req, res) => {
+  app.post('/api/files/new', (req, res) => {
     try {
-      const targetPath = resolveInside(workspaceRoot, `untitled-${randomUUID()}.md`);
+      const { path: requestedPath } = req.body as { path?: string };
+      let targetPath: string;
+      if (typeof requestedPath === 'string' && requestedPath.length > 0) {
+        targetPath = resolveInside(workspaceRoot, requestedPath);
+      } else {
+        targetPath = resolveInside(workspaceRoot, `untitled-${randomUUID()}.md`);
+      }
       writeFileSync(targetPath, '', { encoding: 'utf-8', flag: 'wx' });
       res.json({
         ok: true,

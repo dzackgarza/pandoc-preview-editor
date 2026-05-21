@@ -16,4 +16,6 @@ args = [
   "--standalone",
   "--citeproc",
   "--mathjax",
+  "--lua-filter=~/.pandoc/bin/convert_amsthm_envs.lua",
+  "--template=~/.pandoc/templates/pandoc_HTML.template",
 ]

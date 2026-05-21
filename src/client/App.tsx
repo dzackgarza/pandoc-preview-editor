@@ -63,6 +63,7 @@ declare global {
     __INITIAL_CONTENT?: string;
     __INITIAL_FILE?: string | null;
     __WORKSPACE_ROOT?: string;
+    __IS_TEMP_FILE?: boolean;
     __PANDOC_PREVIEW_STATE__?: {
       markdown: string;
       currentFile: string | null;
@@ -82,6 +83,7 @@ export function App() {
   const [currentFile, setCurrentFile] = useState<string | null>(
     window.__INITIAL_FILE ?? null,
   );
+  const [isTempFile, setIsTempFile] = useState(window.__IS_TEMP_FILE ?? false);
   const [previewHtml, setPreviewHtml] = useState('');
   const [status, setStatus] = useState<RenderStatus>('ready');
   const [durationMs, setDurationMs] = useState<number | null>(null);
@@ -90,9 +92,13 @@ export function App() {
   const [pluginState, setPluginState] = useState<PluginState>('idle');
   const [plugins, setPlugins] = useState<PluginMetadata[]>([]);
   const [explorerOpen, setExplorerOpen] = useState(false);
+  const [saveAsDialogOpen, setSaveAsDialogOpen] = useState(false);
+  const [saveAsDialogMode, setSaveAsDialogMode] = useState<'save' | 'new'>('save');
   const renderVersion = useRef(0);
   const debounceTimer = useRef<number | null>(null);
   const groupRef = useGroupRef();
+  const saveAsInputRef = useRef<HTMLInputElement>(null);
+  const saveAsResolveRef = useRef<((path: string | null) => void) | null>(null);
 
   useEffect(() => {
     window.__PANDOC_PREVIEW_STATE__ = { markdown: markdownText, currentFile };
@@ -185,11 +191,87 @@ export function App() {
     return clearRenderTimer;
   }, [clearRenderTimer, markdownText, scheduleRender]);
 
+  const promptForSavePath = useCallback(
+    (mode: 'save' | 'new'): Promise<string | null> => {
+      return new Promise((resolve) => {
+        saveAsResolveRef.current = resolve;
+        setSaveAsDialogMode(mode);
+        setSaveAsDialogOpen(true);
+        // Focus input on next render
+        requestAnimationFrame(() => saveAsInputRef.current?.focus());
+      });
+    },
+    [],
+  );
+
+  const handleSaveAsSubmit = useCallback((relativePath: string) => {
+    setSaveAsDialogOpen(false);
+    saveAsResolveRef.current?.(relativePath);
+  }, []);
+
+  const handleSaveAsCancel = useCallback(() => {
+    setSaveAsDialogOpen(false);
+    saveAsResolveRef.current?.(null);
+  }, []);
+
   const saveCurrent = useCallback(async () => {
     const text = markdownText;
     renderImmediate(text);
-    setSaveState('saving');
 
+    // If this is a temp file and we haven't committed to a real path,
+    // save to temp first, then prompt for real path.
+    if (isTempFile && !currentFile) {
+      // Save to temp backing file first
+      try {
+        await fetch('/api/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ markdown: text }),
+        });
+      } catch {
+        // Temp save failure is non-fatal; continue to prompt
+      }
+    }
+
+    if (isTempFile || !currentFile) {
+      // Prompt for real save path
+      const savePath = await promptForSavePath('save');
+      if (savePath === null) {
+        setSaveState('idle');
+        return; // user cancelled
+      }
+
+      setSaveState('saving');
+      try {
+        const res = await fetch('/api/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ markdown: text, path: savePath }),
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          ok?: boolean;
+          path?: string;
+          error?: string;
+        };
+
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error ?? `server returned ${res.status}`);
+        }
+
+        setCurrentFile(data.path ?? savePath);
+        setIsTempFile(false);
+        setSaveState('saved');
+        setSavedAt(new Date());
+        setStatus('saved');
+      } catch (err) {
+        setSaveState('error');
+        setStatus('error');
+      }
+      return;
+    }
+
+    // Normal save to existing real file
+    setSaveState('saving');
     try {
       const res = await fetch('/api/save', {
         method: 'POST',
@@ -214,10 +296,19 @@ export function App() {
       setSaveState('error');
       setStatus('error');
     }
-  }, [currentFile, markdownText, renderImmediate]);
+  }, [currentFile, isTempFile, markdownText, renderImmediate]);
 
   const runPluginAction = useCallback(
     async (pluginId: string) => {
+      if (isTempFile) {
+        toast({
+          title: 'Save required',
+          description: 'Save the file to a real location before running plugins.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
       const pluginMeta = plugins.find((p) => p.id === pluginId);
       setPluginState('running');
       setSaveState('saving');
@@ -268,10 +359,18 @@ export function App() {
   );
 
   const createNewFile = useCallback(async () => {
+    const savePath = await promptForSavePath('new');
+    if (savePath === null) return; // user cancelled
+
     setSaveState('saving');
 
     try {
-      const res = await fetch('/api/files/new', { method: 'POST' });
+      // Create file at the specified workspace-relative path
+      const res = await fetch('/api/files/new', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: savePath }),
+      });
       const data = (await res.json().catch(() => ({}))) as OpenFileResult & {
         ok?: boolean;
         error?: string;
@@ -283,6 +382,7 @@ export function App() {
 
       setMarkdownText(data.content);
       setCurrentFile(data.absolutePath);
+      setIsTempFile(false);
       setSaveState('saved');
       setSavedAt(new Date());
       setStatus('saved');
@@ -301,6 +401,7 @@ export function App() {
   const openFile = useCallback((result: OpenFileResult) => {
     setMarkdownText(result.content);
     setCurrentFile(result.absolutePath);
+    setIsTempFile(false);
     setSaveState('idle');
     setSavedAt(null);
   }, []);
@@ -314,6 +415,7 @@ export function App() {
       <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[#15161a] text-[#e6e8eb]">
         <TopMenuBar
           explorerOpen={explorerOpen}
+          isTempFile={isTempFile}
           onNewFile={createNewFile}
           onOpenExplorer={() => setExplorerOpen(true)}
           onRefresh={() => renderImmediate(markdownText)}
@@ -368,6 +470,14 @@ export function App() {
           saveState={saveState}
           status={status}
         />
+        <SaveAsDialog
+          inputRef={saveAsInputRef}
+          mode={saveAsDialogMode}
+          open={saveAsDialogOpen}
+          workspaceRoot={window.__WORKSPACE_ROOT ?? ''}
+          onCancel={handleSaveAsCancel}
+          onSubmit={handleSaveAsSubmit}
+        />
         <Toaster />
       </div>
     </Tooltip.Provider>
@@ -376,6 +486,7 @@ export function App() {
 
 function TopMenuBar({
   explorerOpen,
+  isTempFile,
   onNewFile,
   onOpenExplorer,
   onRefresh,
@@ -386,6 +497,7 @@ function TopMenuBar({
   plugins,
 }: {
   explorerOpen: boolean;
+  isTempFile: boolean;
   onNewFile: () => void;
   onOpenExplorer: () => void;
   onRefresh: () => void;
@@ -445,7 +557,13 @@ function TopMenuBar({
           </Menubar.Portal>
         </Menubar.Menu>
         <Menubar.Menu>
-          <Menubar.Trigger className="rounded px-3 py-1.5 outline-none hover:bg-[#303541] focus:bg-[#303541] data-[state=open]:bg-[#303541]">
+          <Menubar.Trigger
+            className={cn(
+              'rounded px-3 py-1.5 outline-none hover:bg-[#303541] focus:bg-[#303541] data-[state=open]:bg-[#303541]',
+              isTempFile && 'text-[#58606e]',
+            )}
+            disabled={isTempFile}
+          >
             Plugin
           </Menubar.Trigger>
           <Menubar.Portal>
@@ -1018,6 +1136,92 @@ function escapeHtml(value: string) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function SaveAsDialog({
+  inputRef,
+  mode,
+  onCancel,
+  onSubmit,
+  open,
+  workspaceRoot,
+}: {
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  mode: 'save' | 'new';
+  onCancel: () => void;
+  onSubmit: (path: string) => void;
+  open: boolean;
+  workspaceRoot: string;
+}) {
+  const [value, setValue] = useState('');
+  const localRef = useRef<HTMLInputElement>(null);
+  const ref = inputRef ?? localRef;
+
+  useEffect(() => {
+    if (open) {
+      setValue('');
+      requestAnimationFrame(() => ref.current?.focus());
+    }
+  }, [open, ref]);
+
+  if (!open) return null;
+
+  const title = mode === 'new' ? 'New File' : 'Save As';
+  const submitLabel = mode === 'new' ? 'Create' : 'Save';
+
+  const handleSubmit = () => {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    onSubmit(trimmed);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') handleSubmit();
+    if (e.key === 'Escape') onCancel();
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      onClick={onCancel}
+    >
+      <div
+        className="min-w-80 rounded border border-[#343946] bg-[#1f222b] p-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="mb-3 text-sm font-medium text-[#d6d9df]">{title}</h2>
+        <div className="mb-1 text-xs text-[#788190]">
+          Workspace: <span className="text-[#aab2c0]">{workspaceRoot}</span>
+        </div>
+        <input
+          ref={ref}
+          autoFocus
+          className="mb-4 mt-1 w-full rounded border border-[#343946] bg-[#15161a] px-3 py-2 text-sm text-[#e6e8eb] outline-none focus:border-[#4a7cc9]"
+          placeholder="path/relative/to/workspace/filename.md"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+        />
+        <div className="flex justify-end gap-2">
+          <button
+            className="rounded bg-[#303541] px-4 py-1.5 text-sm text-[#b9c0cc] hover:bg-[#3a4050]"
+            type="button"
+            onClick={onCancel}
+          >
+            Cancel
+          </button>
+          <button
+            className="rounded bg-[#3f5f82] px-4 py-1.5 text-sm text-white hover:bg-[#4b6f98] disabled:opacity-40"
+            disabled={!value.trim()}
+            type="button"
+            onClick={handleSubmit}
+          >
+            {submitLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function Toaster() {

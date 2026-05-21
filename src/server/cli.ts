@@ -2,12 +2,22 @@ import { Command } from 'commander';
 import { readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { tmpdir } from 'node:os';
+import { tmpdir, homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { load } from 'js-toml';
 import { startServer, type ServerConfig } from './index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+function expandTildePaths(args: string[]): string[] {
+  const home = homedir();
+  return args.map((arg) => {
+    if (arg.startsWith('~/') || arg === '~') {
+      return home + arg.slice(1);
+    }
+    return arg;
+  });
+}
 
 interface CliOptions {
   port?: string;
@@ -37,7 +47,7 @@ function loadConfig(configPath: string | undefined, cwd: string): ServerConfig |
 
   return {
     pandocCommand: pandoc.command as string,
-    pandocArgs: pandoc.args as string[],
+    pandocArgs: expandTildePaths(pandoc.args as string[]),
     timeoutMs: typeof render.timeout_ms === 'number' ? render.timeout_ms : 30000,
     port: 3000,
     host: '127.0.0.1',
@@ -65,6 +75,7 @@ program
 
     let fileContent: string | undefined;
     let absPath: string | undefined;
+    let isTempFile = false;
     if (file) {
       absPath = resolve(cwd, file);
       try {
@@ -77,6 +88,7 @@ program
       mkdirSync(tmpDir, { recursive: true });
       absPath = join(tmpDir, `untitled-${randomUUID()}.md`);
       fileContent = '';
+      isTempFile = true;
     }
 
     const config: ServerConfig = {
@@ -84,6 +96,7 @@ program
       file: absPath,
       fileContent,
       workspaceRoot: file && absPath ? dirname(absPath) : cwd,
+      isTempFile,
     };
 
     startServer(config);
