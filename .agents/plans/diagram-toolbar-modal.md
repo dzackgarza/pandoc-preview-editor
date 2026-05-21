@@ -3,10 +3,10 @@
 ## User Outcome
 
 The user can create, edit, and inject diagrams into their markdown document using
-multiple tools — clipboard images, web-based TikZ editors, and desktop TikZ editors —
-without manually managing file paths, figure directories, or filter integration.
-The injected content produces correct output through the configured render pipeline
-because it respects the existing TikZ lua filter infrastructure.
+multiple tools — clipboard images, web-based TikZ editors, desktop TikZ editors, and
+Inkscape — without manually managing file paths, figure directories, or filter
+integration. The injected content produces correct output through the configured render
+pipeline because it respects the existing TikZ lua filter infrastructure.
 
 A companion filters configuration modal lets the user choose which `~/.pandoc/filters/`
 Lua filters are enabled, synced with the app's CLI config.
@@ -21,6 +21,8 @@ Each of these *can* be done manually outside the app:
   editor, paste it into a fenced code block or raw TeX block.
 - **Qtikz/Tikzit**: Create a file on disk, open the desktop app, save, type the
   `\tikzfig{}` or `\input{}` reference by hand.
+- **Inkscape**: Create an SVG in `./figures/`, open in Inkscape, draw, export to
+  PDF+LaTeX via CLI, type the `\input{}` reference by hand.
 
 What the app provides is **one-button access** to all of these, awareness of the current
 file's workspace, cursor-relative injection, and guaranteed compatibility with the
@@ -41,7 +43,7 @@ errors (wrong path, wrong markup, missing tikzcd filter in pandoc args).
 | Cursor injection of generated TikZ/image markup | Client (CodeMirror API) | Only the browser has cursor position |
 | Clipboard image read | Client (navigator.clipboard.read) | Browser Clipboard API |
 | Clipboard image file write to `./figures/` | Server (new endpoint) | Filesystem access lives on the server |
-| Desktop app file creation + launch (Qtikz, Tikzit) | Server (plugin system) | `spawn` with file path needs filesystem |
+| Desktop app file creation + launch (Qtikz, Tikzit, Inkscape) | Server (plugin system) | `spawn` with file path needs filesystem |
 | TikZ code block detection and SVG rendering | Pandoc lua filter | Already owned by `~/.pandoc/bin/tikzcd*.lua` |
 | Filter configuration (checkbox list + CLI sync) | Client + config file | UI renders from file scan; writes back to config |
 | Portable default filters shipped with app | Server (bundled assets) | App installs them to `~/.pandoc/filters/` on first run |
@@ -97,6 +99,7 @@ errors (wrong path, wrong markup, missing tikzcd filter in pandoc args).
 | quiver | Web app (SPA) | TBD (export dialog textarea) | `\begin{tikzcd}...\end{tikzcd}` | `quiver.sty` (in `~/.pandoc/styles/`) |
 | Qtikz | Desktop (Qt) | N/A — file-based | `.tex` file with `tikzpicture` | Standard TikZ |
 | Tikzit | Desktop (Qt) | N/A — file-based | `.tikz` file + `\ctikzfig{stem}` | `tikzit.sty` (in `~/.pandoc/styles/`) |
+| Inkscape | Desktop (SVG editor) | N/A — file-based | SVG → PDF+LaTeX via `\input{./figures/<stem>.pdf_tex}` | Standard TikZ / `svg` package |
 | Clipboard | OS clipboard | N/A | `![](./figures/filename.png)` | None |
 
 ### Common Iframe Protocol for Web Tools
@@ -203,6 +206,36 @@ Extraction is straightforward once the element is located.
 - The app creates `<stem>.tikz` in `./figures/` and launches Tikzit detached
 - Injects `\ctikzfig{<stem>}` — the path resolution is handled by `tikzit.sty` at
   compile time
+
+#### Inkscape
+
+- CLI: `inkscape <filename>.svg` (opens GUI);
+  `inkscape --export-filename=<out>.pdf --export-latex <filename>.svg` for headless
+  export
+- Inkscape is a full vector graphics editor; the diagram is authored inside the Inkscape
+  GUI, not via code
+- The app creates an empty `<stem>.svg` in `./figures/` (or a template with the diagram
+  title as a text label) and launches Inkscape detached
+- After the user saves in Inkscape, the app (or a server-side watcher) runs:
+  ```
+  inkscape --export-filename=./figures/<stem>.pdf --export-latex ./figures/<stem>.svg
+  ```
+  This produces `<stem>.pdf` + `<stem>.pdf_tex`. The `.pdf_tex` file contains an
+  `\includegraphics` that references the PDF with proper LaTeX bounding box and optional
+  text-overlay support.
+- **Injection**: `\input{./figures/<stem>.pdf_tex}` — the PDF is included as a full-page
+  figure, and any text elements authored in Inkscape are overlaid by LaTeX at compile
+  time (the `--export-latex` feature handles this).
+- **LaTeX formulas within Inkscape**: The [textext](https://github.com/textext/textext)
+  plugin provides Inkscape-native text objects that render LaTeX (re-editable).
+  Inkscape 1.x also has a built-in
+  `Extensions → Render → Mathematics → LaTeX (pdflatex)...` menu item for one-shot LaTeX
+  formula rendering.
+- **Alternative export formats**: `svg2tikz` extension (bundled as `inkscape2tikz`) can
+  export Inkscape SVG as TikZ/PGF code, which can be `\input{}`-ed directly into a
+  `tikzpicture` environment rather than as a PDF image.
+- **Template**: Optionally ship a starter SVG with pre-configured page dimensions
+  matching the document's text width (e.g., `\textwidth`-aligned viewBox).
 
 ### Clipboard Image Injection
 
@@ -474,6 +507,10 @@ The app has no offline fallback for web tools — that is acceptable since deskt
    Section 2 — **Desktop Editors**:
    - Qtikz row: name + "Create & Edit" → creates file, spawns Qtikz, injects template
    - Tikzit row: name + "Create & Edit" → same pattern
+   - Inkscape row: name + "Create & Edit" → creates empty `<stem>.svg` in `./figures/`,
+     spawns Inkscape detached; after user saves, optionally runs
+     `inkscape --export-latex` to produce PDF+LaTeX pair; also has "Export as PDF (with
+     LaTeX overlay)" button for headless re-export
 
    Section 3 — **From Clipboard**:
    - Single button: "Paste Image from Clipboard" → save-gate → clipboard read → inject
@@ -494,6 +531,7 @@ New endpoints:
 | `/api/figures` | POST | Accept image binary/Base64, save to `./figures/`, return relative path |
 | `/api/diagram/file` | POST | Accept `{ type: 'qtikz' |
 | `/api/diagram/launch` | POST | Accept `{ file: string, command: string }`, spawn desktop editor detached |
+| `/api/diagram/export-inkscape` | POST | Accept `{ file: string }`, run `inkscape --export-latex` on the SVG, return path to `.pdf_tex` |
 | `/api/diagram/proxy` | GET | Fetch remote URL, inject content script, serve same-origin |
 | `/api/filters` | GET | Scan `~/.pandoc/filters/` and `~/.pandoc/bin/`, return enabled/available |
 | `/api/filters` | POST | Accept `{ enabled: string[] }`, write filter args to config |
@@ -521,6 +559,7 @@ Injection format per tool:
 | quiver | ` ``` {.tex}\n\\begin{tikzcd}\n...\n\\end{tikzcd}\n``` \n` |
 | Qtikz | ` ``` {.tex}\n\\begin{tikzpicture}\n% edit in ./figures/<stem>.tikz.tex\n\\end{tikzpicture}\n``` \n` |
 | Tikzit | `\\ctikzfig{<stem>}\n` |
+| Inkscape | `\\input{./figures/<stem>.pdf_tex}\n` |
 
 ## Open Questions / Gaps
 
@@ -546,8 +585,8 @@ Injection format per tool:
    could reconstruct the diagram or forward the hash to the quiver "import from URL"
    feature. This is more stable across versions but less direct.
 
-5. **Qtikz/Tikzit not found**: If the desktop app is not installed, the launch button
-   should show a helpful error.
+5. **Desktop app not found**: If Qtikz, Tikzit, or Inkscape is not installed, the launch
+   button should show a helpful error.
    The feature card currently assumes they're installed.
 
 ## Verification
@@ -563,8 +602,8 @@ Injection format per tool:
 3. **Clipboard image write**: API test that `POST /api/figures` with image data creates
    a file in `./figures/` and returns the correct relative path.
 
-4. **Desktop file creation**: Assert `POST /api/diagram/file` creates valid `.tex` and
-   `.tikz` files in the expected location.
+4. **Desktop file creation**: Assert `POST /api/diagram/file` creates valid `.tex`,
+   `.tikz`, and `.svg` files in the expected location.
 
 5. **Filter scan**: API test that `GET /api/filters` returns the expected filter list
    given a known directory structure.
@@ -592,6 +631,8 @@ Injection format per tool:
   insert
 - [ ] Qtikz: save-gate → file created → Qtikz launched → template injected
 - [ ] Tikzit: save-gate → file created → Tikzit launched → `\ctikzfig{}` injected
+- [ ] Inkscape: save-gate → SVG created in `./figures/` → Inkscape launched → export to
+  PDF+LaTeX → `\input{}` injected
 - [ ] `./figures/` created automatically relative to saved file
 - [ ] All diagram options gated by save-as when file is temp
 - [ ] Injected tikz content renders as SVG in preview (with filter enabled)
