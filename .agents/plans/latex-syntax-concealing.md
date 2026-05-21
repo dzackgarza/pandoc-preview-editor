@@ -2,6 +2,18 @@
 
 Boilerplate markup noise (like `:::`, `\hfill`, `\begin{...}`, and math delimiters `$`, `$$`) is visually concealed and replaced with clean rendered SVG graphics or custom symbols inside the editor workspace. This plan outlines the exact high-performance, cursor-aware inline rendering architecture for both CodeMirror 6 and Neovim (including Firenvim context).
 
+## Provenance and Reference Material
+
+This feature directly generalizes and adapts the math rendering and concealing systems from the following sources:
+
+* **Neovim Configuration**: Custom syntax conceals and highlights are configured in [/home/dzack/dotfiles/.config-sync/nvim/init.vim#L341-L345](file:///home/dzack/dotfiles/.config-sync/nvim/init.vim#L341-L345) and [/home/dzack/dotfiles/.config-sync/nvim/init.vim#L351-L353](file:///home/dzack/dotfiles/.config-sync/nvim/init.vim#L351-L353).
+* **Reference Implementations**:
+  * Neovim cursor-aware conceal: [pxwg/math-conceal.nvim](https://github.com/pxwg/math-conceal.nvim) (cloned locally at `/home/dzack/dotfiles/scratch_math_conceal`)
+  * Neovim graphical rendering via Kitty protocol: [pxwg/typst-concealer](https://github.com/pxwg/typst-concealer) (cloned locally at `/home/dzack/dotfiles/scratch_typst_concealer`)
+  * CodeMirror 6 decoration model: [CodeMirror decoration example](https://codemirror.net/examples/decoration/)
+  * CodeMirror 6 custom conceal logic: [CodeMirror conceal demo](https://personalizedrefrigerator.github.io/personalSite/demos/codemirror_conceal/codemirror_conceal.html) and [Concealing Syntax (CodeMirror Discuss)](https://discuss.codemirror.net/t/concealing-syntax/3135)
+* **Architectural Blueprint**: [Wrong Spacetime (Article)](https://homeward-sky.top/en/article/wrong_spacetime/) (saved locally at `/home/dzack/dotfiles/scratch_wrong_spacetime_text.txt`)
+
 ## User Review Required
 
 > [!IMPORTANT]
