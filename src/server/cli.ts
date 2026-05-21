@@ -12,8 +12,17 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 function expandTildePaths(args: string[]): string[] {
   const home = homedir();
   return args.map((arg) => {
+    // Expand standalone ~/, ~, and ~/ after =
     if (arg.startsWith('~/') || arg === '~') {
       return home + arg.slice(1);
+    }
+    const eqIdx = arg.indexOf('=');
+    if (eqIdx >= 0) {
+      const prefix = arg.slice(0, eqIdx + 1);
+      const value = arg.slice(eqIdx + 1);
+      if (value.startsWith('~/') || value === '~') {
+        return prefix + home + value.slice(1);
+      }
     }
     return arg;
   });

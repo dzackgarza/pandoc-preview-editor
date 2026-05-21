@@ -127,6 +127,13 @@ export function createApp(config: ServerConfig) {
     }
     try {
       writeFileSync(targetPath, markdown, 'utf-8');
+      // After a save-as to a new path, update the server's file tracking
+      // so page reload picks up the correct file
+      if (typeof path === 'string' && path.length > 0 && targetPath !== config.file) {
+        config.file = targetPath;
+        config.isTempFile = false;
+        config.workspaceRoot = dirname(targetPath);
+      }
       res.json({ ok: true, path: targetPath });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

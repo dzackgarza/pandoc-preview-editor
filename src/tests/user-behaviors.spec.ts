@@ -9,7 +9,11 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { editorState, expectEditorMarkdown, setEditorMarkdown } from './editor-helpers.js';
+import {
+  editorState,
+  expectEditorMarkdown,
+  setEditorMarkdown,
+} from './editor-helpers.js';
 import { killServer, launchServer } from './helpers.js';
 
 function previewFrame(page: Page) {
@@ -30,6 +34,14 @@ function cleanupDir(dir: string) {
   } catch {
     /* ok */
   }
+}
+
+async function fillSaveAsDialog(page: Page, filename: string) {
+  const input = page.locator('.fixed.inset-0 input');
+  await expect(input).toBeVisible({ timeout: 3000 });
+  await input.fill(filename);
+  // Click the Save/Create button (the one that's not Cancel)
+  await page.locator('.fixed.inset-0 button:not([disabled])').last().click();
 }
 
 test.describe('user workflows', () => {
@@ -79,6 +91,8 @@ test.describe('user workflows', () => {
       await expect(page.locator('footer')).toContainText('4 lines');
 
       await page.getByRole('button', { name: 'Save' }).click();
+      // Save As dialog appears because this is a temp file
+      await fillSaveAsDialog(page, 'work-session.md');
       await expect(page.locator('#save-state')).toContainText('saved', {
         timeout: 5000,
       });
@@ -94,7 +108,7 @@ test.describe('user workflows', () => {
       });
 
       const savedPath = (await editorState(page)).currentFile;
-      expect(savedPath).toMatch(/untitled-[\w-]+\.md$/);
+      expect(savedPath).toMatch(/work-session\.md$/);
       await expect
         .poll(() => readFileSync(savedPath!, 'utf-8'), {
           timeout: 5000,
@@ -284,8 +298,14 @@ test.describe('user workflows', () => {
 
       await openMenu(page, 'File');
       await clickMenuItem(page, 'New');
+      // New File dialog appears
+      await fillSaveAsDialog(page, 'untitled-new.md');
+      // After creation, the file is empty and saved to disk
+      await expect(page.locator('#save-state')).toContainText(/saved|idle/, {
+        timeout: 5000,
+      });
       await expectEditorMarkdown(page, '');
-      expect((await editorState(page)).currentFile).toMatch(/untitled-[\w-]+\.md$/);
+      expect((await editorState(page)).currentFile).toMatch(/untitled-new\.md$/);
       const createdContent = '# New Document\n\nCreated from File menu.';
       await setEditorMarkdown(page, createdContent);
       await expect(previewFrame(page).locator('h1')).toHaveText('New Document', {
@@ -294,16 +314,19 @@ test.describe('user workflows', () => {
       await openMenu(page, 'File');
       await clickMenuItem(page, 'Save');
       await expect
-        .poll(() => {
-          const createdName = readdirSync(dir).find((name) =>
-            /^untitled-[\w-]+\.md$/.test(name),
-          );
-          return createdName ? readFileSync(join(dir, createdName), 'utf-8') : null;
-        }, { timeout: 5000, intervals: [100, 200] })
+        .poll(
+          () => {
+            const createdName = readdirSync(dir).find((name) =>
+              /^untitled-new\.md$/.test(name),
+            );
+            return createdName ? readFileSync(join(dir, createdName), 'utf-8') : null;
+          },
+          { timeout: 5000, intervals: [100, 200] },
+        )
         .toBe(createdContent);
 
       const currentFile = (await editorState(page)).currentFile;
-      expect(currentFile).toMatch(/untitled-[\w-]+\.md$/);
+      expect(currentFile).toMatch(/untitled-new\.md$/);
       expect(readFileSync(currentFile!, 'utf-8')).toBe(createdContent);
       expect(readFileSync(original, 'utf-8')).toBe(
         '# Original\n\nKeep this file unchanged.',
