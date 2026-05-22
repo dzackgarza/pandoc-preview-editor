@@ -88,6 +88,7 @@ export function createApp(config: ServerConfig) {
   const clientDir = getClientDir();
   const plugins = loadBundledPlugins();
   const recentFiles: string[] = [];
+  let currentRenderController: AbortController | null = null;
 
   function trackRecent(absolutePath: string) {
     recentFiles.splice(
@@ -146,19 +147,31 @@ export function createApp(config: ServerConfig) {
       return;
     }
 
+    // Cancel any in-flight render
+    if (currentRenderController) {
+      currentRenderController.abort();
+    }
+
+    const controller = new AbortController();
+    currentRenderController = controller;
+
     const result = await renderMarkdown(
       markdown,
       config.pandocCommand,
       config.pandocArgs,
       config.timeoutMs,
+      controller.signal,
     );
 
-    res.json({
-      html: withPreviewAssetUrls(result.html),
-      durationMs: result.durationMs,
-      ok: result.ok,
-      stderr: result.stderr,
-    });
+    // Only send response if this is still the current render
+    if (currentRenderController === controller) {
+      res.json({
+        html: withPreviewAssetUrls(result.html),
+        durationMs: result.durationMs,
+        ok: result.ok,
+        stderr: result.stderr,
+      });
+    }
   });
 
   // Save endpoint

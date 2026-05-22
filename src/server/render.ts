@@ -12,10 +12,16 @@ export function renderMarkdown(
   command: string,
   args: string[],
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<RenderResult> {
   const startedAt = performance.now();
 
   return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve(renderError('Render cancelled', startedAt));
+      return;
+    }
+
     const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
@@ -29,18 +35,30 @@ export function renderMarkdown(
       resolve(renderError(message, startedAt));
     }, timeoutMs);
 
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      child.kill('SIGTERM');
+      resolve(renderError('Render cancelled', startedAt));
+    };
+
+    signal?.addEventListener('abort', onAbort);
+
     child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
     child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
     child.on('error', (err) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
+      signal?.removeEventListener('abort', onAbort);
       resolve(renderError(err.message, startedAt));
     });
     child.on('close', (code) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
+      signal?.removeEventListener('abort', onAbort);
 
       const stderrText = Buffer.concat(stderr).toString('utf-8');
       if (code !== 0) {
