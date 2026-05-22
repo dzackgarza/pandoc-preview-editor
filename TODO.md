@@ -8,10 +8,27 @@
   `window.__INITIAL_CONTENT` (`src/server/cli.ts`)
 - **Save**: `POST /api/save`, Ctrl+S keymap, File menu (`src/server/index.ts`,
   `src/client/App.tsx`)
-- **New File**: `POST /api/files/new` creates untitled markdown in workspace
+- **New File**: prompts for a target path and records it as pending; the first app-owned
+  save creates the real file with the current textarea content
+- **Temp backup recovery**: no-arg launches keep a temp-backed recovery buffer while
+  Save, Plugin, Open, and New gate through a real user-chosen file path before
+  path-dependent work
 - **Explorer drawer**: Collapsible file tree with lazy directory loading, text-like
   filtering, ignore rules (`ExplorerDrawer` in `App.tsx`, `/api/files`,
   `/api/files/content`, `src/server/workspace.ts`)
+- **Quick Open palette**: Ctrl+P/Cmd+P opens a markdown-only workspace search, supports
+  keyboard selection, tracks recent opens, and opens through the same save-gated file
+  identity path as Explorer (`QuickOpenDialog` in `App.tsx`,
+  `/api/files/quick-open`)
+- **Zotero citation insertion**: Insert menu, toolbar button, and Ctrl/Cmd+Shift+C call
+  the server-side Better BibTeX CAYW proxy and insert the returned Pandoc citation at
+  the CodeMirror cursor (`/api/zotero/cite`)
+- **Save-gated figure insertion**: Insert menu and toolbar action read an image from the
+  browser clipboard, require a real saved document path, create `./figures/` beside the
+  document, write the image there, and insert the markdown reference at the CodeMirror
+  cursor. Preview rewrites relative image `src` values through `/api/preview-assets`
+  so the iframe displays local document assets without direct filesystem access
+  (`/api/figures/assets`)
 - **Plugin system**: TOML manifests, category-grouped menu, spawn-based execution with
   variable interpolation and bundled HTML/LaTeX/PDF export plugins
   (`src/server/plugins.ts`, `src/server/plugins/*.toml`)
@@ -43,3 +60,7 @@
 - **Centralized Pandoc template/filter QA** — optional manual QA around
   `~/.pandoc/templates/` and `~/.pandoc/filters/`; app tests should stay
   renderer-agnostic.
+- **Deprioritized active cards** — CriticMarkup GUI, agent chat, TikZJax, and
+  renderer/filter settings are not next. They are either large, speculative,
+  editor-behavior-heavy, or too close to renderer ownership for the current app
+  boundary.

@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, basename, dirname, extname } from 'node:path';
+import { join, dirname } from 'node:path';
 import { killServer, launchServer, type ServerInstance } from './helpers.js';
 
 function createWorkspace(content: string) {
@@ -45,10 +45,6 @@ function pandocOracle(file: string, output: string, target: 'html' | 'latex') {
         ];
 
   execFileSync('pandoc', args, { stdio: 'pipe' });
-}
-
-function replaceExtension(path: string, extension: string) {
-  return join(dirname(path), `${basename(path, extname(path))}${extension}`);
 }
 
 test.describe('plugin API', () => {
@@ -98,36 +94,29 @@ test.describe('plugin API', () => {
     }
   });
 
-  test('plugin saves unsaved content to disk before running CLI command', async () => {
+  test('plugin refuses to treat a temp backup as document identity', async () => {
     let server: ServerInstance | undefined;
 
     try {
-      server = await launchServer(); // no file arg → temp file path configured but not yet written
+      server = await launchServer();
 
       const res = await fetch(`${server.url}/api/plugins/export-html/run`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          markdown: '# Saved Before Run\n\nPlugin interface saves first.',
+          markdown: '# Temp Backed Buffer\n\nNo user path has been chosen.',
         }),
       });
       const data = (await res.json()) as {
-        exitCode: number;
-        outputPath?: string;
+        ok?: boolean;
+        error?: string;
       };
 
-      expect(res.status).toBe(200);
-      expect(data.exitCode).toBe(0);
-      expect(typeof data.outputPath).toBe('string');
-      const savedMarkdown = replaceExtension(data.outputPath!, '.md');
-      expect(readFileSync(savedMarkdown, 'utf-8')).toBe(
-        '# Saved Before Run\n\nPlugin interface saves first.',
-      );
-      const expected = join(dirname(data.outputPath!), 'expected.html');
-      pandocOracle(savedMarkdown, expected, 'html');
-      expect(readFileSync(data.outputPath!, 'utf-8')).toBe(
-        readFileSync(expected, 'utf-8'),
-      );
+      expect(res.status).toBe(400);
+      expect(data).toEqual({
+        ok: false,
+        error: 'no file path: save the document first',
+      });
     } finally {
       if (server) await killServer(server);
     }

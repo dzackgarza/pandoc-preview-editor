@@ -1,8 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -44,6 +44,36 @@ async function fillSaveAsDialog(page: Page, filename: string) {
   await page.locator('.fixed.inset-0 button:not([disabled])').last().click();
 }
 
+async function writePngToClipboard(page: Page) {
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], {
+    origin: new URL(page.url()).origin,
+  });
+  const pngBytes = await page.evaluate(async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 1;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('canvas context was not available');
+    context.fillStyle = '#ff0000';
+    context.fillRect(0, 0, 1, 1);
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((value) => {
+        if (value) resolve(value);
+        else reject(new Error('canvas did not produce a PNG blob'));
+      }, 'image/png');
+    });
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    const [clipboardItem] = await navigator.clipboard.read();
+    const imageType = clipboardItem.types.find(
+      (type) => type === 'image/png' || type.startsWith('image/'),
+    );
+    if (!imageType) throw new Error('clipboard did not contain an image');
+    const clipboardBlob = await clipboardItem.getType(imageType);
+    return Array.from(new Uint8Array(await clipboardBlob.arrayBuffer()));
+  });
+  return Buffer.from(pngBytes);
+}
+
 test.describe('user workflows', () => {
   let pageErrors: Error[] = [];
   let consoleErrors: string[] = [];
@@ -54,7 +84,9 @@ test.describe('user workflows', () => {
     page.on('pageerror', (err) => pageErrors.push(err));
     page.on('console', (msg) => {
       if (msg.type() === 'error') {
-        consoleErrors.push(`[${msg.type()}] ${msg.text()}`);
+        const location = msg.location();
+        const source = location.url ? ` ${location.url}:${location.lineNumber}` : '';
+        consoleErrors.push(`[${msg.type()}]${source} ${msg.text()}`);
       }
     });
   });
@@ -71,16 +103,28 @@ test.describe('user workflows', () => {
   test('default document editing, saving, reload, status, and layout controls work together', async ({
     page,
   }) => {
+    const saveDir = mkdtempSync(join(tmpdir(), 'pandoc-save-as-'));
+    const savePath = join(saveDir, 'work-session.md');
     const server = await launchServer();
     try {
       await page.goto(server.url);
       await expect(page.locator('#editor .cm-content')).toBeVisible({ timeout: 5000 });
       await expect(page.locator('#preview')).toBeAttached();
       await expect(page.locator('#save-state')).toContainText('idle');
+      expect((await editorState(page)).currentFile).toBeNull();
+      const backupPath = await page.evaluate(() => window.__TEMP_BACKUP_FILE);
+      expect(backupPath).toMatch(/\/pandoc-preview\/untitled-[\w-]+\.md$/);
 
       const content = '# Work Session\n\nline two\nline three';
       await setEditorMarkdown(page, content);
       expect((await editorState(page)).markdown).toBe(content);
+      expect((await editorState(page)).currentFile).toBeNull();
+      await expect
+        .poll(() => (existsSync(backupPath!) ? readFileSync(backupPath!, 'utf-8') : null), {
+          timeout: 5000,
+          intervals: [100, 200],
+        })
+        .toBe(content);
       await expect(page.locator('#save-state')).toContainText('unsaved', {
         timeout: 3000,
       });
@@ -90,9 +134,36 @@ test.describe('user workflows', () => {
       await expect(previewFrame(page).locator('body')).toContainText('line three');
       await expect(page.locator('footer')).toContainText('4 lines');
 
-      await page.getByRole('button', { name: 'Save' }).click();
-      // Save As dialog appears because this is a temp file
-      await fillSaveAsDialog(page, 'work-session.md');
+      const clipboardPng = await writePngToClipboard(page);
+      await page.getByRole('button', { name: 'Insert Figure from Clipboard' }).click();
+      await fillSaveAsDialog(page, savePath);
+      await expect
+        .poll(() => editorState(page).then((state) => state.markdown), {
+          timeout: 5000,
+          intervals: [100, 200],
+        })
+        .toMatch(/!\[\]\(\.\/figures\/figure-[\w-]+\.png\)/);
+      const documentWithFigure = (await editorState(page)).markdown;
+      const figureMatch = documentWithFigure.match(/!\[\]\(\.\/(figures\/figure-[\w-]+\.png)\)/);
+      expect(figureMatch).not.toBeNull();
+      const figurePath = join(saveDir, figureMatch![1]);
+      expect(readFileSync(figurePath)).toEqual(clipboardPng);
+      expect(readFileSync(savePath, 'utf-8')).toBe(content);
+      await expect(previewFrame(page).locator('img')).toHaveJSProperty(
+        'naturalWidth',
+        1,
+      );
+      await expect(page.locator('#save-state')).toContainText('unsaved', {
+        timeout: 3000,
+      });
+      await expect(page.locator('footer')).toContainText('8 lines');
+
+      await openMenu(page, 'Plugin');
+      await page.getByRole('menuitem', { name: 'Export' }).hover();
+      await clickMenuItem(page, 'Export to HTML');
+      await expect(page.locator('#plugin-state')).toContainText('plugin complete', {
+        timeout: 10000,
+      });
       await expect(page.locator('#save-state')).toContainText('saved', {
         timeout: 5000,
       });
@@ -102,23 +173,30 @@ test.describe('user workflows', () => {
       await expect(page.locator('#duration')).toContainText(/\d+ms/, {
         timeout: 5000,
       });
-      await expect(page.locator('footer')).toContainText('4 lines');
+      await expect(page.locator('footer')).toContainText('8 lines');
       await expect(page.locator('[data-testid="saved-timestamp"]')).toBeVisible({
         timeout: 3000,
       });
 
       const savedPath = (await editorState(page)).currentFile;
-      expect(savedPath).toMatch(/work-session\.md$/);
+      expect(savedPath).toBe(savePath);
       await expect
         .poll(() => readFileSync(savedPath!, 'utf-8'), {
           timeout: 5000,
           intervals: [100],
         })
-        .toBe(content);
+        .toBe(documentWithFigure);
+      expect(existsSync(join(saveDir, 'work-session.html'))).toBe(true);
 
       await page.reload();
-      await expectEditorMarkdown(page, content);
+      await expectEditorMarkdown(page, documentWithFigure);
       expect((await editorState(page)).currentFile).toBe(savedPath);
+      await expect
+        .poll(() => page.evaluate(() => window.__WORKSPACE_ROOT), {
+          timeout: 3000,
+          intervals: [100, 200],
+        })
+        .toBe(saveDir);
       await expect(previewFrame(page).locator('h1')).toHaveText('Work Session', {
         timeout: 5000,
       });
@@ -151,6 +229,7 @@ test.describe('user workflows', () => {
       expect(reset.width).toBeLessThan(resized.width);
     } finally {
       await killServer(server);
+      cleanupDir(saveDir);
     }
   });
 
@@ -232,6 +311,7 @@ test.describe('user workflows', () => {
     page,
   }) => {
     const dir = mkdtempSync(join(tmpdir(), 'pandoc-workflow-'));
+    const externalDir = mkdtempSync(join(tmpdir(), 'pandoc-new-target-'));
     const original = join(dir, 'original.md');
     const notes = join(dir, 'notes.txt');
     const nested = join(dir, 'nested');
@@ -253,6 +333,42 @@ test.describe('user workflows', () => {
         timeout: 5000,
       });
 
+      await page.keyboard.press('Control+P');
+      await expect(page.getByTestId('quick-open-dialog')).toBeVisible({
+        timeout: 5000,
+      });
+      await expect(page.getByTestId('quick-open-result')).toContainText([
+        'nested/chapter.md',
+        'original.md',
+      ]);
+      await expect(page.getByTestId('quick-open-dialog')).not.toContainText(
+        'notes.txt',
+      );
+      await expect(page.getByTestId('quick-open-dialog')).not.toContainText(
+        'ignored.md',
+      );
+      await expect(page.getByTestId('quick-open-dialog')).not.toContainText(
+        'image.png',
+      );
+
+      await page.getByLabel('Search files').fill('chapter');
+      await expect(page.getByTestId('quick-open-result')).toHaveCount(1);
+      await expect(page.getByTestId('quick-open-result').first()).toContainText(
+        'nested/chapter.md',
+      );
+      await page.keyboard.press('Enter');
+      await expect(page.getByTestId('quick-open-dialog')).toHaveCount(0);
+      await expectEditorMarkdown(page, '# Chapter\n\nInitial chapter.');
+      expect((await editorState(page)).currentFile).toBe(chapter);
+
+      await page.keyboard.press('Control+P');
+      await expect(page.getByText('Recent')).toBeVisible();
+      await expect(page.getByTestId('quick-open-result').first()).toContainText(
+        'nested/chapter.md',
+      );
+      await page.keyboard.press('Escape');
+      await expect(page.getByTestId('quick-open-dialog')).toHaveCount(0);
+
       await openMenu(page, 'File');
       await clickMenuItem(page, 'Open');
       await expect(page.getByTestId('explorer-drawer')).toBeVisible({ timeout: 5000 });
@@ -262,25 +378,14 @@ test.describe('user workflows', () => {
       await expect(page.getByText('ignored.md')).toHaveCount(0);
       await expect(page.getByText('image.png')).toHaveCount(0);
 
-      await page.getByRole('button', { name: /nested/ }).click();
-      await expect(page.getByRole('button', { name: /chapter\.md/ })).toBeVisible();
-      await page.getByRole('button', { name: /chapter\.md/ }).click();
-      await expectEditorMarkdown(page, '# Chapter\n\nInitial chapter.');
-      expect((await editorState(page)).currentFile).toBe(chapter);
-      await expect(previewFrame(page).locator('h1')).toHaveText('Chapter', {
-        timeout: 5000,
-      });
-
       const editedChapter = '# Chapter Edited\n\nSaved through Explorer.';
       await setEditorMarkdown(page, editedChapter);
       await expect(page.locator('#save-state')).toContainText('unsaved', {
         timeout: 3000,
       });
-      await openMenu(page, 'File');
-      await clickMenuItem(page, 'Save');
-      await expect(page.locator('#save-state')).toContainText('saved', {
-        timeout: 5000,
-      });
+      await page.getByRole('button', { name: /notes\.txt/ }).click();
+      await expectEditorMarkdown(page, 'Notes text.');
+      expect((await editorState(page)).currentFile).toBe(notes);
       await expect
         .poll(() => readFileSync(chapter, 'utf-8'), {
           timeout: 5000,
@@ -291,21 +396,28 @@ test.describe('user workflows', () => {
         '# Original\n\nKeep this file unchanged.',
       );
 
-      await page.getByRole('button', { name: /notes\.txt/ }).click();
-      await expectEditorMarkdown(page, 'Notes text.');
-      expect((await editorState(page)).currentFile).toBe(notes);
-      expect(readFileSync(chapter, 'utf-8')).toBe(editedChapter);
+      const editedNotes = 'Notes text.\n\nSaved before New.';
+      await setEditorMarkdown(page, editedNotes);
+      await expect(page.locator('#save-state')).toContainText('unsaved', {
+        timeout: 3000,
+      });
 
       await openMenu(page, 'File');
       await clickMenuItem(page, 'New');
-      // New File dialog appears
-      await fillSaveAsDialog(page, 'untitled-new.md');
-      // After creation, the file is empty and saved to disk
-      await expect(page.locator('#save-state')).toContainText(/saved|idle/, {
+      await expect
+        .poll(() => readFileSync(notes, 'utf-8'), {
+          timeout: 5000,
+          intervals: [100, 200],
+        })
+        .toBe(editedNotes);
+      const newPath = join(externalDir, 'new-document.md');
+      await fillSaveAsDialog(page, newPath);
+      await expect(page.locator('#save-state')).toContainText('unsaved', {
         timeout: 5000,
       });
       await expectEditorMarkdown(page, '');
-      expect((await editorState(page)).currentFile).toMatch(/untitled-new\.md$/);
+      expect((await editorState(page)).currentFile).toBe(newPath);
+      expect(existsSync(newPath)).toBe(false);
       const createdContent = '# New Document\n\nCreated from File menu.';
       await setEditorMarkdown(page, createdContent);
       await expect(previewFrame(page).locator('h1')).toHaveText('New Document', {
@@ -314,29 +426,34 @@ test.describe('user workflows', () => {
       await openMenu(page, 'File');
       await clickMenuItem(page, 'Save');
       await expect
-        .poll(
-          () => {
-            const createdName = readdirSync(dir).find((name) =>
-              /^untitled-new\.md$/.test(name),
-            );
-            return createdName ? readFileSync(join(dir, createdName), 'utf-8') : null;
-          },
-          { timeout: 5000, intervals: [100, 200] },
-        )
+        .poll(() => (existsSync(newPath) ? readFileSync(newPath, 'utf-8') : null), {
+          timeout: 5000,
+          intervals: [100, 200],
+        })
         .toBe(createdContent);
 
       const currentFile = (await editorState(page)).currentFile;
-      expect(currentFile).toMatch(/untitled-new\.md$/);
+      expect(currentFile).toBe(newPath);
       expect(readFileSync(currentFile!, 'utf-8')).toBe(createdContent);
+      await page.reload();
+      await expectEditorMarkdown(page, createdContent);
+      expect((await editorState(page)).currentFile).toBe(newPath);
+      await expect
+        .poll(() => page.evaluate(() => window.__WORKSPACE_ROOT), {
+          timeout: 3000,
+          intervals: [100, 200],
+        })
+        .toBe(externalDir);
       expect(readFileSync(original, 'utf-8')).toBe(
         '# Original\n\nKeep this file unchanged.',
       );
       expect(readFileSync(chapter, 'utf-8')).toBe(editedChapter);
-      expect(readFileSync(notes, 'utf-8')).toBe('Notes text.');
+      expect(readFileSync(notes, 'utf-8')).toBe(editedNotes);
     } finally {
       await page.close();
       await killServer(server);
       cleanupDir(dir);
+      cleanupDir(externalDir);
     }
   });
 });

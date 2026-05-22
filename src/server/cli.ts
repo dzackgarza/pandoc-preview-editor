@@ -112,6 +112,8 @@ program
 
     if (file && absPath) {
       console.log(`File: ${absPath}`);
+    } else if (absPath) {
+      console.log(`Recovery file: ${absPath}`);
     }
   });
 

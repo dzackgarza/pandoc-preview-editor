@@ -2,12 +2,13 @@ import express from 'express';
 import { randomUUID } from 'node:crypto';
 import {
   existsSync,
+  mkdirSync,
   readFileSync,
   readdirSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   findPlugin,
@@ -18,6 +19,7 @@ import {
 import { renderMarkdown } from './render.js';
 import {
   compareEntries,
+  isMarkdownFile,
   isTextLikeFile,
   resolveInside,
   shouldIgnore,
@@ -25,15 +27,47 @@ import {
   type FileTreeEntry,
 } from './workspace.js';
 
+type QuickOpenEntry = {
+  path: string;
+  absolutePath: string;
+  name: string;
+  dir: string;
+  recent: boolean;
+};
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SOURCE_CLIENT_DIR = resolve(__dirname, '..', 'client');
 const BUILT_CLIENT_DIR = resolve(process.cwd(), 'dist', 'client');
+const ZOTERO_CAYW_URL = 'http://127.0.0.1:23119/better-bibtex/cayw';
 
 function currentFileContent(config: ServerConfig): string {
   if (config.file && existsSync(config.file)) {
     return readFileSync(config.file, 'utf-8');
   }
   return config.fileContent ?? '';
+}
+
+function currentWorkspaceRoot(config: ServerConfig): string {
+  return resolve(config.workspaceRoot ?? dirname(config.file ?? process.cwd()));
+}
+
+function currentDocumentRoot(config: ServerConfig): string {
+  if (config.file && !config.isTempFile) {
+    return dirname(config.file);
+  }
+  return currentWorkspaceRoot(config);
+}
+
+function resolveUserPath(config: ServerConfig, requestedPath: string): string {
+  if (isAbsolute(requestedPath)) {
+    return resolve(requestedPath);
+  }
+  return resolveInside(currentWorkspaceRoot(config), requestedPath);
+}
+
+function pathIsInside(root: string, targetPath: string): boolean {
+  const rel = relative(root, targetPath);
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
 }
 
 export interface ServerConfig {
@@ -52,10 +86,18 @@ export function createApp(config: ServerConfig) {
   const app = express();
   app.use(express.json({ limit: '50mb' }));
   const clientDir = getClientDir();
-  const workspaceRoot = resolve(
-    config.workspaceRoot ?? dirname(config.file ?? process.cwd()),
-  );
   const plugins = loadBundledPlugins();
+  const recentFiles: string[] = [];
+
+  function trackRecent(absolutePath: string) {
+    recentFiles.splice(
+      0,
+      recentFiles.length,
+      absolutePath,
+      ...recentFiles.filter((path) => path !== absolutePath),
+    );
+    recentFiles.length = Math.min(recentFiles.length, 10);
+  }
 
   // Serve index.html with inlined initial content if a file was specified
   // (must be before express.static to intercept / before it serves index.html raw)
@@ -65,8 +107,9 @@ export function createApp(config: ServerConfig) {
 
     const initialScript = [
       `window.__INITIAL_CONTENT = ${safeJson(currentFileContent(config))};`,
-      `window.__INITIAL_FILE = ${safeJson(config.file ?? null)};`,
-      `window.__WORKSPACE_ROOT = ${safeJson(workspaceRoot)};`,
+      `window.__INITIAL_FILE = ${safeJson(config.isTempFile ? null : (config.file ?? null))};`,
+      `window.__TEMP_BACKUP_FILE = ${safeJson(config.isTempFile ? (config.file ?? null) : null)};`,
+      `window.__WORKSPACE_ROOT = ${safeJson(currentWorkspaceRoot(config))};`,
       `window.__IS_TEMP_FILE = ${safeJson(config.isTempFile ?? false)};`,
     ].join(' ');
     html = html.replace('</head>', `<script>${initialScript}<\/script></head>`);
@@ -76,6 +119,22 @@ export function createApp(config: ServerConfig) {
 
   // Serve other static files from client directory
   app.use(express.static(clientDir));
+
+  app.get('/api/preview-assets', (req, res) => {
+    try {
+      const documentRoot = currentDocumentRoot(config);
+      const requestedPath = typeof req.query.path === 'string' ? req.query.path : '';
+      const targetPath = resolveInside(documentRoot, requestedPath);
+      const targetStat = statSync(targetPath);
+      if (!targetStat.isFile() || shouldIgnore(documentRoot, targetPath)) {
+        res.status(404).json({ error: 'asset not found' });
+        return;
+      }
+      res.sendFile(targetPath);
+    } catch {
+      res.status(404).json({ error: 'asset not found' });
+    }
+  });
 
   // Pandoc render endpoint
   app.post<{ html: string; durationMs: number }>('/api/render', async (req, res) => {
@@ -95,7 +154,7 @@ export function createApp(config: ServerConfig) {
     );
 
     res.json({
-      html: result.html,
+      html: withPreviewAssetUrls(result.html),
       durationMs: result.durationMs,
       ok: result.ok,
       stderr: result.stderr,
@@ -109,15 +168,10 @@ export function createApp(config: ServerConfig) {
       res.status(400).json({ error: 'markdown field is required' });
       return;
     }
-    // Resolve workspace-relative paths, absolute paths, or use configured file
+    // Resolve workspace-relative paths, absolute paths, or use configured file.
     let targetPath: string | undefined;
     if (typeof path === 'string' && path.length > 0) {
-      try {
-        targetPath = resolveInside(workspaceRoot, path);
-      } catch {
-        // path may be an absolute path outside workspace; use as-is
-        targetPath = path;
-      }
+      targetPath = resolveUserPath(config, path);
     } else {
       targetPath = config.file;
     }
@@ -126,15 +180,39 @@ export function createApp(config: ServerConfig) {
       return;
     }
     try {
+      const workspaceRoot = currentWorkspaceRoot(config);
       writeFileSync(targetPath, markdown, 'utf-8');
-      // After a save-as to a new path, update the server's file tracking
-      // so page reload picks up the correct file
+      trackRecent(targetPath);
+      // Track the saved file for reloads; move the workspace root only when the
+      // user explicitly saves outside the current workspace.
       if (typeof path === 'string' && path.length > 0 && targetPath !== config.file) {
         config.file = targetPath;
         config.isTempFile = false;
-        config.workspaceRoot = dirname(targetPath);
+        config.workspaceRoot = pathIsInside(workspaceRoot, targetPath)
+          ? workspaceRoot
+          : dirname(targetPath);
       }
-      res.json({ ok: true, path: targetPath });
+      res.json({ ok: true, path: targetPath, workspaceRoot: currentWorkspaceRoot(config) });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.post<{ markdown: string }>('/api/backup', async (req, res) => {
+    const { markdown } = req.body;
+    if (typeof markdown !== 'string') {
+      res.status(400).json({ error: 'markdown field is required' });
+      return;
+    }
+    if (!config.isTempFile || !config.file) {
+      res.status(409).json({ error: 'no temporary backup file is active' });
+      return;
+    }
+
+    try {
+      writeFileSync(config.file, markdown, 'utf-8');
+      res.json({ ok: true, backupPath: config.file });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: message });
@@ -145,6 +223,7 @@ export function createApp(config: ServerConfig) {
     const requestedDir = typeof req.query.dir === 'string' ? req.query.dir : '';
 
     try {
+      const workspaceRoot = currentWorkspaceRoot(config);
       const targetDir = resolveInside(workspaceRoot, requestedDir);
       const targetStat = statSync(targetDir);
       if (!targetStat.isDirectory()) {
@@ -182,10 +261,46 @@ export function createApp(config: ServerConfig) {
     }
   });
 
+  app.get('/api/files/quick-open', (req, res) => {
+    const query = typeof req.query.q === 'string' ? req.query.q : '';
+
+    try {
+      const workspaceRoot = currentWorkspaceRoot(config);
+      const workspaceEntries = collectMarkdownFiles(workspaceRoot, workspaceRoot);
+      const recentEntries = recentFiles
+        .filter((absolutePath) => {
+          try {
+            return (
+              pathIsInside(workspaceRoot, absolutePath) &&
+              existsSync(absolutePath) &&
+              statSync(absolutePath).isFile() &&
+              isMarkdownFile(absolutePath) &&
+              !shouldIgnore(workspaceRoot, absolutePath)
+            );
+          } catch {
+            return false;
+          }
+        })
+        .map((absolutePath) => quickOpenEntry(workspaceRoot, absolutePath, true));
+
+      const recentPaths = new Set(recentEntries.map((entry) => entry.path));
+      const entries = [
+        ...recentEntries,
+        ...workspaceEntries.filter((entry) => !recentPaths.has(entry.path)),
+      ].filter((entry) => quickOpenMatches(entry, query));
+
+      res.json({ root: workspaceRoot, entries });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(400).json({ error: message });
+    }
+  });
+
   app.get('/api/files/content', (req, res) => {
     const requestedPath = typeof req.query.path === 'string' ? req.query.path : '';
 
     try {
+      const workspaceRoot = currentWorkspaceRoot(config);
       const targetPath = resolveInside(workspaceRoot, requestedPath);
       const targetStat = statSync(targetPath);
       if (!targetStat.isFile()) {
@@ -196,6 +311,7 @@ export function createApp(config: ServerConfig) {
         res.status(415).json({ error: 'file does not look like text' });
         return;
       }
+      trackRecent(targetPath);
 
       res.json({
         path: toClientPath(workspaceRoot, targetPath),
@@ -211,18 +327,25 @@ export function createApp(config: ServerConfig) {
   app.post('/api/files/new', (req, res) => {
     try {
       const { path: requestedPath } = req.body as { path?: string };
-      let targetPath: string;
-      if (typeof requestedPath === 'string' && requestedPath.length > 0) {
-        targetPath = resolveInside(workspaceRoot, requestedPath);
-      } else {
-        targetPath = resolveInside(workspaceRoot, `untitled-${randomUUID()}.md`);
+      const targetPath =
+        typeof requestedPath === 'string' && requestedPath.length > 0
+          ? resolveUserPath(config, requestedPath)
+          : resolveUserPath(config, `untitled-${randomUUID()}.md`);
+      if (existsSync(targetPath)) {
+        res.status(409).json({ error: 'file already exists' });
+        return;
       }
-      writeFileSync(targetPath, '', { encoding: 'utf-8', flag: 'wx' });
+      config.file = targetPath;
+      config.fileContent = '';
+      config.isTempFile = false;
+      config.workspaceRoot = dirname(targetPath);
+      trackRecent(targetPath);
       res.json({
         ok: true,
-        path: toClientPath(workspaceRoot, targetPath),
+        path: targetPath,
         absolutePath: targetPath,
         content: '',
+        workspaceRoot: currentWorkspaceRoot(config),
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -232,6 +355,89 @@ export function createApp(config: ServerConfig) {
 
   app.get('/api/plugins', (_req, res) => {
     res.json({ plugins: plugins.map(pluginMetadata) });
+  });
+
+  app.get('/api/zotero/cite', async (_req, res) => {
+    const url = new URL(ZOTERO_CAYW_URL);
+    url.searchParams.set('format', 'pandoc');
+    url.searchParams.set('brackets', '1');
+
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        res.status(502).json({ error: `zotero returned ${response.status}` });
+        return;
+      }
+
+      const citation = (await response.text()).trim();
+      if (citation.length === 0) {
+        res.status(204).send();
+        return;
+      }
+
+      res.json({ citation });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(502).json({ error: message });
+    }
+  });
+
+  app.post('/api/figures/assets', (req, res) => {
+    const { contentBase64, documentPath, filename, mimeType } = req.body as {
+      contentBase64?: unknown;
+      documentPath?: unknown;
+      filename?: unknown;
+      mimeType?: unknown;
+    };
+
+    if (typeof documentPath !== 'string' || documentPath.length === 0) {
+      res.status(400).json({ error: 'documentPath field is required' });
+      return;
+    }
+    if (typeof contentBase64 !== 'string' || contentBase64.length === 0) {
+      res.status(400).json({ error: 'contentBase64 field is required' });
+      return;
+    }
+    if (typeof mimeType !== 'string' || !mimeType.startsWith('image/')) {
+      res.status(400).json({ error: 'mimeType must be an image type' });
+      return;
+    }
+
+    const targetDocument = resolveUserPath(config, documentPath);
+    if (!config.file || config.isTempFile || targetDocument !== config.file) {
+      res.status(409).json({ error: 'save the document before adding figures' });
+      return;
+    }
+
+    const figuresDir = resolve(dirname(targetDocument), 'figures');
+    const figureName =
+      typeof filename === 'string' && filename.length > 0
+        ? sanitizeFigureFilename(filename, mimeType)
+        : `figure-${randomUUID()}${imageExtension(mimeType)}`;
+    const figurePath = resolve(figuresDir, figureName);
+    if (!pathIsInside(figuresDir, figurePath)) {
+      res.status(400).json({ error: 'figure path escapes figures directory' });
+      return;
+    }
+    if (existsSync(figurePath)) {
+      res.status(409).json({ error: 'figure already exists' });
+      return;
+    }
+
+    try {
+      mkdirSync(figuresDir, { recursive: true });
+      writeFileSync(figurePath, Buffer.from(contentBase64, 'base64'));
+      const relativePath = `figures/${figureName}`;
+      res.json({
+        ok: true,
+        path: figurePath,
+        relativePath,
+        markdown: `![](./${relativePath})`,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
   });
 
   app.post('/api/plugins/:id/run', async (req, res) => {
@@ -248,7 +454,7 @@ export function createApp(config: ServerConfig) {
     }
 
     const targetPath = typeof path === 'string' ? path : config.file;
-    if (!targetPath) {
+    if (!targetPath || config.isTempFile) {
       res
         .status(400)
         .json({ ok: false, error: 'no file path: save the document first' });
@@ -257,6 +463,7 @@ export function createApp(config: ServerConfig) {
 
     try {
       writeFileSync(targetPath, markdown, 'utf-8');
+      trackRecent(targetPath);
       const result = await runPlugin(plugin, targetPath, config.timeoutMs);
       res.status(result.ok ? 200 : 500).json(result);
     } catch (err) {
@@ -281,6 +488,84 @@ function getClientDir() {
     return BUILT_CLIENT_DIR;
   }
   return SOURCE_CLIENT_DIR;
+}
+
+function collectMarkdownFiles(
+  workspaceRoot: string,
+  dir: string,
+): QuickOpenEntry[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const absolutePath = resolve(dir, entry.name);
+    if (shouldIgnore(workspaceRoot, absolutePath)) return [];
+
+    if (entry.isDirectory()) {
+      return collectMarkdownFiles(workspaceRoot, absolutePath);
+    }
+
+    if (entry.isFile() && isMarkdownFile(absolutePath)) {
+      return [quickOpenEntry(workspaceRoot, absolutePath, false)];
+    }
+
+    return [];
+  }).toSorted((a, b) => a.path.localeCompare(b.path));
+}
+
+function quickOpenEntry(
+  workspaceRoot: string,
+  absolutePath: string,
+  recent: boolean,
+): QuickOpenEntry {
+  const path = toClientPath(workspaceRoot, absolutePath);
+  return {
+    path,
+    absolutePath,
+    name: path.split('/').at(-1) ?? path,
+    dir: dirname(path) === '.' ? '' : dirname(path),
+    recent,
+  };
+}
+
+function quickOpenMatches(entry: QuickOpenEntry, query: string) {
+  const normalized = query.trim().toLowerCase();
+  if (normalized.length === 0) return true;
+  return (
+    entry.name.toLowerCase().includes(normalized) ||
+    entry.path.toLowerCase().includes(normalized)
+  );
+}
+
+function sanitizeFigureFilename(filename: string, mimeType: string) {
+  const sanitized = filename
+    .split(/[\\/]/)
+    .at(-1)
+    ?.replace(/[^A-Za-z0-9._-]/g, '-')
+    .replace(/^-+/, '')
+    .slice(0, 120);
+  const fallback = `figure-${randomUUID()}${imageExtension(mimeType)}`;
+  return sanitized && sanitized.length > 0 ? sanitized : fallback;
+}
+
+function imageExtension(mimeType: string) {
+  switch (mimeType) {
+    case 'image/jpeg':
+      return '.jpg';
+    case 'image/svg+xml':
+      return '.svg';
+    case 'image/webp':
+      return '.webp';
+    case 'image/gif':
+      return '.gif';
+    default:
+      return '.png';
+  }
+}
+
+function withPreviewAssetUrls(html: string) {
+  return html.replace(
+    /\bsrc=(["'])(?![A-Za-z][A-Za-z\d+.-]*:|\/|#)([^"']+)\1/g,
+    (_match, quote: string, url: string) =>
+      `src=${quote}/api/preview-assets?path=${encodeURIComponent(url)}${quote}`,
+  );
 }
 
 function safeJson(value: unknown) {

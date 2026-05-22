@@ -33,6 +33,7 @@ const TEXT_EXTENSIONS = new Set([
   '.yaml',
   '.yml',
 ]);
+const MARKDOWN_EXTENSIONS = new Set(['.md', '.mdown', '.markdown']);
 const BINARY_EXTENSIONS = new Set([
   '.7z',
   '.avif',
@@ -87,6 +88,10 @@ export function isTextLikeFile(absolutePath: string) {
   } catch {
     return false;
   }
+}
+
+export function isMarkdownFile(absolutePath: string) {
+  return MARKDOWN_EXTENSIONS.has(extname(absolutePath).toLowerCase());
 }
 
 export function compareEntries(a: FileTreeEntry, b: FileTreeEntry) {

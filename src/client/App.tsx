@@ -1,10 +1,11 @@
 import CodeMirror from '@uiw/react-codemirror';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { languages } from '@codemirror/language-data';
-import { keymap } from '@codemirror/view';
+import { EditorView, keymap } from '@codemirror/view';
 import * as Menubar from '@radix-ui/react-menubar';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import {
+  BookOpen,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -14,11 +15,13 @@ import {
   Folder,
   FolderOpen,
   GripVertical,
+  Image as ImageIcon,
   Loader2,
   PanelLeftOpen,
   Plug,
   RefreshCcw,
   Save,
+  Search,
   XCircle,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
@@ -51,6 +54,14 @@ type OpenFileResult = {
   content: string;
 };
 
+type QuickOpenEntry = {
+  path: string;
+  absolutePath: string;
+  name: string;
+  dir: string;
+  recent: boolean;
+};
+
 type PluginMetadata = {
   id: string;
   name: string;
@@ -62,6 +73,7 @@ declare global {
   interface Window {
     __INITIAL_CONTENT?: string;
     __INITIAL_FILE?: string | null;
+    __TEMP_BACKUP_FILE?: string | null;
     __WORKSPACE_ROOT?: string;
     __IS_TEMP_FILE?: boolean;
     __PANDOC_PREVIEW_STATE__?: {
@@ -92,12 +104,16 @@ export function App() {
   const [pluginState, setPluginState] = useState<PluginState>('idle');
   const [plugins, setPlugins] = useState<PluginMetadata[]>([]);
   const [explorerOpen, setExplorerOpen] = useState(false);
+  const [quickOpenOpen, setQuickOpenOpen] = useState(false);
   const [saveAsDialogOpen, setSaveAsDialogOpen] = useState(false);
   const [saveAsDialogMode, setSaveAsDialogMode] = useState<'save' | 'new'>('save');
+  const [workspaceRoot, setWorkspaceRoot] = useState(window.__WORKSPACE_ROOT ?? '');
   const renderVersion = useRef(0);
   const debounceTimer = useRef<number | null>(null);
   const groupRef = useGroupRef();
+  const editorViewRef = useRef<EditorView | null>(null);
   const saveAsInputRef = useRef<HTMLInputElement>(null);
+  const quickOpenInputRef = useRef<HTMLInputElement>(null);
   const saveAsResolveRef = useRef<((path: string | null) => void) | null>(null);
 
   useEffect(() => {
@@ -191,6 +207,18 @@ export function App() {
     return clearRenderTimer;
   }, [clearRenderTimer, markdownText, scheduleRender]);
 
+  useEffect(() => {
+    if (!isTempFile || window.__TEMP_BACKUP_FILE == null) return;
+    const handle = window.setTimeout(() => {
+      void fetch('/api/backup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ markdown: markdownText }),
+      });
+    }, 500);
+    return () => window.clearTimeout(handle);
+  }, [isTempFile, markdownText]);
+
   const promptForSavePath = useCallback(
     (mode: 'save' | 'new'): Promise<string | null> => {
       return new Promise((resolve) => {
@@ -214,73 +242,18 @@ export function App() {
     saveAsResolveRef.current?.(null);
   }, []);
 
-  const saveCurrent = useCallback(async () => {
-    const text = markdownText;
-    renderImmediate(text);
-
-    // If this is a temp file and we haven't committed to a real path,
-    // save to temp first, then prompt for real path.
-    if (isTempFile && !currentFile) {
-      // Save to temp backing file first
-      try {
-        await fetch('/api/save', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ markdown: text }),
-        });
-      } catch {
-        // Temp save failure is non-fatal; continue to prompt
-      }
-    }
-
-    if (isTempFile || !currentFile) {
-      // Prompt for real save path
-      const savePath = await promptForSavePath('save');
-      if (savePath === null) {
-        setSaveState('idle');
-        return; // user cancelled
-      }
-
-      setSaveState('saving');
-      try {
-        const res = await fetch('/api/save', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ markdown: text, path: savePath }),
-        });
-        const data = (await res.json().catch(() => ({}))) as {
-          ok?: boolean;
-          path?: string;
-          error?: string;
-        };
-
-        if (!res.ok || !data.ok) {
-          throw new Error(data.error ?? `server returned ${res.status}`);
-        }
-
-        setCurrentFile(data.path ?? savePath);
-        setIsTempFile(false);
-        setSaveState('saved');
-        setSavedAt(new Date());
-        setStatus('saved');
-      } catch (err) {
-        setSaveState('error');
-        setStatus('error');
-      }
-      return;
-    }
-
-    // Normal save to existing real file
+  const persistMarkdown = useCallback(async (path: string, text: string) => {
     setSaveState('saving');
     try {
       const res = await fetch('/api/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ markdown: text, path: currentFile }),
+        body: JSON.stringify({ markdown: text, path }),
       });
       const data = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
         path?: string;
+        workspaceRoot?: string;
         error?: string;
       };
 
@@ -288,26 +261,165 @@ export function App() {
         throw new Error(data.error ?? `server returned ${res.status}`);
       }
 
-      setCurrentFile(data.path ?? currentFile);
+      const savedPath = data.path ?? path;
+      setCurrentFile(savedPath);
+      setWorkspaceRoot(data.workspaceRoot ?? workspaceRoot);
+      setIsTempFile(false);
       setSaveState('saved');
       setSavedAt(new Date());
       setStatus('saved');
+      return savedPath;
     } catch (err) {
       setSaveState('error');
       setStatus('error');
+      return null;
     }
-  }, [currentFile, isTempFile, markdownText, renderImmediate]);
+  }, [workspaceRoot]);
+
+  const ensureRealFile = useCallback(
+    async (options: { promptForEmpty: boolean }) => {
+      if (isTempFile || !currentFile) {
+        if (!options.promptForEmpty && markdownText.length === 0 && saveState !== 'dirty') {
+          return null;
+        }
+        const savePath = await promptForSavePath('save');
+        if (savePath === null) return null;
+        return persistMarkdown(savePath, markdownText);
+      }
+
+      if (saveState === 'dirty') {
+        return persistMarkdown(currentFile, markdownText);
+      }
+      return currentFile;
+    },
+    [currentFile, isTempFile, markdownText, persistMarkdown, promptForSavePath, saveState],
+  );
+
+  const ensureBufferSafeToReplace = useCallback(async () => {
+    if ((isTempFile || !currentFile) && markdownText.length === 0 && saveState !== 'dirty') {
+      return true;
+    }
+    return (await ensureRealFile({ promptForEmpty: true })) != null;
+  }, [currentFile, ensureRealFile, isTempFile, markdownText, saveState]);
+
+  const saveCurrent = useCallback(async () => {
+    renderImmediate(markdownText);
+    await ensureRealFile({ promptForEmpty: true });
+  }, [ensureRealFile, markdownText, renderImmediate]);
+
+  const updateMarkdown = useCallback((value: string) => {
+    setMarkdownText(value);
+    setSaveState('dirty');
+    setSavedAt(null);
+  }, []);
+
+  const insertTextAtCursor = useCallback(
+    (text: string) => {
+      const view = editorViewRef.current;
+      if (!view) {
+        updateMarkdown(`${markdownText}${text}`);
+        return;
+      }
+
+      const { from, to } = view.state.selection.main;
+      view.dispatch({
+        changes: { from, to, insert: text },
+        selection: { anchor: from + text.length },
+        scrollIntoView: true,
+      });
+      view.focus();
+    },
+    [markdownText, updateMarkdown],
+  );
+
+  const insertCitation = useCallback(async () => {
+    try {
+      const res = await fetch('/api/zotero/cite');
+      if (res.status === 204) return;
+
+      const data = (await res.json().catch(() => ({}))) as {
+        citation?: string;
+        error?: string;
+      };
+      if (!res.ok || typeof data.citation !== 'string') {
+        throw new Error(data.error ?? `server returned ${res.status}`);
+      }
+
+      insertTextAtCursor(data.citation);
+      toast({
+        title: 'Zotero citation',
+        description: data.citation,
+        variant: 'default',
+      });
+    } catch (err) {
+      toast({
+        title: 'Zotero citation',
+        description: err instanceof Error ? err.message : String(err),
+        variant: 'destructive',
+      });
+    }
+  }, [insertTextAtCursor]);
+
+  const insertClipboardFigure = useCallback(async () => {
+    try {
+      const filePath = await ensureRealFile({ promptForEmpty: true });
+      if (filePath == null) return;
+      if (!navigator.clipboard?.read) {
+        throw new Error('clipboard image read is not available');
+      }
+
+      const items = await navigator.clipboard.read();
+      let imageBlob: Blob | null = null;
+      let imageType = '';
+      for (const item of items) {
+        const type = item.types.find((candidate) => candidate.startsWith('image/'));
+        if (type) {
+          imageBlob = await item.getType(type);
+          imageType = imageBlob.type || type;
+          break;
+        }
+      }
+      if (!imageBlob) {
+        throw new Error('clipboard does not contain an image');
+      }
+
+      const res = await fetch('/api/figures/assets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documentPath: filePath,
+          mimeType: imageType,
+          contentBase64: await blobToBase64(imageBlob),
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        markdown?: string;
+        error?: string;
+      };
+      if (!res.ok || !data.ok || typeof data.markdown !== 'string') {
+        throw new Error(data.error ?? `server returned ${res.status}`);
+      }
+
+      insertTextAtCursor(`\n\n${data.markdown}\n\n`);
+      toast({
+        title: 'Clipboard image',
+        description: data.markdown,
+        variant: 'default',
+      });
+    } catch (err) {
+      toast({
+        title: 'Clipboard image',
+        description: err instanceof Error ? err.message : String(err),
+        variant: 'destructive',
+      });
+    }
+  }, [ensureRealFile, insertTextAtCursor]);
 
   const runPluginAction = useCallback(
     async (pluginId: string) => {
-      if (isTempFile) {
-        toast({
-          title: 'Save required',
-          description: 'Save the file to a real location before running plugins.',
-          variant: 'destructive',
-        });
-        return;
-      }
+      const filePath = await ensureRealFile({ promptForEmpty: true });
+      if (filePath == null) return;
 
       const pluginMeta = plugins.find((p) => p.id === pluginId);
       setPluginState('running');
@@ -317,7 +429,7 @@ export function App() {
         const res = await fetch(`/api/plugins/${encodeURIComponent(pluginId)}/run`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ markdown: markdownText, path: currentFile }),
+          body: JSON.stringify({ markdown: markdownText, path: filePath }),
         });
         const data = (await res.json().catch(() => ({}))) as {
           ok?: boolean;
@@ -355,10 +467,12 @@ export function App() {
         });
       }
     },
-    [currentFile, markdownText, plugins],
+    [ensureRealFile, markdownText, plugins],
   );
 
   const createNewFile = useCallback(async () => {
+    if (!(await ensureBufferSafeToReplace())) return;
+
     const savePath = await promptForSavePath('new');
     if (savePath === null) return; // user cancelled
 
@@ -373,6 +487,7 @@ export function App() {
       });
       const data = (await res.json().catch(() => ({}))) as OpenFileResult & {
         ok?: boolean;
+        workspaceRoot?: string;
         error?: string;
       };
 
@@ -382,29 +497,52 @@ export function App() {
 
       setMarkdownText(data.content);
       setCurrentFile(data.absolutePath);
+      setWorkspaceRoot(data.workspaceRoot ?? workspaceRoot);
       setIsTempFile(false);
-      setSaveState('saved');
-      setSavedAt(new Date());
-      setStatus('saved');
+      setSaveState('dirty');
+      setSavedAt(null);
+      setStatus('ready');
     } catch (err) {
       setSaveState('error');
       setStatus('error');
     }
-  }, []);
+  }, [ensureBufferSafeToReplace, promptForSavePath, workspaceRoot]);
 
-  const updateMarkdown = useCallback((value: string) => {
-    setMarkdownText(value);
-    setSaveState('dirty');
-    setSavedAt(null);
-  }, []);
-
-  const openFile = useCallback((result: OpenFileResult) => {
+  const openFile = useCallback(async (result: OpenFileResult) => {
+    if (!(await ensureBufferSafeToReplace())) return false;
     setMarkdownText(result.content);
     setCurrentFile(result.absolutePath);
     setIsTempFile(false);
     setSaveState('idle');
     setSavedAt(null);
+    return true;
+  }, [ensureBufferSafeToReplace]);
+
+  const openQuickOpen = useCallback(() => {
+    setQuickOpenOpen(true);
+    requestAnimationFrame(() => quickOpenInputRef.current?.focus());
   }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'p') {
+        event.preventDefault();
+        openQuickOpen();
+        return;
+      }
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        event.shiftKey &&
+        event.key.toLowerCase() === 'c'
+      ) {
+        event.preventDefault();
+        void insertCitation();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
+  }, [insertCitation, openQuickOpen]);
 
   const resetSplit = useCallback(() => {
     groupRef.current?.setLayout(RESET_LAYOUT);
@@ -415,9 +553,11 @@ export function App() {
       <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[#15161a] text-[#e6e8eb]">
         <TopMenuBar
           explorerOpen={explorerOpen}
-          isTempFile={isTempFile}
+          onInsertClipboardFigure={insertClipboardFigure}
           onNewFile={createNewFile}
+          onInsertCitation={insertCitation}
           onOpenExplorer={() => setExplorerOpen(true)}
+          onOpenQuickOpen={openQuickOpen}
           onRefresh={() => renderImmediate(markdownText)}
           onRunPlugin={runPluginAction}
           onResetSplit={resetSplit}
@@ -431,7 +571,7 @@ export function App() {
               <ExplorerDrawer
                 currentFile={currentFile}
                 onOpenFile={openFile}
-                root={window.__WORKSPACE_ROOT ?? ''}
+                root={workspaceRoot}
               />
             ) : null}
           </AnimatePresence>
@@ -447,6 +587,9 @@ export function App() {
                 fileName={basename(currentFile)}
                 markdown={markdownText}
                 onChange={updateMarkdown}
+                onCreateEditor={(view) => {
+                  editorViewRef.current = view;
+                }}
                 onSave={saveCurrent}
               />
             </Panel>
@@ -474,9 +617,16 @@ export function App() {
           inputRef={saveAsInputRef}
           mode={saveAsDialogMode}
           open={saveAsDialogOpen}
-          workspaceRoot={window.__WORKSPACE_ROOT ?? ''}
+          workspaceRoot={workspaceRoot}
           onCancel={handleSaveAsCancel}
           onSubmit={handleSaveAsSubmit}
+        />
+        <QuickOpenDialog
+          inputRef={quickOpenInputRef}
+          onCancel={() => setQuickOpenOpen(false)}
+          onOpenFile={openFile}
+          open={quickOpenOpen}
+          workspaceRoot={workspaceRoot}
         />
         <Toaster />
       </div>
@@ -486,9 +636,11 @@ export function App() {
 
 function TopMenuBar({
   explorerOpen,
-  isTempFile,
+  onInsertClipboardFigure,
+  onInsertCitation,
   onNewFile,
   onOpenExplorer,
+  onOpenQuickOpen,
   onRefresh,
   onRunPlugin,
   onResetSplit,
@@ -497,9 +649,11 @@ function TopMenuBar({
   plugins,
 }: {
   explorerOpen: boolean;
-  isTempFile: boolean;
+  onInsertClipboardFigure: () => void;
+  onInsertCitation: () => void;
   onNewFile: () => void;
   onOpenExplorer: () => void;
+  onOpenQuickOpen: () => void;
   onRefresh: () => void;
   onRunPlugin: (pluginId: string) => void;
   onResetSplit: () => void;
@@ -525,6 +679,10 @@ function TopMenuBar({
               <MenuItem onSelect={onOpenExplorer}>
                 <FolderOpen className="h-4 w-4" />
                 Open
+              </MenuItem>
+              <MenuItem onSelect={onOpenQuickOpen}>
+                <Search className="h-4 w-4" />
+                Quick Open
               </MenuItem>
               <Menubar.Separator className="my-1 h-px bg-[#343946]" />
               <MenuItem onSelect={onSave}>
@@ -557,13 +715,24 @@ function TopMenuBar({
           </Menubar.Portal>
         </Menubar.Menu>
         <Menubar.Menu>
-          <Menubar.Trigger
-            className={cn(
-              'rounded px-3 py-1.5 outline-none hover:bg-[#303541] focus:bg-[#303541] data-[state=open]:bg-[#303541]',
-              isTempFile && 'text-[#58606e]',
-            )}
-            disabled={isTempFile}
-          >
+          <Menubar.Trigger className="rounded px-3 py-1.5 outline-none hover:bg-[#303541] focus:bg-[#303541] data-[state=open]:bg-[#303541]">
+            Insert
+          </Menubar.Trigger>
+          <Menubar.Portal>
+            <Menubar.Content className="z-50 min-w-44 rounded border border-[#343946] bg-[#22262f] p-1 text-sm text-[#e7eaf0] shadow-xl">
+              <MenuItem onSelect={onInsertCitation}>
+                <BookOpen className="h-4 w-4" />
+                Citation
+              </MenuItem>
+              <MenuItem onSelect={onInsertClipboardFigure}>
+                <ImageIcon className="h-4 w-4" />
+                Clipboard Image
+              </MenuItem>
+            </Menubar.Content>
+          </Menubar.Portal>
+        </Menubar.Menu>
+        <Menubar.Menu>
+          <Menubar.Trigger className="rounded px-3 py-1.5 outline-none hover:bg-[#303541] focus:bg-[#303541] data-[state=open]:bg-[#303541]">
             Plugin
           </Menubar.Trigger>
           <Menubar.Portal>
@@ -610,6 +779,12 @@ function TopMenuBar({
         </IconButton>
         <IconButton label="Save" onClick={onSave}>
           <Save className="h-4 w-4" />
+        </IconButton>
+        <IconButton label="Insert Citation" onClick={onInsertCitation}>
+          <BookOpen className="h-4 w-4" />
+        </IconButton>
+        <IconButton label="Insert Figure from Clipboard" onClick={onInsertClipboardFigure}>
+          <ImageIcon className="h-4 w-4" />
         </IconButton>
         <IconButton label="Refresh Preview" onClick={onRefresh}>
           <RefreshCcw className="h-4 w-4" />
@@ -674,11 +849,13 @@ function EditorPane({
   fileName,
   markdown,
   onChange,
+  onCreateEditor,
   onSave,
 }: {
   fileName: string;
   markdown: string;
   onChange: (value: string) => void;
+  onCreateEditor: (view: EditorView) => void;
   onSave: () => void;
 }) {
   const extensions = useMemo(
@@ -712,6 +889,7 @@ function EditorPane({
           theme="dark"
           value={markdown}
           onChange={onChange}
+          onCreateEditor={onCreateEditor}
         />
       </div>
     </section>
@@ -832,7 +1010,7 @@ function ExplorerDrawer({
   root,
 }: {
   currentFile: string | null;
-  onOpenFile: (result: OpenFileResult) => void;
+  onOpenFile: (result: OpenFileResult) => Promise<boolean>;
   root: string;
 }) {
   const [entriesByDir, setEntriesByDir] = useState<Record<string, FileEntry[]>>({});
@@ -878,7 +1056,7 @@ function ExplorerDrawer({
         setError(`server returned ${res.status}`);
         return;
       }
-      onOpenFile((await res.json()) as OpenFileResult);
+      await onOpenFile((await res.json()) as OpenFileResult);
     },
     [onOpenFile],
   );
@@ -1006,6 +1184,224 @@ function ExplorerBranch({
   );
 }
 
+function QuickOpenDialog({
+  inputRef,
+  onCancel,
+  onOpenFile,
+  open,
+  workspaceRoot,
+}: {
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  onCancel: () => void;
+  onOpenFile: (result: OpenFileResult) => Promise<boolean>;
+  open: boolean;
+  workspaceRoot: string;
+}) {
+  const [query, setQuery] = useState('');
+  const [entries, setEntries] = useState<QuickOpenEntry[]>([]);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setQuery('');
+    setSelectedIndex(0);
+    setLoading(true);
+    setError(null);
+    requestAnimationFrame(() => inputRef.current?.focus());
+
+    let cancelled = false;
+    fetch('/api/files/quick-open')
+      .then((res) => {
+        if (!res.ok) throw new Error(`server returned ${res.status}`);
+        return res.json() as Promise<{ entries: QuickOpenEntry[] }>;
+      })
+      .then((data) => {
+        if (!cancelled) setEntries(data.entries ?? []);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [inputRef, open]);
+
+  const filteredEntries = useMemo(
+    () => filterQuickOpenEntries(entries, query).slice(0, 60),
+    [entries, query],
+  );
+
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [query]);
+
+  useEffect(() => {
+    setSelectedIndex((index) =>
+      filteredEntries.length === 0 ? 0 : Math.min(index, filteredEntries.length - 1),
+    );
+  }, [filteredEntries.length]);
+
+  if (!open) return null;
+
+  const openSelected = async (entry: QuickOpenEntry | undefined) => {
+    if (!entry) return;
+    setError(null);
+    const res = await fetch(
+      `/api/files/content?path=${encodeURIComponent(entry.path)}`,
+    );
+    if (!res.ok) {
+      setError(`server returned ${res.status}`);
+      return;
+    }
+    const didOpen = await onOpenFile((await res.json()) as OpenFileResult);
+    if (didOpen) onCancel();
+  };
+
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === 'Escape') {
+      onCancel();
+      return;
+    }
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setSelectedIndex((index) =>
+        filteredEntries.length === 0 ? 0 : Math.min(index + 1, filteredEntries.length - 1),
+      );
+      return;
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setSelectedIndex((index) => Math.max(index - 1, 0));
+      return;
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      void openSelected(filteredEntries[selectedIndex]);
+    }
+  };
+
+  const recentEntries = filteredEntries.filter((entry) => entry.recent);
+  const workspaceEntries = filteredEntries.filter((entry) => !entry.recent);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-[12vh]"
+      data-testid="quick-open-dialog"
+      onClick={onCancel}
+    >
+      <div
+        className="w-[min(720px,calc(100vw-2rem))] rounded border border-[#343946] bg-[#1f222b] shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="border-b border-[#343946] p-3">
+          <div className="mb-2 flex items-center justify-between text-sm font-medium text-[#d6d9df]">
+            <span>Quick Open</span>
+            <span className="max-w-[55%] truncate text-xs font-normal text-[#788190]">
+              {workspaceRoot || 'Workspace'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 rounded border border-[#343946] bg-[#15161a] px-3 py-2 focus-within:border-[#4a7cc9]">
+            <Search className="h-4 w-4 shrink-0 text-[#788190]" />
+            <input
+              ref={inputRef}
+              aria-label="Search files"
+              className="w-full bg-transparent text-sm text-[#e6e8eb] outline-none placeholder:text-[#58606e]"
+              placeholder="Search files"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={handleKeyDown}
+            />
+          </div>
+        </div>
+        <div className="max-h-[52vh] overflow-auto p-2">
+          {loading ? (
+            <div className="flex items-center gap-2 px-2 py-3 text-sm text-[#aab2c0]">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading files
+            </div>
+          ) : null}
+          {error ? <div className="px-2 py-3 text-sm text-[#ff9b8f]">{error}</div> : null}
+          {!loading && !error && filteredEntries.length === 0 ? (
+            <div className="px-2 py-3 text-sm text-[#aab2c0]">No matching files</div>
+          ) : null}
+          <QuickOpenSection
+            entries={recentEntries}
+            label="Recent"
+            offset={0}
+            selectedIndex={selectedIndex}
+            onOpen={openSelected}
+            onSelect={setSelectedIndex}
+          />
+          <QuickOpenSection
+            entries={workspaceEntries}
+            label="Workspace"
+            offset={recentEntries.length}
+            selectedIndex={selectedIndex}
+            onOpen={openSelected}
+            onSelect={setSelectedIndex}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function QuickOpenSection({
+  entries,
+  label,
+  offset,
+  onOpen,
+  onSelect,
+  selectedIndex,
+}: {
+  entries: QuickOpenEntry[];
+  label: string;
+  offset: number;
+  onOpen: (entry: QuickOpenEntry) => Promise<void>;
+  onSelect: (index: number) => void;
+  selectedIndex: number;
+}) {
+  if (entries.length === 0) return null;
+
+  return (
+    <section className="py-1">
+      <div className="px-2 py-1 text-xs uppercase text-[#788190]">{label}</div>
+      {entries.map((entry, index) => {
+        const absoluteIndex = offset + index;
+        return (
+          <button
+            key={`${label}-${entry.path}`}
+            className={cn(
+              'flex h-10 w-full items-center gap-2 rounded px-2 text-left text-sm',
+              absoluteIndex === selectedIndex
+                ? 'bg-[#344154] text-white'
+                : 'text-[#c8ced8] hover:bg-[#28303b]',
+            )}
+            data-testid="quick-open-result"
+            type="button"
+            onClick={() => void onOpen(entry)}
+            onMouseEnter={() => onSelect(absoluteIndex)}
+          >
+            <FileText className="h-4 w-4 shrink-0 text-[#8fb8ff]" />
+            <span className="min-w-0 flex-1 truncate">{entry.path}</span>
+            {entry.dir ? (
+              <span className="max-w-[35%] truncate text-xs text-[#788190]">
+                {entry.dir}
+              </span>
+            ) : null}
+          </button>
+        );
+      })}
+    </section>
+  );
+}
+
 function markdownExtension() {
   return markdown({ base: markdownLanguage, codeLanguages: languages });
 }
@@ -1115,6 +1511,27 @@ function groupPluginsByCategory(plugins: PluginMetadata[]) {
     category,
     items: items.toSorted((a, b) => a.name.localeCompare(b.name)),
   })).toSorted((a, b) => a.category.localeCompare(b.category));
+}
+
+function filterQuickOpenEntries(entries: QuickOpenEntry[], query: string) {
+  const normalized = query.trim().toLowerCase();
+  if (normalized.length === 0) return entries;
+
+  return entries.filter((entry) => {
+    return (
+      entry.name.toLowerCase().includes(normalized) ||
+      entry.path.toLowerCase().includes(normalized)
+    );
+  });
+}
+
+async function blobToBase64(blob: Blob) {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = '';
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
 }
 
 function formatSavedAt(value: Date) {
