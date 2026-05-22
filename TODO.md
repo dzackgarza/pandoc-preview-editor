@@ -2,8 +2,6 @@
 
 ## Not Done
 
-- **Buffer disk warning** — Warn user when buffer differs from disk (already partially implemented as save-state indicator)
-- **Compilation time display** — Show last pandoc render duration (already implemented)
 - **Diagram toolbar modal** — One-button access to diagram tools (FreeTikZ, quiver, Qtikz, Tikzit, Inkscape, Xournal) with save gate and `./figures/` auto-creation
 - **LaTeX syntax concealing** — Conceal LaTeX syntax in editor for readability
 - **QuickTex snippet expansion** — Expand LaTeX snippets in editor
