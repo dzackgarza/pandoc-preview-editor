@@ -734,3 +734,24 @@ Injection format per tool:
 - [ ] `./figures/` created automatically relative to saved file
 - [ ] All diagram options gated by save-as when file is temp
 - [ ] Injected tikz content renders as SVG in preview (with filter enabled)
+
+## TDD Guardrails
+
+- RED first for each sub-outcome: no implementation work begins for clipboard injection,
+  save gating, filter scanning, desktop-launch flows, or iframe export flows until a
+  failing test exists for that exact owned behavior.
+- Required test order:
+  - first failing browser test for the save gate and cursor insertion path
+  - then failing API tests for concrete filesystem boundaries such as figure writes or
+    deterministic file creation
+  - then failing integration tests for renderer-visible output when a bundled filter is
+    involved
+- No production code may be written ahead of the failing proof. If exploration code is
+  written to understand an approach, discard it and restart from tests.
+- Tests must use real filesystem writes, real browser flows, and real command execution
+  where the repository owns the interlock. No mocks, no `xfail`, no `skip`.
+- Assertions must prove owned behavior: exact inserted markdown, exact disk path/content,
+  exact workspace-relative figure location, exact save-as gating, and exact preview
+  output when the configured renderer/filter path succeeds.
+- GREEN means the smallest code change that makes the newly failing test pass; REFACTOR
+  is allowed only after the focused test and the relevant suite stay green.

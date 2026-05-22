@@ -210,3 +210,26 @@ To match the performance and premium characteristics of `math-conceal.nvim` and 
 * Open an active project file with several inline and block math equations.
 * Verify that inline equations display beautifully with correct baseline-alignment alongside the surrounding text.
 * Move the cursor step-by-step through a math equation, verifying that it expands dynamically to raw text ONLY under the cursor, while adjacent equations remain fully rendered.
+
+## TDD Guardrails
+
+- RED first: before implementing any concealment or inline rendering behavior, write a
+  failing test for one exact visible editor outcome.
+- Scope tests to repository-owned behavior first. In this repo that means the shipped
+  browser editor surface and any app-owned render/interlock logic; do not treat generic
+  Neovim or terminal-emulator behavior as app-owned without a separate ownership
+  decision.
+- Required first witnesses:
+  - a failing test showing delimiters are concealed when the cursor is outside the math
+    span
+  - a failing test showing the same span expands back to literal source when the cursor
+    enters it
+  - a failing test showing adjacent unaffected content remains unchanged
+- No production code may be written until the selected witness fails for the expected
+  reason on current code.
+- Tests must exercise the real editor surface and assert exact observable outcomes in the
+  DOM or editor text. No mocks, no fake syntax-tree objects, no `xfail`, and no `skip`.
+- Assertions must prove exact conceal/expand behavior and cursor-locality, not weak
+  claims like "a widget exists" without checking what the user actually sees.
+- GREEN means the smallest implementation that makes the failing proof pass while the
+  existing suite remains green.

@@ -40,3 +40,22 @@ For the browser-native CodeMirror editor, snippet and abbreviation expansion is 
 * Verify that typing `st` followed by a space inside the CodeMirror editor expands to `such that `.
 * Verify that typing math-mode abbreviations does not expand when outside a math boundary, and expands correctly when inside `\(` or `\[`.
 
+## TDD Guardrails
+
+- RED first: before adding any snippet-expansion code, write a failing browser or editor
+  integration test for one exact abbreviation behavior.
+- Scope the failing tests to repository-owned behavior only. For this repo, that means
+  the browser editor surface the app ships, not generic Neovim/Firenvim plugin behavior
+  unless the app itself owns an integration seam that changes behavior.
+- Required first witnesses:
+  - a failing test for a representative prose expansion such as `st` → `such that `
+  - a failing test for math-only expansion guarded by real editor context
+  - a failing test for a non-expansion case where the abbreviation must remain literal
+- No production code may be written until the chosen witness fails for the expected
+  reason.
+- Tests must drive the real editor and assert exact document text after user actions. No
+  mocks, no fake editor state, no `xfail`, and no `skip`.
+- Assertions must prove exact text transformation and context gating, not weak claims
+  like non-empty output or generic event firing.
+- GREEN means the smallest change that makes the failing expansion proof pass; REFACTOR
+  follows only after the targeted test and the broader suite are green.
