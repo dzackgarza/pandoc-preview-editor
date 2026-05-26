@@ -48,7 +48,7 @@ errors (wrong path, wrong markup, missing tikzcd filter in pandoc args).
 | Clipboard image read | Client (navigator.clipboard.read) | Browser Clipboard API |
 | Clipboard image file write to `./figures/` | Server (new endpoint) | Filesystem access lives on the server |
 | Desktop app file creation + launch (Qtikz, Tikzit, Inkscape, Xournal) | Server (plugin system) | `spawn` with file path needs filesystem |
-| TikZ code block detection and SVG rendering | Pandoc lua filter | Already owned by `~/.pandoc/bin/tikzcd*.lua` |
+| TikZ code block detection and SVG rendering | Pandoc lua filter | Already owned by `~/.pandoc/filters/tikzcd*.lua` |
 | Xournal `.xopp` → SVG conversion at render time | Pandoc lua filter (`xournal.lua`) | Custom filter intercepts `` ``` {.xournal} `` blocks |
 | Filter configuration (checkbox list + CLI sync) | Client + config file | UI renders from file scan; writes back to config |
 | Portable default filters shipped with app (tikzcd, xournal) | Server (bundled assets) | App installs them to `~/.pandoc/filters/` on first run |
@@ -330,7 +330,7 @@ filter:
 ```toml
 [pandoc]
 args = [
-  "--lua-filter=~/.pandoc/bin/convert_amsthm_envs.lua",
+  "--lua-filter=~/.pandoc/filters/convert_amsthm_envs.lua",
   # No tikzcd filter here
 ]
 ```
@@ -407,7 +407,7 @@ The filter modal is also accessible from the Diagram modal as a gear/settings li
 
 **tikzcd.lua audit (hardcoded paths found)**:
 
-The current `~/.pandoc/bin/tikzcd.lua` has these portability blockers:
+The current `~/.pandoc/filters/tikzcd.lua` has these portability blockers:
 
 | Line | Issue | Fix |
 | --- | --- | --- |
@@ -746,12 +746,14 @@ Injection format per tool:
     deterministic file creation
   - then failing integration tests for renderer-visible output when a bundled filter is
     involved
-- No production code may be written ahead of the failing proof. If exploration code is
-  written to understand an approach, discard it and restart from tests.
+- No production code may be written ahead of the failing proof.
+  If exploration code is written to understand an approach, discard it and restart from
+  tests.
 - Tests must use real filesystem writes, real browser flows, and real command execution
-  where the repository owns the interlock. No mocks, no `xfail`, no `skip`.
-- Assertions must prove owned behavior: exact inserted markdown, exact disk path/content,
-  exact workspace-relative figure location, exact save-as gating, and exact preview
-  output when the configured renderer/filter path succeeds.
+  where the repository owns the interlock.
+  No mocks, no `xfail`, no `skip`.
+- Assertions must prove owned behavior: exact inserted markdown, exact disk
+  path/content, exact workspace-relative figure location, exact save-as gating, and
+  exact preview output when the configured renderer/filter path succeeds.
 - GREEN means the smallest code change that makes the newly failing test pass; REFACTOR
   is allowed only after the focused test and the relevant suite stay green.
