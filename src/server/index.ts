@@ -10,6 +10,7 @@ import {
 } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readdir } from 'node:fs/promises';
 import {
   findPlugin,
   loadBundledPlugins,
@@ -274,12 +275,12 @@ export function createApp(config: ServerConfig) {
     }
   });
 
-  app.get('/api/files/quick-open', (req, res) => {
+  app.get('/api/files/quick-open', async (req, res) => {
     const query = typeof req.query.q === 'string' ? req.query.q : '';
 
     try {
       const workspaceRoot = currentWorkspaceRoot(config);
-      const workspaceEntries = collectMarkdownFiles(workspaceRoot, workspaceRoot);
+      const workspaceEntries = await collectMarkdownFilesAsync(workspaceRoot, workspaceRoot);
       const recentEntries = recentFiles
         .filter((absolutePath) => {
           try {
@@ -503,24 +504,32 @@ function getClientDir() {
   return SOURCE_CLIENT_DIR;
 }
 
-function collectMarkdownFiles(
+async function collectMarkdownFilesAsync(
   workspaceRoot: string,
   dir: string,
-): QuickOpenEntry[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const absolutePath = resolve(dir, entry.name);
-    if (shouldIgnore(workspaceRoot, absolutePath)) return [];
+): Promise<QuickOpenEntry[]> {
+  try {
+    const entries = await readdir(dir, { withFileTypes: true });
+    const results = await Promise.all(
+      entries.map(async (entry) => {
+        const absolutePath = resolve(dir, entry.name);
+        if (shouldIgnore(workspaceRoot, absolutePath)) return [];
 
-    if (entry.isDirectory()) {
-      return collectMarkdownFiles(workspaceRoot, absolutePath);
-    }
+        if (entry.isDirectory()) {
+          return collectMarkdownFilesAsync(workspaceRoot, absolutePath);
+        }
 
-    if (entry.isFile() && isMarkdownFile(absolutePath)) {
-      return [quickOpenEntry(workspaceRoot, absolutePath, false)];
-    }
+        if (entry.isFile() && isMarkdownFile(absolutePath)) {
+          return [quickOpenEntry(workspaceRoot, absolutePath, false)];
+        }
 
+        return [];
+      }),
+    );
+    return results.flat().toSorted((a, b) => a.path.localeCompare(b.path));
+  } catch {
     return [];
-  }).toSorted((a, b) => a.path.localeCompare(b.path));
+  }
 }
 
 function quickOpenEntry(
@@ -575,9 +584,13 @@ function imageExtension(mimeType: string) {
 
 function withPreviewAssetUrls(html: string) {
   return html.replace(
-    /\bsrc=(["'])(?![A-Za-z][A-Za-z\d+.-]*:|\/|#)([^"']+)\1/g,
-    (_match, quote: string, url: string) =>
-      `src=${quote}/api/preview-assets?path=${encodeURIComponent(url)}${quote}`,
+    /<!--[\s\S]*?-->|<script\b[\s\S]*?<\/script>|\bsrc=(["'])(?![A-Za-z][A-Za-z\d+.-]*:|\/|#)([^"']+)\1/g,
+    (match, quote?: string, url?: string) => {
+      if (match.startsWith('<!--') || match.startsWith('<script')) {
+        return match;
+      }
+      return `src=${quote}/api/preview-assets?path=${encodeURIComponent(url!)}${quote}`;
+    },
   );
 }
 
