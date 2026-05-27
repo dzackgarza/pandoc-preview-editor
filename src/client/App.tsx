@@ -18,6 +18,8 @@ import { FileSelectorDialog } from './components/FileSelectorDialog.jsx';
 import { QuickOpenDialog } from './components/QuickOpenDialog.jsx';
 import { Toaster } from './components/Toaster.jsx';
 import { SettingsDialog } from './components/SettingsDialog.jsx';
+import { FilterSettingsModal } from './components/FilterSettingsModal.jsx';
+import { DiagramModal } from './components/DiagramModal.jsx';
 
 export type RenderStatus = 'ready' | 'rendering' | 'error' | 'saved';
 export type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
@@ -91,6 +93,8 @@ export function App() {
   const [saveAsDialogMode, setSaveAsDialogMode] = useState<'save' | 'new'>('save');
   const [workspaceRoot, setWorkspaceRoot] = useState(window.__WORKSPACE_ROOT ?? '');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [filterSettingsOpen, setFilterSettingsOpen] = useState(false);
+  const [diagramOpen, setDiagramOpen] = useState(false);
   const renderVersion = useRef(0);
   const debounceTimer = useRef<number | null>(null);
   const groupRef = useGroupRef();
@@ -650,6 +654,8 @@ export function App() {
           onSave={saveCurrent}
           onToggleExplorer={() => setExplorerOpen((open) => !open)}
           onOpenSettings={() => setSettingsOpen(true)}
+          onOpenFilterSettings={() => setFilterSettingsOpen(true)}
+          onOpenDiagram={() => setDiagramOpen(true)}
           plugins={plugins}
         />
         <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -743,6 +749,17 @@ export function App() {
           open={settingsOpen}
           onClose={() => setSettingsOpen(false)}
           onSave={() => renderImmediate(markdownText)}
+        />
+        <FilterSettingsModal
+          open={filterSettingsOpen}
+          onClose={() => setFilterSettingsOpen(false)}
+          onSave={() => renderImmediate(markdownText)}
+        />
+        <DiagramModal
+          open={diagramOpen}
+          onClose={() => setDiagramOpen(false)}
+          ensureRealFile={() => ensureRealFile({ promptForEmpty: true })}
+          insertTextAtCursor={insertTextAtCursor}
         />
         <Toaster />
       </div>

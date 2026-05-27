@@ -13,6 +13,8 @@ import {
   Plug,
   FileText,
   Settings,
+  Plus,
+  Filter,
 } from 'lucide-react';
 import { useMemo } from 'react';
 
@@ -36,6 +38,8 @@ export function TopMenuBar({
   onSave,
   onToggleExplorer,
   onOpenSettings,
+  onOpenFilterSettings,
+  onOpenDiagram,
   plugins,
 }: {
   explorerOpen: boolean;
@@ -50,6 +54,8 @@ export function TopMenuBar({
   onSave: () => void;
   onToggleExplorer: () => void;
   onOpenSettings: () => void;
+  onOpenFilterSettings: () => void;
+  onOpenDiagram: () => void;
   plugins: PluginMetadata[];
 }) {
   const pluginsByCategory = useMemo(() => groupPluginsByCategory(plugins), [plugins]);
@@ -78,6 +84,10 @@ export function TopMenuBar({
               <MenuItem onSelect={onOpenSettings}>
                 <Settings className="h-4 w-4" />
                 Preferences...
+              </MenuItem>
+              <MenuItem onSelect={onOpenFilterSettings}>
+                <Filter className="h-4 w-4" />
+                Lua Filters...
               </MenuItem>
               <Menubar.Separator className="my-1 h-px bg-[#343946]" />
               <MenuItem onSelect={onSave}>
@@ -122,6 +132,10 @@ export function TopMenuBar({
               <MenuItem onSelect={onInsertClipboardFigure}>
                 <ImageIcon className="h-4 w-4" />
                 Clipboard Image
+              </MenuItem>
+              <MenuItem onSelect={onOpenDiagram}>
+                <Plus className="h-4 w-4" />
+                Diagram...
               </MenuItem>
             </Menubar.Content>
           </Menubar.Portal>
