@@ -80,6 +80,7 @@ export function App() {
   const [previewHtml, setPreviewHtml] = useState('');
   const [status, setStatus] = useState<RenderStatus>('ready');
   const [durationMs, setDurationMs] = useState<number | null>(null);
+  const [diagnostics, setDiagnostics] = useState<{ summary: string; detail: string } | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [pluginState, setPluginState] = useState<PluginState>('idle');
@@ -144,6 +145,7 @@ export function App() {
         ok: boolean;
         html?: string;
         durationMs?: number;
+        stderr?: string;
       };
 
       if (version !== renderVersion.current) return;
@@ -152,15 +154,24 @@ export function App() {
         setPreviewHtml(data.html);
         setStatus('ready');
         setDurationMs(data.durationMs ?? null);
+        setDiagnostics(null);
       } else {
         setPreviewHtml(errorDocument('Render failed'));
         setStatus('error');
+        setDiagnostics({
+          summary: 'Renderer Error',
+          detail: data.stderr || 'Render failed',
+        });
       }
     } catch (err) {
       if (version !== renderVersion.current) return;
       const message = err instanceof Error ? err.message : String(err);
       setPreviewHtml(errorDocument(`Error: ${message}`));
       setStatus('error');
+      setDiagnostics({
+        summary: 'Renderer Error',
+        detail: message,
+      });
     }
   }, []);
 
@@ -680,6 +691,31 @@ export function App() {
             </Panel>
           </Group>
         </div>
+        {diagnostics ? (
+          <div
+            data-testid="diagnostics-panel"
+            className="flex flex-col border-t border-[#401614] bg-[#2d1413] px-4 py-3 text-sm text-[#ff9b8f] shrink-0"
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span data-testid="diagnostics-title" className="font-semibold flex items-center gap-1.5">
+                <span className="inline-block w-2 h-2 rounded-full bg-[#ff9b8f]"></span>
+                Renderer Error
+              </span>
+              <button
+                onClick={() => setDiagnostics(null)}
+                className="text-[#ffa89e] hover:text-white text-xs font-medium transition-colors focus-visible:outline-none"
+              >
+                Dismiss
+              </button>
+            </div>
+            <pre
+              data-testid="diagnostics-detail"
+              className="mt-1 max-h-36 overflow-auto font-mono text-xs whitespace-pre-wrap leading-relaxed text-[#ffa89e] bg-[#220d0c] p-2.5 rounded border border-[#541e1b]"
+            >
+              {diagnostics.detail}
+            </pre>
+          </div>
+        ) : null}
         <StatusCluster
           currentFile={currentFile}
           durationMs={durationMs}

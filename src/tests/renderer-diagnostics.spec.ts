@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { writeFileSync } from 'node:fs';
 import { launchServer, killServer, type ServerInstance } from './helpers.js';
 import { setEditorMarkdown } from './editor-helpers.js';
 
@@ -9,8 +10,22 @@ test.describe('Renderer Diagnostics UI E2E', () => {
   let consoleErrors: string[] = [];
 
   test.beforeAll(async () => {
+    // Reset the failing configuration dynamically to ensure idempotency across consecutive runs
+    const configPath = '/tmp/pandoc-preview-test-fail.toml';
+    const tomlContent = [
+      '[render]',
+      'debounce_ms = 100',
+      'timeout_ms = 30000',
+      '',
+      '[pandoc]',
+      'render_command = "node src/tests/failing-renderer.mjs"',
+      'templates_dir = "~/.pandoc/templates"',
+      'filters_dir = "~/.pandoc/filters"',
+    ].join('\n');
+    writeFileSync(configPath, tomlContent, 'utf-8');
+
     // Launch server with the deterministic failing renderer config
-    server = await launchServer(undefined, undefined, '/tmp/pandoc-preview-test-fail.toml');
+    server = await launchServer(undefined, undefined, configPath);
   });
 
   test.afterAll(async () => {
