@@ -200,27 +200,27 @@ test.describe('Bug fixes TDD', () => {
       await page.locator('.fixed.inset-0 input').fill('existing.md');
 
       // Setup dialog handler to dismiss (Cancel)
-      let dialogPrompted = false;
-      page.once('dialog', async (dialog) => {
-        dialogPrompted = true;
-        expect(dialog.message()).toContain('already exists. Do you want to replace it?');
-        await dialog.dismiss();
-      });
+      const dialogPromise1 = page.waitForEvent('dialog');
 
       // Click save
       await page.locator('.fixed.inset-0 button:not([disabled])').last().click();
 
-      // Expect dialog to have been prompted and file-selector-dialog to still be visible
+      // Wait for the dialog to appear and dismiss it
+      const dialog1 = await dialogPromise1;
+      expect(dialog1.message()).toContain('already exists. Do you want to replace it?');
+      await dialog1.dismiss();
+
+      // Expect file-selector-dialog to still be visible
       await expect(page.getByTestId('file-selector-dialog')).toBeVisible({ timeout: 5000 });
-      expect(dialogPrompted).toBe(true);
 
       // Now click save again but approve overwrite
-      page.once('dialog', async (dialog) => {
-        expect(dialog.message()).toContain('already exists. Do you want to replace it?');
-        await dialog.accept();
-      });
+      const dialogPromise2 = page.waitForEvent('dialog');
 
       await page.locator('.fixed.inset-0 button:not([disabled])').last().click();
+
+      const dialog2 = await dialogPromise2;
+      expect(dialog2.message()).toContain('already exists. Do you want to replace it?');
+      await dialog2.accept();
 
       // Dialog should close, and existing.md should be overwritten with '# Overwritten Document\n'
       await expect(page.getByTestId('file-selector-dialog')).toHaveCount(0);
