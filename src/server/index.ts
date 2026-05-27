@@ -14,7 +14,7 @@ import { readdir } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
 import { dump } from 'js-toml';
-import { parse } from 'shell-quote';
+import { parse, quote } from 'shell-quote';
 import {
   findPlugin,
   loadBundledPlugins,
@@ -618,6 +618,339 @@ export function createApp(config: ServerConfig) {
     }
   });
 
+  // GET /api/filters - list available Lua filters and their state in renderCommand
+  app.get('/api/filters', (_req, res) => {
+    try {
+      const home = homedir();
+      const resolveTilde = (p: string): string => {
+        if (p.startsWith('~/')) return join(home, p.slice(2));
+        if (p === '~') return home;
+        return p;
+      };
+
+      const filtersDir = resolveTilde(config.filtersDir ?? '~/.pandoc/filters');
+      let files: string[] = [];
+      if (existsSync(filtersDir)) {
+        files = readdirSync(filtersDir).filter((name) => {
+          return name.endsWith('.lua') && statSync(join(filtersDir, name)).isFile();
+        });
+      }
+
+      const parsed = parse(config.renderCommand).filter(
+        (entry): entry is string => typeof entry === 'string'
+      );
+
+      const activeFilters = new Set<string>();
+      for (let i = 0; i < parsed.length; i++) {
+        const arg = parsed[i];
+        let filterPath: string | null = null;
+        if (arg.startsWith('--lua-filter=')) {
+          filterPath = arg.slice('--lua-filter='.length);
+        } else if (arg === '--lua-filter' && i + 1 < parsed.length) {
+          filterPath = parsed[i + 1];
+        } else if (arg.startsWith('--filter=')) {
+          filterPath = arg.slice('--filter='.length);
+        } else if (arg === '--filter' && i + 1 < parsed.length) {
+          filterPath = parsed[i + 1];
+        }
+        if (filterPath) {
+          activeFilters.add(resolve(resolveTilde(filterPath)));
+        }
+      }
+
+      const filters = files.map((name) => {
+        const fullPath = join(filtersDir, name);
+        const absPath = resolve(fullPath);
+        return {
+          name,
+          path: join(config.filtersDir ?? '~/.pandoc/filters', name),
+          enabled: activeFilters.has(absPath),
+        };
+      });
+
+      res.json({ filters });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // POST /api/filters - toggle Lua filters on/off in renderCommand
+  app.post('/api/filters', (req, res) => {
+    const { enabled } = req.body as { enabled?: unknown };
+    if (!Array.isArray(enabled)) {
+      res.status(400).json({ error: 'enabled field must be an array of string paths/names' });
+      return;
+    }
+
+    try {
+      const home = homedir();
+      const resolveTilde = (p: string): string => {
+        if (p.startsWith('~/')) return join(home, p.slice(2));
+        if (p === '~') return home;
+        return p;
+      };
+
+      const filtersDir = resolveTilde(config.filtersDir ?? '~/.pandoc/filters');
+      const absFiltersDir = resolve(filtersDir);
+
+      const parsed = parse(config.renderCommand).filter(
+        (entry): entry is string => typeof entry === 'string'
+      );
+
+      const newArgs: string[] = [];
+      for (let i = 0; i < parsed.length; i++) {
+        const arg = parsed[i];
+        let filterPath: string | null = null;
+        let isPair = false;
+        if (arg.startsWith('--lua-filter=')) {
+          filterPath = arg.slice('--lua-filter='.length);
+        } else if (arg === '--lua-filter' && i + 1 < parsed.length) {
+          filterPath = parsed[i + 1];
+          isPair = true;
+        } else if (arg.startsWith('--filter=')) {
+          filterPath = arg.slice('--filter='.length);
+        } else if (arg === '--filter' && i + 1 < parsed.length) {
+          filterPath = parsed[i + 1];
+          isPair = true;
+        }
+
+        if (filterPath) {
+          const absPath = resolve(resolveTilde(filterPath));
+          if (dirname(absPath) === absFiltersDir) {
+            if (isPair) i++;
+            continue;
+          }
+        }
+        newArgs.push(arg);
+      }
+
+      for (const filterItem of enabled) {
+        if (typeof filterItem !== 'string') continue;
+        const filename = filterItem.endsWith('.lua') ? basename(filterItem) : `${basename(filterItem)}.lua`;
+        const pathOption = join(config.filtersDir ?? '~/.pandoc/filters', filename);
+        newArgs.push(`--lua-filter=${pathOption}`);
+      }
+
+      const newCommand = quote(newArgs);
+      config.renderCommand = newCommand;
+
+      if (config.configPath) {
+        const tomlData = {
+          render: {
+            debounce_ms: config.debounceMs,
+            timeout_ms: config.timeoutMs,
+          },
+          pandoc: {
+            render_command: newCommand,
+            templates_dir: config.templatesDir ?? '~/.pandoc/templates',
+            filters_dir: config.filtersDir ?? '~/.pandoc/filters',
+          },
+        };
+        writeFileSync(config.configPath, dump(tomlData), 'utf-8');
+      }
+
+      res.json({ ok: true, renderCommand: newCommand });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // POST /api/diagram/file - create diagram starter templates relative to document
+  app.post('/api/diagram/file', (req, res) => {
+    const { type, filename, documentPath } = req.body as {
+      type?: unknown;
+      filename?: unknown;
+      documentPath?: unknown;
+    };
+
+    if (typeof type !== 'string' || typeof filename !== 'string' || typeof documentPath !== 'string') {
+      res.status(400).json({ error: 'type, filename, and documentPath are required' });
+      return;
+    }
+
+    if (config.isTempFile || !config.file || resolveUserPath(config, documentPath) !== config.file) {
+      res.status(409).json({ error: 'save the document before adding figures' });
+      return;
+    }
+
+    const figuresDir = resolve(dirname(config.file), 'figures');
+    const figurePath = resolve(figuresDir, filename);
+
+    if (!pathIsInside(figuresDir, figurePath)) {
+      res.status(400).json({ error: 'figure path escapes figures directory' });
+      return;
+    }
+
+    if (existsSync(figurePath)) {
+      res.status(409).json({ error: 'figure already exists' });
+      return;
+    }
+
+    try {
+      mkdirSync(figuresDir, { recursive: true });
+
+      let template = '';
+      if (type === 'qtikz' || type === 'tikzit') {
+        template = [
+          '\\begin{tikzpicture}',
+          '  \\draw (0,0) circle (1in);',
+          '\\end{tikzpicture}',
+        ].join('\n') + '\n';
+      } else if (type === 'inkscape') {
+        template = [
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">',
+          '  <circle cx="50" cy="50" r="40" stroke="black" stroke-width="3" fill="red" />',
+          '</svg>',
+        ].join('\n') + '\n';
+      } else if (type === 'xournal') {
+        template = [
+          '<?xml version="1.0" standalone="no"?>',
+          '<xournal version="0.4.8.2016">',
+          '<title>Xournal Document</title>',
+          '<page width="612.00000000" height="792.00000000">',
+          '<background type="solid" color="#ffffffff" style="plain"/>',
+          '<layer/>',
+          '</page>',
+          '</xournal>',
+        ].join('\n') + '\n';
+      }
+
+      writeFileSync(figurePath, template, 'utf-8');
+
+      res.json({
+        ok: true,
+        absolutePath: figurePath,
+        relativePath: `figures/${filename}`,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // POST /api/diagram/launch - launch desktop application pointing to the newly created asset
+  app.post('/api/diagram/launch', (req, res) => {
+    const { absolutePath, type } = req.body as { absolutePath?: unknown; type?: unknown };
+    if (typeof absolutePath !== 'string' || typeof type !== 'string') {
+      res.status(400).json({ error: 'absolutePath and type are required' });
+      return;
+    }
+
+    try {
+      let cmd = type;
+      if (type === 'xournal') {
+        cmd = 'xournalpp';
+      }
+
+      const child = spawn(cmd, [absolutePath], {
+        detached: true,
+        stdio: 'ignore',
+      });
+
+      child.on('error', (err) => {
+        console.error(`Failed to start desktop app ${cmd}:`, err);
+      });
+
+      child.unref();
+      res.json({ ok: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // GET /api/diagram/proxy - premium same-origin web integration proxy
+  app.get('/api/diagram/proxy', async (req, res) => {
+    const urlStr = typeof req.query.url === 'string' ? req.query.url : '';
+    if (!urlStr) {
+      res.status(400).json({ error: 'url parameter is required' });
+      return;
+    }
+
+    try {
+      const response = await fetch(urlStr);
+      if (!response.ok) {
+        res.status(502).json({ error: `proxy failed with status ${response.status}` });
+        return;
+      }
+
+      let html = await response.text();
+
+      const baseTag = `<base href="${urlStr}">`;
+      if (html.includes('<head>')) {
+        html = html.replace('<head>', `<head>${baseTag}`);
+      } else {
+        html = baseTag + html;
+      }
+
+      const premiumOverlay = [
+        '<div id="pandoc-preview-export-overlay" style="position: fixed; top: 12px; right: 12px; z-index: 2147483647; background: linear-gradient(135deg, #1e1e2e 0%, #181825 100%); color: #cdd6f4; padding: 16px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); font-family: \'Outfit\', \'Inter\', sans-serif; display: flex; flex-direction: column; gap: 10px; border: 1px solid rgba(137, 180, 250, 0.2); width: 280px; backdrop-filter: blur(10px); transition: all 0.3s ease;">',
+        '  <div style="display: flex; align-items: center; gap: 8px;">',
+        '    <span style="background: #89b4fa; color: #11111b; font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 999px; text-transform: uppercase;">Preview</span>',
+        '    <div style="font-size: 13px; font-weight: 700; color: #f5c2e7;">TikZ Integrator</div>',
+        '  </div>',
+        '  <button id="pandoc-preview-btn-export" style="background: linear-gradient(90deg, #89b4fa 0%, #b4befe 100%); color: #11111b; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 700; cursor: pointer; font-size: 13px; box-shadow: 0 4px 15px rgba(137,180,250,0.3); transition: transform 0.2s, box-shadow 0.2s;">Insert into Document</button>',
+        '  <div id="pandoc-preview-status" style="font-size: 11px; color: #a6adc8; line-height: 1.4;">Draw your diagram, click the export/LaTeX button inside this tool, then click "Insert" above.</div>',
+        '</div>',
+        '<style>',
+        '  #pandoc-preview-btn-export:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(137,180,250,0.5); }',
+        '  #pandoc-preview-btn-export:active { transform: translateY(0); }',
+        '</style>',
+        '<script>',
+        '  document.getElementById(\'pandoc-preview-btn-export\').addEventListener(\'click\', () => {',
+        '    let code = \'\';',
+        '    const textAreas = Array.from(document.querySelectorAll(\'textarea\'));',
+        '    for (const ta of textAreas) {',
+        '      if (ta.value.includes(\'\\\\begin{tikzcd}\') || ta.value.includes(\'\\\\begin{tikzpicture}\')) {',
+        '        code = ta.value;',
+        '        break;',
+        '      }',
+        '    }',
+        '    if (!code) {',
+        '      const elements = Array.from(document.querySelectorAll(\'div, pre, code, p\'));',
+        '      for (const el of elements) {',
+        '        const text = el.textContent || \'\';',
+        '        if (text.includes(\'\\\\begin{tikzcd}\') || text.includes(\'\\\\begin{tikzpicture}\')) {',
+        '          code = text;',
+        '          break;',
+        '        }',
+        '      }',
+        '    }',
+        '    const tikzcdMatch = code.match(/\\\\begin\\{tikzcd\\}[\\s\\S]*?\\\\end\\{tikzcd\\}/);',
+        '    const tikzMatch = code.match(/\\\\begin\\{tikzpicture\\}[\\s\\S]*?\\\\end\\{tikzpicture\\}/);',
+        '    const extracted = tikzcdMatch ? tikzcdMatch[0] : (tikzMatch ? tikzMatch[0] : code.trim());',
+        '    ',
+        '    if (extracted && (extracted.includes(\'\\\\begin{\') || extracted.includes(\'\\\\draw\'))) {',
+        '      window.parent.postMessage({',
+        '        type: \'diagram-export\',',
+        '        code: extracted',
+        '      }, \'*\');',
+        '      const statusEl = document.getElementById(\'pandoc-preview-status\');',
+        '      statusEl.innerText = \'Diagram exported successfully!\';',
+        '      statusEl.style.color = \'#a6e3a1\';',
+        '    } else {',
+        '      const statusEl = document.getElementById(\'pandoc-preview-status\');',
+        '      statusEl.innerText = \'Could not find TikZ/LaTeX code in tool output. Please trigger export inside the tool first.\';',
+        '      statusEl.style.color = \'#f38ba8\';',
+        '    }',
+        '  });',
+        '</script>'
+      ].join('\n');
+
+      if (html.includes('</body>')) {
+        html = html.replace('</body>', `${premiumOverlay}</body>`);
+      } else {
+        html = html + premiumOverlay;
+      }
+
+      res.type('html').send(html);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(502).json({ error: message });
+    }
+  });
 
   app.post('/api/files/new', (req, res) => {
     try {
