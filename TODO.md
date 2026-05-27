@@ -2,6 +2,14 @@
 
 ## Active
 
+- **Obsidian callout → amsthm** — Convert Obsidian callouts to amsthm
+  environments.
+- **Centralized Pandoc template/filter QA** — Optional manual QA around
+  `~/.pandoc/templates/` and `~/.pandoc/filters/`; app tests stay
+  renderer-agnostic.
+
+## Completed
+
 - **TikZJax rendering** — `` ```tikz `` code blocks render as SVG in the preview
   via `@jhuix/tikzjax` (in-browser WebAssembly, no server LaTeX toolchain).
   See `.agents/plans/tikzjax-rendering.md` for integration spec.
@@ -13,11 +21,6 @@
 - **Diagram toolbar modal** — One-button access to diagram tools (FreeTikZ,
   quiver, Qtikz, Tikzit, Inkscape, Xournal) with save gate and `./figures/`
   auto-creation.
-- **Obsidian callout → amsthm** — Convert Obsidian callouts to amsthm
-  environments.
-- **Centralized Pandoc template/filter QA** — Optional manual QA around
-  `~/.pandoc/templates/` and `~/.pandoc/filters/`; app tests stay
-  renderer-agnostic.
 
 ## Deprioritized
 
