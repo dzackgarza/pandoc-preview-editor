@@ -1,5 +1,11 @@
 import { expect, test } from '@playwright/test';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { killServer, launchServer } from './helpers.js';
@@ -22,7 +28,10 @@ test.describe('Settings and Preferences TDD', () => {
 
   test.afterEach(async ({}, testInfo) => {
     if (testInfo.status !== 'passed') return;
-    expect(pageErrors, `page errors: ${pageErrors.map(e => e.message).join('; ')}`).toEqual([]);
+    expect(
+      pageErrors,
+      `page errors: ${pageErrors.map((e) => e.message).join('; ')}`,
+    ).toEqual([]);
   });
 
   test('Settings dialog opens, supports bidirectional sync, persists to TOML, and validates paths', async ({
@@ -33,7 +42,7 @@ test.describe('Settings and Preferences TDD', () => {
     const tomlPath = join(testDir, 'pandoc-preview.toml');
 
     writeFileSync(docPath, '# Document\n', 'utf-8');
-    
+
     // Create custom pandoc-preview.toml in the test directory
     const initialToml = `
 [render]
@@ -72,7 +81,7 @@ filters_dir = "${testDir}/filters"
       await expect(page.locator('#editor .cm-content')).toBeVisible({ timeout: 5000 });
 
       // 1. Open the settings dialog
-      await page.getByRole('button', { name: 'File' }).click();
+      await page.getByRole('menuitem', { name: 'File' }).click();
       await page.getByRole('menuitem', { name: 'Preferences...' }).click();
 
       // Settings dialog should be visible (using role dialog)
@@ -80,7 +89,8 @@ filters_dir = "${testDir}/filters"
       await expect(dialog).toBeVisible();
 
       // 2. Verify initial states from the TOML config
-      // Standalone should be checked
+      // Navigate to the Pandoc Flags tab
+      await dialog.getByRole('tab', { name: 'Pandoc Flags' }).click();
       const standaloneCheckbox = dialog.locator('input[aria-label="Standalone"]');
       await expect(standaloneCheckbox).toBeChecked();
 
@@ -88,23 +98,30 @@ filters_dir = "${testDir}/filters"
       const citeprocCheckbox = dialog.locator('input[aria-label="Citeproc"]');
       await expect(citeprocCheckbox).not.toBeChecked();
 
-      // The raw arguments textarea should show the initial parsed arguments
-      const argsTextarea = dialog.locator('textarea[aria-label="Raw Pandoc Arguments"]');
-      const initialArgs = await argsTextarea.inputValue();
-      expect(initialArgs).toContain('--standalone');
-      expect(initialArgs).not.toContain('--citeproc');
-
       // 3. Test sync: GUI to Raw textarea
       // Click Citeproc
       await citeprocCheckbox.click();
+
+      // Navigate to Raw Command tab to verify sync
+      await dialog.getByRole('tab', { name: 'Raw Command' }).click();
+      const argsTextarea = dialog.locator(
+        'textarea[aria-label="Raw Pandoc Arguments"]',
+      );
       await expect(argsTextarea).toHaveValue(/--citeproc/);
+
+      // Verify initial parsed arguments show --standalone and not --citeproc (before our edit)
+      // Since we clicked citeproc in the previous step, --citeproc should now be present
+      const initialArgs = await argsTextarea.inputValue();
+      expect(initialArgs).toContain('--standalone');
+      expect(initialArgs).toContain('--citeproc');
 
       // 4. Test sync: Raw textarea to GUI
       // Uncheck standalone by editing textarea
-      const updatedValue = (await argsTextarea.inputValue())
-        .replace('--standalone', '')
-        .trim();
+      const updatedValue = initialArgs.replace('--standalone', '').trim();
       await argsTextarea.fill(updatedValue);
+
+      // Go back to Pandoc Flags tab to verify the checkbox un-checked
+      await dialog.getByRole('tab', { name: 'Pandoc Flags' }).click();
       await expect(standaloneCheckbox).not.toBeChecked();
 
       // 5. Check persistence by saving
@@ -120,11 +137,12 @@ filters_dir = "${testDir}/filters"
 
       // 6. Test escaping path validation error
       // Open settings dialog again
-      await page.getByRole('button', { name: 'File' }).click();
+      await page.getByRole('menuitem', { name: 'File' }).click();
       await page.getByRole('menuitem', { name: 'Preferences...' }).click();
       await expect(dialog).toBeVisible();
 
       // Edit raw textarea to include an escaping template path
+      await dialog.getByRole('tab', { name: 'Raw Command' }).click();
       const escapeArgs = `--standalone --template=/tmp/escape.html`;
       await argsTextarea.fill(escapeArgs);
 
@@ -134,13 +152,14 @@ filters_dir = "${testDir}/filters"
       // Expect dialog to remain open (since validation fails)
       await expect(dialog).toBeVisible();
 
-      // An error toast should appear
-      await expect(page.locator('ol[tabindex="-1"]')).toContainText('is external. Please place it in the templates directory');
+      // An inline validation error should appear in the dialog
+      await expect(
+        dialog.getByText('is external. Please place it in the templates directory'),
+      ).toBeVisible();
 
       // Close settings via Cancel
       await page.getByRole('button', { name: 'Cancel' }).click();
       await expect(dialog).not.toBeVisible();
-
     } finally {
       await killServer(server);
     }
