@@ -12,6 +12,7 @@ import {
   ChevronRight,
   Plug,
   FileText,
+  Settings,
 } from 'lucide-react';
 import { useMemo } from 'react';
 
@@ -34,6 +35,7 @@ export function TopMenuBar({
   onResetSplit,
   onSave,
   onToggleExplorer,
+  onOpenSettings,
   plugins,
 }: {
   explorerOpen: boolean;
@@ -47,6 +49,7 @@ export function TopMenuBar({
   onResetSplit: () => void;
   onSave: () => void;
   onToggleExplorer: () => void;
+  onOpenSettings: () => void;
   plugins: PluginMetadata[];
 }) {
   const pluginsByCategory = useMemo(() => groupPluginsByCategory(plugins), [plugins]);
@@ -71,6 +74,10 @@ export function TopMenuBar({
               <MenuItem onSelect={onOpenQuickOpen}>
                 <Search className="h-4 w-4" />
                 Quick Open
+              </MenuItem>
+              <MenuItem onSelect={onOpenSettings}>
+                <Settings className="h-4 w-4" />
+                Preferences...
               </MenuItem>
               <Menubar.Separator className="my-1 h-px bg-[#343946]" />
               <MenuItem onSelect={onSave}>
