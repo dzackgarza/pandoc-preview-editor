@@ -164,7 +164,9 @@ export function createApp(config: ServerConfig) {
       controller.signal,
     );
 
-    // Only send response if this is still the current render
+    // Only send response if this is still the current render.
+    // If superseded, close the connection cleanly with 204 so the client does
+    // not hang waiting on a response that will never arrive.
     if (currentRenderController === controller) {
       res.json({
         html: withPreviewAssetUrls(result.html),
@@ -172,6 +174,8 @@ export function createApp(config: ServerConfig) {
         ok: result.ok,
         stderr: result.stderr,
       });
+    } else {
+      res.status(204).end();
     }
   });
 

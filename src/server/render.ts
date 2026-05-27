@@ -76,6 +76,10 @@ export function renderMarkdown(
       });
     });
 
+    // Suppress EPIPE: if the child is killed while stdin is still draining,
+    // the broken pipe would otherwise become an unhandled stream error and
+    // crash the Express process.
+    child.stdin.on('error', () => {});
     child.stdin.end(markdown);
   });
 }
