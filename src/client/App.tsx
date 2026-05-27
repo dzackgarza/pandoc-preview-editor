@@ -345,29 +345,10 @@ export function App() {
     }
   }, [insertTextAtCursor]);
 
-  const insertClipboardFigure = useCallback(async () => {
-    try {
-      const filePath = await ensureRealFile({ promptForEmpty: true });
-      if (filePath == null) return;
-      if (!navigator.clipboard?.read) {
-        throw new Error('clipboard image read is not available');
-      }
-
-      const items = await navigator.clipboard.read();
-      let imageBlob: Blob | null = null;
-      let imageType = '';
-      for (const item of items) {
-        const type = item.types.find((candidate) => candidate.startsWith('image/'));
-        if (type) {
-          imageBlob = await item.getType(type);
-          imageType = imageBlob.type || type;
-          break;
-        }
-      }
-      if (!imageBlob) {
-        throw new Error('clipboard does not contain an image');
-      }
-
+  // Shared upload path used by both the button handler and the paste event handler.
+  const uploadImageAndInsert = useCallback(
+    async (imageBlob: Blob, filePath: string) => {
+      const imageType = imageBlob.type || 'image/png';
       const res = await fetch('/api/figures/assets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -385,13 +366,38 @@ export function App() {
       if (!res.ok || !data.ok || typeof data.markdown !== 'string') {
         throw new Error(data.error ?? `server returned ${res.status}`);
       }
-
       insertTextAtCursor(`\n\n${data.markdown}\n\n`);
       toast({
         title: 'Clipboard image',
         description: data.markdown,
         variant: 'default',
       });
+    },
+    [insertTextAtCursor],
+  );
+
+  const insertClipboardFigure = useCallback(async () => {
+    try {
+      const filePath = await ensureRealFile({ promptForEmpty: true });
+      if (filePath == null) return;
+      if (!navigator.clipboard?.read) {
+        throw new Error('clipboard image read is not available');
+      }
+
+      const items = await navigator.clipboard.read();
+      let imageBlob: Blob | null = null;
+      for (const item of items) {
+        const type = item.types.find((candidate) => candidate.startsWith('image/'));
+        if (type) {
+          imageBlob = await item.getType(type);
+          break;
+        }
+      }
+      if (!imageBlob) {
+        throw new Error('clipboard does not contain an image');
+      }
+
+      await uploadImageAndInsert(imageBlob, filePath);
     } catch (err) {
       toast({
         title: 'Clipboard image',
@@ -399,7 +405,7 @@ export function App() {
         variant: 'destructive',
       });
     }
-  }, [ensureRealFile, insertTextAtCursor]);
+  }, [ensureRealFile, uploadImageAndInsert]);
 
   const runPluginAction = useCallback(
     async (pluginId: string) => {
@@ -537,6 +543,41 @@ export function App() {
     window.addEventListener('keydown', handleKeyDown, { capture: true });
     return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
   }, [insertCitation, openQuickOpen, saveCurrentAs]);
+
+  // Wayland-compatible paste handler: navigator.clipboard.read() is broken on
+  // Wayland for binary image types. The paste DOM event's clipboardData.items is
+  // the reliable path on all platforms including Wayland.
+  useEffect(() => {
+    const handlePaste = (event: ClipboardEvent) => {
+      const items = event.clipboardData?.items;
+      if (!items) return;
+      let imageFile: File | null = null;
+      for (const item of items) {
+        if (item.kind === 'file' && item.type.startsWith('image/')) {
+          imageFile = item.getAsFile();
+          break;
+        }
+      }
+      if (!imageFile) return;
+      // There is an image on the clipboard: take ownership and upload it.
+      event.preventDefault();
+      event.stopPropagation();
+      const blob = imageFile;
+      void ensureRealFile({ promptForEmpty: true }).then((filePath) => {
+        if (filePath == null) return;
+        return uploadImageAndInsert(blob, filePath);
+      }).catch((err: unknown) => {
+        toast({
+          title: 'Clipboard image',
+          description: err instanceof Error ? err.message : String(err),
+          variant: 'destructive',
+        });
+      });
+    };
+
+    document.addEventListener('paste', handlePaste, { capture: true });
+    return () => document.removeEventListener('paste', handlePaste, { capture: true });
+  }, [ensureRealFile, uploadImageAndInsert]);
 
   const resetSplit = useCallback(() => {
     groupRef.current?.setLayout(RESET_LAYOUT);
