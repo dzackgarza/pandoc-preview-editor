@@ -60,6 +60,11 @@ function loadConfig(configPath: string | undefined, cwd: string): ServerConfig |
     timeoutMs: typeof render.timeout_ms === 'number' ? render.timeout_ms : 30000,
     port: 3000,
     host: '127.0.0.1',
+    configPath: found,
+    templatesDir: typeof pandoc.templates_dir === 'string' ? pandoc.templates_dir : '~/.pandoc/templates',
+    filtersDir: typeof pandoc.filters_dir === 'string' ? pandoc.filters_dir : '~/.pandoc/filters',
+    debounceMs: typeof render.debounce_ms === 'number' ? render.debounce_ms : 750,
+    rawPandocArgs: pandoc.args as string[],
   };
 }
 
