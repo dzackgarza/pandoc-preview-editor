@@ -1,5 +1,5 @@
 import { Clock3, CheckCircle2, XCircle, Save, Plug, Loader2 } from 'lucide-react';
-import { cn, basename } from '../lib/utils.js';
+import { cn } from '../lib/utils.js';
 
 export type RenderStatus = 'ready' | 'rendering' | 'error' | 'saved';
 export type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
@@ -62,7 +62,7 @@ export function StatusCluster({
           saved {formatSavedAt(savedAt)}
         </span>
       ) : null}
-      <span className="ml-auto truncate">{basename(currentFile)}</span>
+      <span className="ml-auto truncate" title={currentFile ?? undefined}>{currentFile}</span>
       <span className="tabular-nums">{lineCountValue} lines</span>
     </footer>
   );

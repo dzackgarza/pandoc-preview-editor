@@ -5,7 +5,7 @@ import { GripVertical } from 'lucide-react';
 import { EditorView } from '@codemirror/view';
 import * as Tooltip from '@radix-ui/react-tooltip';
 
-import { basename, cn, lineCount } from './lib/utils.js';
+import { cn, lineCount } from './lib/utils.js';
 import { useToast, toast } from './lib/toast.js';
 
 // Import sub-components
@@ -578,7 +578,7 @@ export function App() {
           >
             <Panel id="editor-pane-panel" minSize="24%" defaultSize="56%">
               <EditorPane
-                fileName={basename(currentFile)}
+                fileName={currentFile ?? ''}
                 markdown={markdownText}
                 onChange={updateMarkdown}
                 onCreateEditor={(view) => {
