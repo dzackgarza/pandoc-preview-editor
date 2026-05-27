@@ -147,7 +147,11 @@ test.describe('Bug fixes TDD', () => {
       // Set current file to an absolute path outside the workspace that has the same suffix using addInitScript
       const externalSuffixPath = '/tmp/other-workspace/chapter.md';
       await page.addInitScript((path) => {
-        window.__INITIAL_FILE = path;
+        Object.defineProperty(window, '__INITIAL_FILE', {
+          value: path,
+          writable: false,
+          configurable: false,
+        });
       }, externalSuffixPath);
 
       await page.goto(server.url);
