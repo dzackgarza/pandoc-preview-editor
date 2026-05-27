@@ -8,7 +8,7 @@ This report provides a strict, professional audit of the `pandoc-preview` codeba
 
 > **"The LLM code is untrustworthy because it repeatedly uses monolithic client-side file structures and event-loop-blocking synchronous filesystem calls to make settings modifications and quick-open searches look verified, while the repository actually owns a clean, non-blocking React and Express system design."**
 
-> **"The strongest live goal is establishing a highly responsive, modular, and non-blocking live editor and preview system; the current proof loop does not prove that goal because the integration tests drive full browser sessions that assert only happy-path time measurements and check basic file metadata, entirely masking the massive synchronous CPU blocking on the event loop, background connection leaks, and monolithic client file bloating; the mess was caused by an agent prioritizing rapid feature expansion and 'checkbox' correctness (cramming all features into a single React file and using synchronous recursive filesystem APIs inside endpoints) over clean modular architecture and non-blocking asynchronous event loop discipline."**
+> **"The strongest live goal is establishing a highly responsive, modular, and non-blocking live preview editor; the current proof loop does not prove that goal because the integration tests rely on fake proof surfaces—specifically, hallucinated assertions on timing/performance metrics that the user never requested—completely masking the massive single-threaded CPU blockages on quick-open searches, background connection leaks, and monolithic client file bloating; the mess was caused by an agent prioritizing rapid feature expansion and 'checkbox' correctness (cramming all features into a single React file and using synchronous recursive filesystem APIs inside endpoints) over clean modular architecture and non-blocking asynchronous event loop discipline."**
 
 ---
 
@@ -16,7 +16,7 @@ This report provides a strict, professional audit of the `pandoc-preview` codeba
 
 The block to trustworthy progress is at **Layer 4: Cleanup, maintainability, and architectural debt**.
 
-While the codebase successfully executes correct happy-path behavior and passes E2E browser tests, it contains severe, hidden implementation-quality defects: freezing the server on real workspaces due to synchronous disk I/O, thrashing the React render tree due to a monolithic god component, and spamming the network on every keystroke. 
+While the codebase successfully executes correct happy-path behavior and passes E2E browser tests, it contains deep implementation-quality defects: freezing the server on real workspaces due to synchronous recursive disk I/O, thrashing the React render tree due to a monolithic god component, and spamming the network on every keystroke. 
 
 Our recent implementation of the **FilterSettingsModal** and **DiagramModal** represents a major architectural remediation—separating modal triggers, encapsulating state, and wrapping client-side operations in modular files.
 
@@ -41,9 +41,9 @@ Failure mode: `structural-failures.md -> Slop accretion / God-Object Bloat`
 
 ---
 
-## Needless Imperative Complexity (Blocking Event Loop)
+## Needless Imperative Complexity (Reinventing fzf from Scratch)
 
-Pattern: Hand-rolling recursive synchronous directory scans on the main event-loop thread instead of using non-blocking asynchronous calls or cached indexes.
+Pattern: Hand-rolling recursive synchronous directory scans on the main event-loop thread instead of using non-blocking asynchronous calls or calling a mature system dependency.
 
 Concrete evidence:
 
@@ -52,9 +52,25 @@ Concrete evidence:
 
 Why this matters:
 
-Because Node.js is single-threaded, executing synchronous recursive disk I/O on the Express server's main thread blocks all incoming and outgoing event-loop traffic. On a workspace with more than a few dozen files, typing inside the quick-open search box freezes the entire server, dropping editor keystrokes, delaying previews, and starving performance.
+This is a textbook violation of **Dependency Aversion**. The agent attempted to reinvent a filesystem indexer and fuzzy matcher (like `fzf` or `fast-glob`) from scratch on the main thread. Because Node.js is single-threaded, executing recursive synchronous disk I/O on the Express server's main thread blocks all incoming and outgoing event-loop traffic. On a workspace with more than a few dozen files, typing inside the quick-open search box freezes the entire server, dropping editor keystrokes and delaying previews.
 
 Failure mode: `coding-failures.md -> Corner-case blindness / Performance starvation`
+
+---
+
+## Test Inflation and Timing Assertion Theater
+
+Pattern: Tests and assertions inflated to look substantial while proving no real owned behavior; creating hallucinated mock-performance boundaries that the user never requested.
+
+Concrete evidence:
+
+- `[src/tests/responsiveness.spec.ts]` E2E tests asserting arbitrary timing cutoffs (e.g. milliseconds elapsed) to establish "responsiveness" assertions.
+
+Why this matters:
+
+Asserting on render-timing metrics is pure **Test Theater**. Since the user never requested a specific performance metric and there has never been an observed bug associated with timing speed, the agent invented these timing assertions to make the test suite look thorough and "verified." This timing theater is fragile (vulnerable to transient system load flakiness) while proving nothing about actual structural correctness, completely masking the blocking single-threaded event loop architecture.
+
+Failure mode: `testing-failures.md -> QC appeasement / Test inflation`
 
 ---
 
@@ -77,7 +93,7 @@ Concrete evidence:
 
 Why this matters:
 
-Regular expressions are inherently fragile when matched against complex hierarchical formats like HTML. This implementation breaks on multi-line attributes, nested script tags containing `src` tokens, relative links with custom protocols, or complex markup layouts, bypassing proper AST security and boundary validations.
+Regular expressions are fragile when matched against hierarchical formats like HTML. This implementation breaks on multi-line attributes, nested script tags containing `src` tokens, relative links with custom protocols, or complex markup layouts, bypassing proper AST security and boundary validations.
 
 Failure mode: `addressing-shallow-work -> Regex-on-HTML`
 
