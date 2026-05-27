@@ -195,6 +195,8 @@ export function createApp(config: ServerConfig) {
     }
     try {
       const workspaceRoot = currentWorkspaceRoot(config);
+      // Ensure parent directories exist so saves into new subdirs always succeed.
+      mkdirSync(dirname(targetPath), { recursive: true });
       writeFileSync(targetPath, markdown, 'utf-8');
       trackRecent(targetPath);
       // Track the saved file for reloads; move the workspace root only when the
@@ -230,6 +232,53 @@ export function createApp(config: ServerConfig) {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: message });
+    }
+  });
+
+  // Filesystem browser for the file-selector dialog.
+  // Accepts an absolute path; has no workspace-root restriction.
+  // Returns { dir, parent, entries } where parent is null at the fs root.
+  app.get('/api/browse', (req, res) => {
+    const requestedDir = typeof req.query.dir === 'string' ? req.query.dir : '';
+    if (!requestedDir) {
+      res.status(400).json({ error: 'dir query parameter is required' });
+      return;
+    }
+    const targetDir = resolve(requestedDir);
+    try {
+      const stat = statSync(targetDir);
+      if (!stat.isDirectory()) {
+        res.status(400).json({ error: 'dir must be a directory' });
+        return;
+      }
+
+      const BROWSE_IGNORE = new Set(['.git', 'node_modules', 'dist', 'build', 'coverage']);
+      type BrowseEntry = { name: string; absolutePath: string; kind: 'directory' | 'file' };
+      const entries = readdirSync(targetDir, { withFileTypes: true })
+        .flatMap((entry): BrowseEntry[] => {
+          // Skip hidden files and standard noise directories.
+          if (entry.name.startsWith('.') || BROWSE_IGNORE.has(entry.name)) return [];
+          if (entry.isDirectory()) {
+            return [{ name: entry.name, absolutePath: resolve(targetDir, entry.name), kind: 'directory' }];
+          }
+          if (entry.isFile()) {
+            return [{ name: entry.name, absolutePath: resolve(targetDir, entry.name), kind: 'file' }];
+          }
+          return [];
+        })
+        .sort((a: BrowseEntry, b: BrowseEntry) => {
+          if (a.kind !== b.kind) return a.kind === 'directory' ? -1 : 1;
+          return a.name.localeCompare(b.name);
+        });
+
+      // Parent is null when we're at the filesystem root.
+      const parentDir = resolve(targetDir, '..');
+      const parent = parentDir === targetDir ? null : parentDir;
+
+      res.json({ dir: targetDir, parent, entries });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(400).json({ error: message });
     }
   });
 

@@ -90,6 +90,11 @@ test.describe('file selector dialog', () => {
     try {
       await page.goto(server.url);
       await expect(page.locator('#editor .cm-content')).toBeVisible({ timeout: 5000 });
+      // Wait for the initial render to settle so no dangling /api/render request
+      // fires after the server is killed in finally.
+      await expect(page.frameLocator('#preview').locator('h1')).toHaveText('Initial', {
+        timeout: 5000,
+      });
 
       // Open Save As via keyboard shortcut
       await page.keyboard.press('Control+Shift+S');
@@ -181,6 +186,10 @@ test.describe('file selector dialog', () => {
     try {
       await page.goto(server.url);
       await expect(page.locator('#editor .cm-content')).toBeVisible({ timeout: 5000 });
+      // Wait for the initial render to settle.
+      await expect(page.frameLocator('#preview').locator('h1')).toHaveText('Click Test', {
+        timeout: 5000,
+      });
       await page.keyboard.press('Control+Shift+S');
       await expect(fileSelector(page)).toBeVisible({ timeout: 3000 });
 

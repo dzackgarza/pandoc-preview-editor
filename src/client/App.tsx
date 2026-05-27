@@ -14,7 +14,7 @@ import { ExplorerDrawer } from './components/ExplorerDrawer.jsx';
 import { EditorPane } from './components/EditorPane.jsx';
 import { PreviewPane } from './components/PreviewPane.jsx';
 import { StatusCluster } from './components/StatusCluster.jsx';
-import { SaveAsDialog } from './components/SaveAsDialog.jsx';
+import { FileSelectorDialog } from './components/FileSelectorDialog.jsx';
 import { QuickOpenDialog } from './components/QuickOpenDialog.jsx';
 import { Toaster } from './components/Toaster.jsx';
 
@@ -205,16 +205,14 @@ export function App() {
         saveAsResolveRef.current = resolve;
         setSaveAsDialogMode(mode);
         setSaveAsDialogOpen(true);
-        // Focus input on next render
-        requestAnimationFrame(() => saveAsInputRef.current?.focus());
       });
     },
     [],
   );
 
-  const handleSaveAsSubmit = useCallback((relativePath: string) => {
+  const handleSaveAsSubmit = useCallback((path: string) => {
     setSaveAsDialogOpen(false);
-    saveAsResolveRef.current?.(relativePath);
+    saveAsResolveRef.current?.(path);
   }, []);
 
   const handleSaveAsCancel = useCallback(() => {
@@ -286,6 +284,13 @@ export function App() {
     renderImmediate(markdownText);
     await ensureRealFile({ promptForEmpty: true });
   }, [ensureRealFile, markdownText, renderImmediate]);
+
+  // Always prompts for a new path, even if the document is already saved.
+  const saveCurrentAs = useCallback(async () => {
+    const savePath = await promptForSavePath('save');
+    if (savePath === null) return;
+    await persistMarkdown(savePath, markdownText);
+  }, [markdownText, persistMarkdown, promptForSavePath]);
 
   const updateMarkdown = useCallback((value: string) => {
     setMarkdownText(value);
@@ -513,6 +518,15 @@ export function App() {
       if (
         (event.ctrlKey || event.metaKey) &&
         event.shiftKey &&
+        event.key.toLowerCase() === 's'
+      ) {
+        event.preventDefault();
+        void saveCurrentAs();
+        return;
+      }
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        event.shiftKey &&
         event.key.toLowerCase() === 'c'
       ) {
         event.preventDefault();
@@ -522,7 +536,7 @@ export function App() {
 
     window.addEventListener('keydown', handleKeyDown, { capture: true });
     return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
-  }, [insertCitation, openQuickOpen]);
+  }, [insertCitation, openQuickOpen, saveCurrentAs]);
 
   const resetSplit = useCallback(() => {
     groupRef.current?.setLayout(RESET_LAYOUT);
@@ -593,8 +607,7 @@ export function App() {
           saveState={saveState}
           status={status}
         />
-        <SaveAsDialog
-          inputRef={saveAsInputRef}
+        <FileSelectorDialog
           mode={saveAsDialogMode}
           open={saveAsDialogOpen}
           workspaceRoot={workspaceRoot}
