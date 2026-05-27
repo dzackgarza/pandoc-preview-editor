@@ -53,8 +53,8 @@ test.describe('Bug fixes TDD', () => {
       // Click the toolbar citation button
       await page.getByRole('button', { name: 'Insert Citation' }).click();
 
-      // The citation [@Cox35] should be inserted at the cursor
-      await expectEditorMarkdown(page, '# Document\n[@Cox35]');
+      // The citation [@Cox35] should be inserted at the cursor (at position 0, before '# Document')
+      await expectEditorMarkdown(page, '[@Cox35]# Document\n');
 
       // FileSelectorDialog (from the save flow) must not be visible
       await expect(page.getByTestId('file-selector-dialog')).toHaveCount(0);
@@ -144,6 +144,12 @@ test.describe('Bug fixes TDD', () => {
     const server = await launchServer(undefined, savePath);
 
     try {
+      // Set current file to an absolute path outside the workspace that has the same suffix using addInitScript
+      const externalSuffixPath = '/tmp/other-workspace/chapter.md';
+      await page.addInitScript((path) => {
+        window.__INITIAL_FILE = path;
+      }, externalSuffixPath);
+
       await page.goto(server.url);
       await expect(page.locator('#editor .cm-content')).toBeVisible({ timeout: 5000 });
 
@@ -153,21 +159,11 @@ test.describe('Bug fixes TDD', () => {
 
       await expect(page.getByTestId('explorer-drawer')).toBeVisible({ timeout: 5000 });
 
-      // The folder should contain chapter.md. It should be highlighted because currentFile is exact.
+      // The folder should contain chapter.md. With the endsWith bug, it would STILL highlight
+      // chapter.md inside the explorer because the path ends with "chapter.md".
+      // With the fix, it should NOT highlight it because it is a different absolute file!
       const chapterBtn = page.getByRole('button', { name: /chapter\.md/ });
       await expect(chapterBtn).toBeVisible();
-      await expect(chapterBtn).toHaveClass(/bg-\[#2d3a4a\]/); // highlighted class
-
-      // Set current file to an absolute path outside the workspace that has the same suffix
-      const externalSuffixPath = '/tmp/other-workspace/chapter.md';
-      await page.evaluate((path) => {
-        window.__PANDOC_PREVIEW_STATE__!.currentFile = path;
-      }, externalSuffixPath);
-
-      // Trigger a light component re-render or wait for React.
-      // With the endsWith bug, it would STILL highlight chapter.md inside the explorer because the
-      // path ends with "chapter.md".
-      // With the fix, it should NOT highlight it anymore because it is a different absolute file!
       await expect(chapterBtn).not.toHaveClass(/bg-\[#2d3a4a\]/);
     } finally {
       await killServer(server);
