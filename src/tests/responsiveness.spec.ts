@@ -1,12 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
-import {
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { killServer, launchServer, type ServerInstance } from './helpers.js';
@@ -40,8 +34,7 @@ test.describe('responsiveness', () => {
     writeFileSync(
       testConfigPath,
       `[pandoc]
-command = "node"
-args = ["${slowRendererPath}"]
+render_command = "node ${slowRendererPath}"
 
 [render]
 timeout_ms = 5000

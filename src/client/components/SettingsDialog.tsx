@@ -8,8 +8,7 @@ interface SettingsData {
   filtersDir: string;
   debounceMs: number;
   timeoutMs: number;
-  pandocCommand: string;
-  pandocArgs: string[];
+  renderCommand: string;
 }
 
 interface SettingsDialogProps {
@@ -20,7 +19,7 @@ interface SettingsDialogProps {
 
 export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
   const [activeTab, setActiveTab] = useState('general');
-  
+
   // Scanned assets
   const [availableTemplates, setAvailableTemplates] = useState<string[]>([]);
   const [availableFilters, setAvailableFilters] = useState<string[]>([]);
@@ -30,8 +29,7 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
   const [filtersDir, setFiltersDir] = useState('~/.pandoc/filters');
   const [debounceMs, setDebounceMs] = useState(750);
   const [timeoutMs, setTimeoutMs] = useState(30000);
-  const [pandocCommand, setPandocCommand] = useState('pandoc');
-  
+
   // GUI Flag States
   const [standalone, setStandalone] = useState(false);
   const [citeproc, setCiteproc] = useState(false);
@@ -42,6 +40,9 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
   const [selectedTemplate, setSelectedTemplate] = useState('');
   const [selectedFilters, setSelectedFilters] = useState<string[]>([]);
   const [otherFlags, setOtherFlags] = useState<string[]>([]);
+
+  // Command name extracted from the render command
+  const [commandName, setCommandName] = useState('pandoc');
 
   // Raw arguments input
   const [rawArgsText, setRawArgsText] = useState('');
@@ -62,10 +63,14 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
           setFiltersDir(data.filtersDir);
           setDebounceMs(data.debounceMs);
           setTimeoutMs(data.timeoutMs);
-          setPandocCommand(data.pandocCommand);
-          
+
+          const parts = (data.renderCommand || 'pandoc').split(/\s+/).filter(Boolean);
+          const cmd = parts[0] || 'pandoc';
+          const args = parts.slice(1);
+          setRawArgsText(data.renderCommand || 'pandoc');
+
           // Initial sync from raw args
-          syncFromArgsArray(data.pandocArgs, data.templatesDir, data.filtersDir);
+          syncFromArgsArray(cmd, args, data.templatesDir, data.filtersDir);
         })
         .catch(console.error);
 
@@ -81,9 +86,16 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
   }, [open]);
 
   // Sync from raw array representation to GUI states
-  const syncFromArgsArray = (args: string[], currentTDir: string, currentFDir: string) => {
+  const syncFromArgsArray = (
+    cmd: string,
+    args: string[],
+    currentTDir: string,
+    currentFDir: string,
+  ) => {
     isSyncing.current = true;
-    
+
+    setCommandName(cmd);
+
     let isStandalone = false;
     let isCiteproc = false;
     let isToc = false;
@@ -148,8 +160,6 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
     setSelectedFilters(currentFilters);
     setOtherFlags(currentOthers);
 
-    // Format raw text string
-    setRawArgsText(args.join(' '));
     isSyncing.current = false;
   };
 
@@ -166,7 +176,7 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
     otherFlags: string[];
   }) => {
     if (isSyncing.current) return;
-    
+
     const args: string[] = [];
     if (updatedState.standalone) args.push('--standalone');
     if (updatedState.citeproc) args.push('--citeproc');
@@ -190,70 +200,149 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
     }
 
     args.push(...updatedState.otherFlags);
-    setRawArgsText(args.join(' '));
+    setRawArgsText([commandName, ...args].join(' '));
   };
 
   // Handlers for individual GUI toggles
   const handleStandaloneChange = (val: boolean) => {
     setStandalone(val);
-    syncToRawText({ standalone: val, citeproc, toc, numberSections, embedResources, math, template: selectedTemplate, selectedFilters, otherFlags });
+    syncToRawText({
+      standalone: val,
+      citeproc,
+      toc,
+      numberSections,
+      embedResources,
+      math,
+      template: selectedTemplate,
+      selectedFilters,
+      otherFlags,
+    });
   };
 
   const handleCiteprocChange = (val: boolean) => {
     setCiteproc(val);
-    syncToRawText({ standalone, citeproc: val, toc, numberSections, embedResources, math, template: selectedTemplate, selectedFilters, otherFlags });
+    syncToRawText({
+      standalone,
+      citeproc: val,
+      toc,
+      numberSections,
+      embedResources,
+      math,
+      template: selectedTemplate,
+      selectedFilters,
+      otherFlags,
+    });
   };
 
   const handleTocChange = (val: boolean) => {
     setToc(val);
-    syncToRawText({ standalone, citeproc, toc: val, numberSections, embedResources, math, template: selectedTemplate, selectedFilters, otherFlags });
+    syncToRawText({
+      standalone,
+      citeproc,
+      toc: val,
+      numberSections,
+      embedResources,
+      math,
+      template: selectedTemplate,
+      selectedFilters,
+      otherFlags,
+    });
   };
 
   const handleNumberSectionsChange = (val: boolean) => {
     setNumberSections(val);
-    syncToRawText({ standalone, citeproc, toc, numberSections: val, embedResources, math, template: selectedTemplate, selectedFilters, otherFlags });
+    syncToRawText({
+      standalone,
+      citeproc,
+      toc,
+      numberSections: val,
+      embedResources,
+      math,
+      template: selectedTemplate,
+      selectedFilters,
+      otherFlags,
+    });
   };
 
   const handleEmbedResourcesChange = (val: boolean) => {
     setEmbedResources(val);
-    syncToRawText({ standalone, citeproc, toc, numberSections, embedResources: val, math, template: selectedTemplate, selectedFilters, otherFlags });
+    syncToRawText({
+      standalone,
+      citeproc,
+      toc,
+      numberSections,
+      embedResources: val,
+      math,
+      template: selectedTemplate,
+      selectedFilters,
+      otherFlags,
+    });
   };
 
   const handleMathChange = (val: 'mathjax' | 'katex' | 'webtex' | 'none') => {
     setMath(val);
-    syncToRawText({ standalone, citeproc, toc, numberSections, embedResources, math: val, template: selectedTemplate, selectedFilters, otherFlags });
+    syncToRawText({
+      standalone,
+      citeproc,
+      toc,
+      numberSections,
+      embedResources,
+      math: val,
+      template: selectedTemplate,
+      selectedFilters,
+      otherFlags,
+    });
   };
 
   const handleTemplateChange = (val: string) => {
     setSelectedTemplate(val);
-    syncToRawText({ standalone, citeproc, toc, numberSections, embedResources, math, template: val, selectedFilters, otherFlags });
+    syncToRawText({
+      standalone,
+      citeproc,
+      toc,
+      numberSections,
+      embedResources,
+      math,
+      template: val,
+      selectedFilters,
+      otherFlags,
+    });
   };
 
   const handleFilterToggle = (filterName: string) => {
     const nextFilters = selectedFilters.includes(filterName)
-      ? selectedFilters.filter(f => f !== filterName)
+      ? selectedFilters.filter((f) => f !== filterName)
       : [...selectedFilters, filterName];
     setSelectedFilters(nextFilters);
-    syncToRawText({ standalone, citeproc, toc, numberSections, embedResources, math, template: selectedTemplate, selectedFilters: nextFilters, otherFlags });
+    syncToRawText({
+      standalone,
+      citeproc,
+      toc,
+      numberSections,
+      embedResources,
+      math,
+      template: selectedTemplate,
+      selectedFilters: nextFilters,
+      otherFlags,
+    });
   };
 
   // Handler for Raw arguments text modification
   const handleRawTextChange = (text: string) => {
     setRawArgsText(text);
-    const argsArray = text.split(/\s+/).filter(Boolean);
-    syncFromArgsArray(argsArray, templatesDir, filtersDir);
+    const parts = text.split(/\s+/).filter(Boolean);
+    const cmd = parts[0] || 'pandoc';
+    const args = parts.slice(1);
+    syncFromArgsArray(cmd, args, templatesDir, filtersDir);
   };
 
   const handleSave = () => {
-    const argsArray = rawArgsText.split(/\s+/).filter(Boolean);
-
     const payload = {
       templatesDir,
       filtersDir,
       debounceMs: Number(debounceMs),
       timeoutMs: Number(timeoutMs),
-      pandocCommand,
-      pandocArgs: argsArray,
+      renderCommand: rawArgsText,
     };
 
     fetch('/api/config', {
@@ -276,11 +365,15 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
   };
 
   return (
-    <Dialog.Root open={open} onOpenChange={(val) => { if (!val) onClose(); }}>
+    <Dialog.Root
+      open={open}
+      onOpenChange={(val) => {
+        if (!val) onClose();
+      }}
+    >
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs transition-opacity" />
         <Dialog.Content className="fixed top-1/2 left-1/2 z-50 w-[600px] h-[500px] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-[#2b2f38] bg-[#1e222b] text-[#e6e8eb] shadow-2xl outline-none flex flex-col">
-          
           {/* Header */}
           <div className="flex items-center justify-between border-b border-[#2b2f38] px-4 py-3 shrink-0">
             <div className="flex items-center gap-2">
@@ -344,18 +437,14 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
               )}
 
               {/* General Tab */}
-              <Tabs.Content value="general" className="flex flex-col gap-4 outline-none">
+              <Tabs.Content
+                value="general"
+                className="flex flex-col gap-4 outline-none"
+              >
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-[#8a92a3]">PANDOC PATH / COMMAND</label>
-                  <input
-                    className="w-full rounded border border-[#2b2f38] bg-[#15171d] px-3 py-1.5 text-sm text-[#e6e8eb] outline-none focus:border-[#6aa8ff]"
-                    type="text"
-                    value={pandocCommand}
-                    onChange={(e) => setPandocCommand(e.target.value)}
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-[#8a92a3]">DEBOUNCE DURATION (MS)</label>
+                  <label className="text-xs font-semibold text-[#8a92a3]">
+                    DEBOUNCE DURATION (MS)
+                  </label>
                   <input
                     className="w-full rounded border border-[#2b2f38] bg-[#15171d] px-3 py-1.5 text-sm text-[#e6e8eb] outline-none focus:border-[#6aa8ff]"
                     type="number"
@@ -364,7 +453,9 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
                   />
                 </div>
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-[#8a92a3]">TIMEOUT DURATION (MS)</label>
+                  <label className="text-xs font-semibold text-[#8a92a3]">
+                    TIMEOUT DURATION (MS)
+                  </label>
                   <input
                     className="w-full rounded border border-[#2b2f38] bg-[#15171d] px-3 py-1.5 text-sm text-[#e6e8eb] outline-none focus:border-[#6aa8ff]"
                     type="number"
@@ -377,7 +468,9 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
               {/* Pandoc Flags Tab */}
               <Tabs.Content value="flags" className="flex flex-col gap-4 outline-none">
                 <div className="flex flex-col gap-3">
-                  <label className="text-xs font-semibold text-[#8a92a3]">COMMON RENDERING FLAGS</label>
+                  <label className="text-xs font-semibold text-[#8a92a3]">
+                    COMMON RENDERING FLAGS
+                  </label>
                   <Checkbox
                     checked={standalone}
                     label="Standalone"
@@ -406,7 +499,9 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-[#8a92a3]">MATH RENDERER ENGINE</label>
+                  <label className="text-xs font-semibold text-[#8a92a3]">
+                    MATH RENDERER ENGINE
+                  </label>
                   <select
                     className="w-full rounded border border-[#2b2f38] bg-[#15171d] px-3 py-1.5 text-sm text-[#e6e8eb] outline-none focus:border-[#6aa8ff]"
                     value={math}
@@ -423,7 +518,9 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
               {/* Templates & Filters Tab */}
               <Tabs.Content value="assets" className="flex flex-col gap-4 outline-none">
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-[#8a92a3]">TEMPLATES DIRECTORY</label>
+                  <label className="text-xs font-semibold text-[#8a92a3]">
+                    TEMPLATES DIRECTORY
+                  </label>
                   <input
                     className="w-full rounded border border-[#2b2f38] bg-[#15171d] px-3 py-1.5 text-sm text-[#e6e8eb] outline-none focus:border-[#6aa8ff]"
                     type="text"
@@ -433,7 +530,9 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-[#8a92a3]">CHOOSE PREVIEW TEMPLATE</label>
+                  <label className="text-xs font-semibold text-[#8a92a3]">
+                    CHOOSE PREVIEW TEMPLATE
+                  </label>
                   <select
                     className="w-full rounded border border-[#2b2f38] bg-[#15171d] px-3 py-1.5 text-sm text-[#e6e8eb] outline-none focus:border-[#6aa8ff]"
                     value={selectedTemplate}
@@ -451,7 +550,9 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
                 <div className="my-1 border-t border-[#2b2f38]" />
 
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-[#8a92a3]">FILTERS DIRECTORY</label>
+                  <label className="text-xs font-semibold text-[#8a92a3]">
+                    FILTERS DIRECTORY
+                  </label>
                   <input
                     className="w-full rounded border border-[#2b2f38] bg-[#15171d] px-3 py-1.5 text-sm text-[#e6e8eb] outline-none focus:border-[#6aa8ff]"
                     type="text"
@@ -461,10 +562,14 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <label className="text-xs font-semibold text-[#8a92a3]">CHOOSE LUA / BINARY FILTERS</label>
+                  <label className="text-xs font-semibold text-[#8a92a3]">
+                    CHOOSE LUA / BINARY FILTERS
+                  </label>
                   <div className="max-h-36 overflow-y-auto rounded border border-[#2b2f38] bg-[#15171d] p-2 flex flex-col gap-2">
                     {availableFilters.length === 0 ? (
-                      <div className="text-xs text-[#788190] italic p-1">No filters found in directory</div>
+                      <div className="text-xs text-[#788190] italic p-1">
+                        No filters found in directory
+                      </div>
                     ) : (
                       availableFilters.map((filt) => (
                         <Checkbox
@@ -480,16 +585,22 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
               </Tabs.Content>
 
               {/* Raw Command Tab */}
-              <Tabs.Content value="raw" className="flex h-full flex-col gap-2 outline-none">
-                <label className="text-xs font-semibold text-[#8a92a3]">RAW PANDOC ARGUMENTS</label>
+              <Tabs.Content
+                value="raw"
+                className="flex h-full flex-col gap-2 outline-none"
+              >
+                <label className="text-xs font-semibold text-[#8a92a3]">
+                  Render Command
+                </label>
                 <textarea
-                  aria-label="Raw Pandoc Arguments"
+                  aria-label="Render Command"
                   className="w-full flex-1 rounded border border-[#2b2f38] bg-[#15171d] p-3 font-mono text-sm text-[#e6e8eb] outline-none focus:border-[#6aa8ff] resize-none h-60"
                   value={rawArgsText}
                   onChange={(e) => handleRawTextChange(e.target.value)}
                 />
                 <p className="text-xs text-[#788190]">
-                  Changes in raw arguments automatically update the options checkboxes, and vice-versa.
+                  Changes in raw arguments automatically update the options checkboxes,
+                  and vice-versa.
                 </p>
               </Tabs.Content>
             </div>
@@ -513,7 +624,6 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
               Apply
             </button>
           </div>
-
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

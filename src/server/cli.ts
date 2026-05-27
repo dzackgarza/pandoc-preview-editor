@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { tmpdir, homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { load } from 'js-toml';
+import { parse } from 'shell-quote';
 import { startServer, type ServerConfig } from './index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -49,22 +50,34 @@ function loadConfig(configPath: string | undefined, cwd: string): ServerConfig |
   const pandoc = (raw.pandoc ?? {}) as Record<string, unknown>;
   const render = (raw.render ?? {}) as Record<string, unknown>;
 
-  if (typeof pandoc.command !== 'string' || !Array.isArray(pandoc.args)) {
-    console.error('pandoc-preview.toml must specify [pandoc] command and args.');
+  if (typeof pandoc.render_command !== 'string') {
+    console.error('pandoc-preview.toml must specify [pandoc] render_command.');
+    return null;
+  }
+
+  const parsed = parse(pandoc.render_command as string).filter(
+    (entry): entry is string => typeof entry === 'string',
+  );
+  if (parsed.length === 0) {
+    console.error(
+      'pandoc-preview.toml [pandoc] render_command must be a non-empty shell command.',
+    );
     return null;
   }
 
   return {
-    pandocCommand: pandoc.command as string,
-    pandocArgs: expandTildePaths(pandoc.args as string[]),
+    renderCommand: expandTildePaths(parsed),
     timeoutMs: typeof render.timeout_ms === 'number' ? render.timeout_ms : 30000,
     port: 3000,
     host: '127.0.0.1',
     configPath: found,
-    templatesDir: typeof pandoc.templates_dir === 'string' ? pandoc.templates_dir : '~/.pandoc/templates',
-    filtersDir: typeof pandoc.filters_dir === 'string' ? pandoc.filters_dir : '~/.pandoc/filters',
+    templatesDir:
+      typeof pandoc.templates_dir === 'string'
+        ? pandoc.templates_dir
+        : '~/.pandoc/templates',
+    filtersDir:
+      typeof pandoc.filters_dir === 'string' ? pandoc.filters_dir : '~/.pandoc/filters',
     debounceMs: typeof render.debounce_ms === 'number' ? render.debounce_ms : 750,
-    rawPandocArgs: pandoc.args as string[],
   };
 }
 

@@ -14,6 +14,7 @@ import { readdir } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
 import { dump } from 'js-toml';
+import { quote, parse } from 'shell-quote';
 import {
   findPlugin,
   loadBundledPlugins,
@@ -75,8 +76,7 @@ function pathIsInside(root: string, targetPath: string): boolean {
 }
 
 export interface ServerConfig {
-  pandocCommand: string;
-  pandocArgs: string[];
+  renderCommand: string[];
   timeoutMs: number;
   port: number;
   host: string;
@@ -88,7 +88,6 @@ export interface ServerConfig {
   templatesDir?: string;
   filtersDir?: string;
   debounceMs?: number;
-  rawPandocArgs?: string[];
 }
 
 export function createApp(config: ServerConfig) {
@@ -166,8 +165,7 @@ export function createApp(config: ServerConfig) {
 
     const result = await renderMarkdown(
       markdown,
-      config.pandocCommand,
-      config.pandocArgs,
+      config.renderCommand,
       config.timeoutMs,
       controller.signal,
     );
@@ -220,7 +218,11 @@ export function createApp(config: ServerConfig) {
           ? workspaceRoot
           : dirname(targetPath);
       }
-      res.json({ ok: true, path: targetPath, workspaceRoot: currentWorkspaceRoot(config) });
+      res.json({
+        ok: true,
+        path: targetPath,
+        workspaceRoot: currentWorkspaceRoot(config),
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: message });
@@ -264,17 +266,39 @@ export function createApp(config: ServerConfig) {
         return;
       }
 
-      const BROWSE_IGNORE = new Set(['.git', 'node_modules', 'dist', 'build', 'coverage']);
-      type BrowseEntry = { name: string; absolutePath: string; kind: 'directory' | 'file' };
+      const BROWSE_IGNORE = new Set([
+        '.git',
+        'node_modules',
+        'dist',
+        'build',
+        'coverage',
+      ]);
+      type BrowseEntry = {
+        name: string;
+        absolutePath: string;
+        kind: 'directory' | 'file';
+      };
       const entries = readdirSync(targetDir, { withFileTypes: true })
         .flatMap((entry): BrowseEntry[] => {
           // Skip hidden files and standard noise directories.
           if (entry.name.startsWith('.') || BROWSE_IGNORE.has(entry.name)) return [];
           if (entry.isDirectory()) {
-            return [{ name: entry.name, absolutePath: resolve(targetDir, entry.name), kind: 'directory' }];
+            return [
+              {
+                name: entry.name,
+                absolutePath: resolve(targetDir, entry.name),
+                kind: 'directory',
+              },
+            ];
           }
           if (entry.isFile()) {
-            return [{ name: entry.name, absolutePath: resolve(targetDir, entry.name), kind: 'file' }];
+            return [
+              {
+                name: entry.name,
+                absolutePath: resolve(targetDir, entry.name),
+                kind: 'file',
+              },
+            ];
           }
           return [];
         })
@@ -341,7 +365,10 @@ export function createApp(config: ServerConfig) {
 
     try {
       const workspaceRoot = currentWorkspaceRoot(config);
-      const workspaceEntries = await collectMarkdownFilesAsync(workspaceRoot, workspaceRoot);
+      const workspaceEntries = await collectMarkdownFilesAsync(
+        workspaceRoot,
+        workspaceRoot,
+      );
       const recentEntries = recentFiles
         .filter((absolutePath) => {
           try {
@@ -450,13 +477,14 @@ export function createApp(config: ServerConfig) {
 
       if (existsSync(templatesDir)) {
         templates = readdirSync(templatesDir)
-          .filter(name => name.endsWith('.html') || name.endsWith('.template'))
-          .filter(name => statSync(join(templatesDir, name)).isFile());
+          .filter((name) => name.endsWith('.html') || name.endsWith('.template'))
+          .filter((name) => statSync(join(templatesDir, name)).isFile());
       }
 
       if (existsSync(filtersDir)) {
-        filters = readdirSync(filtersDir)
-          .filter(name => statSync(join(filtersDir, name)).isFile());
+        filters = readdirSync(filtersDir).filter((name) =>
+          statSync(join(filtersDir, name)).isFile(),
+        );
       }
 
       res.json({ templates, filters });
@@ -473,38 +501,39 @@ export function createApp(config: ServerConfig) {
       filtersDir: config.filtersDir ?? '~/.pandoc/filters',
       debounceMs: config.debounceMs ?? 750,
       timeoutMs: config.timeoutMs ?? 30000,
-      pandocCommand: config.pandocCommand ?? 'pandoc',
-      pandocArgs: config.rawPandocArgs ?? config.pandocArgs,
+      renderCommand: quote(config.renderCommand),
     });
   });
 
   // POST /api/config
   app.post('/api/config', (req, res) => {
-    const {
-      templatesDir,
-      filtersDir,
-      debounceMs,
-      timeoutMs,
-      pandocCommand,
-      pandocArgs,
-    } = req.body as {
-      templatesDir: string;
-      filtersDir: string;
-      debounceMs: number;
-      timeoutMs: number;
-      pandocCommand: string;
-      pandocArgs: string[];
-    };
+    const { templatesDir, filtersDir, debounceMs, timeoutMs, renderCommand } =
+      req.body as {
+        templatesDir: string;
+        filtersDir: string;
+        debounceMs: number;
+        timeoutMs: number;
+        renderCommand: string;
+      };
 
     if (
       typeof templatesDir !== 'string' ||
       typeof filtersDir !== 'string' ||
       typeof debounceMs !== 'number' ||
       typeof timeoutMs !== 'number' ||
-      typeof pandocCommand !== 'string' ||
-      !Array.isArray(pandocArgs)
+      typeof renderCommand !== 'string'
     ) {
       res.status(400).json({ error: 'Invalid configuration parameters' });
+      return;
+    }
+
+    const parsed = parse(renderCommand).filter(
+      (entry): entry is string => typeof entry === 'string',
+    );
+    if (parsed.length === 0) {
+      res
+        .status(400)
+        .json({ error: 'renderCommand must be a non-empty shell command' });
       return;
     }
 
@@ -537,23 +566,23 @@ export function createApp(config: ServerConfig) {
     const absFiltersDir = resolve(resolveTilde(filtersDir));
 
     try {
-      for (let i = 0; i < pandocArgs.length; i++) {
-        const arg = pandocArgs[i];
+      for (let i = 0; i < parsed.length; i++) {
+        const arg = parsed[i];
         let templatePath: string | null = null;
         let filterPath: string | null = null;
 
         if (arg.startsWith('--template=')) {
           templatePath = arg.slice('--template='.length);
-        } else if (arg === '--template' && i + 1 < pandocArgs.length) {
-          templatePath = pandocArgs[i + 1];
+        } else if (arg === '--template' && i + 1 < parsed.length) {
+          templatePath = parsed[i + 1];
         } else if (arg.startsWith('--lua-filter=')) {
           filterPath = arg.slice('--lua-filter='.length);
-        } else if (arg === '--lua-filter' && i + 1 < pandocArgs.length) {
-          filterPath = pandocArgs[i + 1];
+        } else if (arg === '--lua-filter' && i + 1 < parsed.length) {
+          filterPath = parsed[i + 1];
         } else if (arg.startsWith('--filter=')) {
           filterPath = arg.slice('--filter='.length);
-        } else if (arg === '--filter' && i + 1 < pandocArgs.length) {
-          filterPath = pandocArgs[i + 1];
+        } else if (arg === '--filter' && i + 1 < parsed.length) {
+          filterPath = parsed[i + 1];
         }
 
         if (templatePath) {
@@ -584,9 +613,7 @@ export function createApp(config: ServerConfig) {
       config.filtersDir = filtersDir;
       config.debounceMs = debounceMs;
       config.timeoutMs = timeoutMs;
-      config.pandocCommand = pandocCommand;
-      config.rawPandocArgs = pandocArgs;
-      config.pandocArgs = expandTildePaths(pandocArgs);
+      config.renderCommand = expandTildePaths(parsed);
 
       // Persist to TOML file
       if (config.configPath) {
@@ -596,8 +623,7 @@ export function createApp(config: ServerConfig) {
             timeout_ms: timeoutMs,
           },
           pandoc: {
-            command: pandocCommand,
-            args: pandocArgs,
+            render_command: renderCommand,
             templates_dir: templatesDir,
             filters_dir: filtersDir,
           },
@@ -611,7 +637,6 @@ export function createApp(config: ServerConfig) {
       res.status(500).json({ error: message });
     }
   });
-
 
   app.post('/api/files/new', (req, res) => {
     try {

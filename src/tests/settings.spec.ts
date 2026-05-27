@@ -50,15 +50,7 @@ debounce_ms = 750
 timeout_ms = 30000
 
 [pandoc]
-command = "pandoc"
-args = [
-  "-f",
-  "markdown",
-  "-t",
-  "html",
-  "--standalone",
-  "--template=~/.pandoc/templates/MakeMeAQual_template.html",
-]
+render_command = "pandoc -f markdown -t html --standalone --template=${testDir}/templates/MakeMeAQual_template.html"
 templates_dir = "${testDir}/templates"
 filters_dir = "${testDir}/filters"
 `;
@@ -104,9 +96,7 @@ filters_dir = "${testDir}/filters"
 
       // Navigate to Raw Command tab to verify sync
       await dialog.getByRole('tab', { name: 'Raw Command' }).click();
-      const argsTextarea = dialog.locator(
-        'textarea[aria-label="Raw Pandoc Arguments"]',
-      );
+      const argsTextarea = dialog.locator('textarea[aria-label="Render Command"]');
       await expect(argsTextarea).toHaveValue(/--citeproc/);
 
       // Verify initial parsed arguments show --standalone and not --citeproc (before our edit)
@@ -132,8 +122,8 @@ filters_dir = "${testDir}/filters"
       // Verify TOML file on disk has been updated
       const savedTomlContent = readFileSync(tomlPath, 'utf-8');
       const parsedToml = load(savedTomlContent) as any;
-      expect(parsedToml.pandoc.args).toContain('--citeproc');
-      expect(parsedToml.pandoc.args).not.toContain('--standalone');
+      expect(parsedToml.pandoc.render_command).toContain('--citeproc');
+      expect(parsedToml.pandoc.render_command).not.toContain('--standalone');
 
       // 6. Test escaping path validation error
       // Open settings dialog again
@@ -143,7 +133,7 @@ filters_dir = "${testDir}/filters"
 
       // Edit raw textarea to include an escaping template path
       await dialog.getByRole('tab', { name: 'Raw Command' }).click();
-      const escapeArgs = `--standalone --template=/tmp/escape.html`;
+      const escapeArgs = `pandoc --standalone --template=/tmp/escape.html`;
       await argsTextarea.fill(escapeArgs);
 
       // Click Apply

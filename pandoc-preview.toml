@@ -7,15 +7,6 @@ debounce_ms = 750
 timeout_ms = 30000
 
 [pandoc]
-command = "pandoc"
-args = [
-  "-f",
-  "markdown+tex_math_dollars+citations",
-  "-t",
-  "html",
-  "--standalone",
-  "--citeproc",
-  "--mathjax",
-  "--lua-filter=~/.pandoc/filters/convert_amsthm_envs.lua",
-  "--template=~/.pandoc/templates/pandoc_HTML.template",
-]
+render_command = "pandoc -f markdown+tex_math_dollars+citations -t html --standalone --citeproc --mathjax --lua-filter=~/.pandoc/filters/convert_amsthm_envs.lua --template=~/.pandoc/templates/pandoc_HTML.template"
+templates_dir = "~/.pandoc/templates"
+filters_dir = "~/.pandoc/filters"
