@@ -8,10 +8,12 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, isAbsolute, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, relative, resolve, basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readdir } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
+import { homedir } from 'node:os';
+import { dump } from 'js-toml';
 import {
   findPlugin,
   loadBundledPlugins,
@@ -82,6 +84,11 @@ export interface ServerConfig {
   fileContent?: string;
   workspaceRoot?: string;
   isTempFile?: boolean;
+  configPath?: string;
+  templatesDir?: string;
+  filtersDir?: string;
+  debounceMs?: number;
+  rawPandocArgs?: string[];
 }
 
 export function createApp(config: ServerConfig) {
@@ -418,6 +425,186 @@ export function createApp(config: ServerConfig) {
         stdio: 'ignore',
       });
       child.unref();
+      res.json({ ok: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // GET /api/pandoc/assets
+  app.get('/api/pandoc/assets', async (_req, res) => {
+    try {
+      const home = homedir();
+      const resolveTilde = (p: string) => {
+        if (p.startsWith('~/')) return join(home, p.slice(2));
+        if (p === '~') return home;
+        return p;
+      };
+
+      const templatesDir = resolveTilde(config.templatesDir ?? '~/.pandoc/templates');
+      const filtersDir = resolveTilde(config.filtersDir ?? '~/.pandoc/filters');
+
+      let templates: string[] = [];
+      let filters: string[] = [];
+
+      if (existsSync(templatesDir)) {
+        templates = readdirSync(templatesDir)
+          .filter(name => name.endsWith('.html') || name.endsWith('.template'))
+          .filter(name => statSync(join(templatesDir, name)).isFile());
+      }
+
+      if (existsSync(filtersDir)) {
+        filters = readdirSync(filtersDir)
+          .filter(name => statSync(join(filtersDir, name)).isFile());
+      }
+
+      res.json({ templates, filters });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // GET /api/config
+  app.get('/api/config', (_req, res) => {
+    res.json({
+      templatesDir: config.templatesDir ?? '~/.pandoc/templates',
+      filtersDir: config.filtersDir ?? '~/.pandoc/filters',
+      debounceMs: config.debounceMs ?? 750,
+      timeoutMs: config.timeoutMs ?? 30000,
+      pandocCommand: config.pandocCommand ?? 'pandoc',
+      pandocArgs: config.rawPandocArgs ?? config.pandocArgs,
+    });
+  });
+
+  // POST /api/config
+  app.post('/api/config', (req, res) => {
+    const {
+      templatesDir,
+      filtersDir,
+      debounceMs,
+      timeoutMs,
+      pandocCommand,
+      pandocArgs,
+    } = req.body as {
+      templatesDir: string;
+      filtersDir: string;
+      debounceMs: number;
+      timeoutMs: number;
+      pandocCommand: string;
+      pandocArgs: string[];
+    };
+
+    if (
+      typeof templatesDir !== 'string' ||
+      typeof filtersDir !== 'string' ||
+      typeof debounceMs !== 'number' ||
+      typeof timeoutMs !== 'number' ||
+      typeof pandocCommand !== 'string' ||
+      !Array.isArray(pandocArgs)
+    ) {
+      res.status(400).json({ error: 'Invalid configuration parameters' });
+      return;
+    }
+
+    const home = homedir();
+    const resolveTilde = (p: string) => {
+      if (p.startsWith('~/')) return join(home, p.slice(2));
+      if (p === '~') return home;
+      return p;
+    };
+
+    const expandTildePaths = (argsArray: string[]): string[] => {
+      return argsArray.map((arg) => {
+        if (arg.startsWith('~/') || arg === '~') {
+          return home + arg.slice(1);
+        }
+        const eqIdx = arg.indexOf('=');
+        if (eqIdx >= 0) {
+          const prefix = arg.slice(0, eqIdx + 1);
+          const value = arg.slice(eqIdx + 1);
+          if (value.startsWith('~/') || value === '~') {
+            return prefix + home + value.slice(1);
+          }
+        }
+        return arg;
+      });
+    };
+
+    // Validation
+    const absTemplatesDir = resolve(resolveTilde(templatesDir));
+    const absFiltersDir = resolve(resolveTilde(filtersDir));
+
+    try {
+      for (let i = 0; i < pandocArgs.length; i++) {
+        const arg = pandocArgs[i];
+        let templatePath: string | null = null;
+        let filterPath: string | null = null;
+
+        if (arg.startsWith('--template=')) {
+          templatePath = arg.slice('--template='.length);
+        } else if (arg === '--template' && i + 1 < pandocArgs.length) {
+          templatePath = pandocArgs[i + 1];
+        } else if (arg.startsWith('--lua-filter=')) {
+          filterPath = arg.slice('--lua-filter='.length);
+        } else if (arg === '--lua-filter' && i + 1 < pandocArgs.length) {
+          filterPath = pandocArgs[i + 1];
+        } else if (arg.startsWith('--filter=')) {
+          filterPath = arg.slice('--filter='.length);
+        } else if (arg === '--filter' && i + 1 < pandocArgs.length) {
+          filterPath = pandocArgs[i + 1];
+        }
+
+        if (templatePath) {
+          const resolvedT = resolve(resolveTilde(templatePath));
+          const parentDir = dirname(resolvedT);
+          if (parentDir !== absTemplatesDir) {
+            res.status(400).json({
+              error: `Template file '${basename(templatePath)}' is external. Please place it in the templates directory '${templatesDir}' first so the app can discover it.`,
+            });
+            return;
+          }
+        }
+
+        if (filterPath) {
+          const resolvedF = resolve(resolveTilde(filterPath));
+          const parentDir = dirname(resolvedF);
+          if (parentDir !== absFiltersDir) {
+            res.status(400).json({
+              error: `Filter file '${basename(filterPath)}' is external. Please place it in the filters directory '${filtersDir}' first so the app can discover it.`,
+            });
+            return;
+          }
+        }
+      }
+
+      // Update in-memory config
+      config.templatesDir = templatesDir;
+      config.filtersDir = filtersDir;
+      config.debounceMs = debounceMs;
+      config.timeoutMs = timeoutMs;
+      config.pandocCommand = pandocCommand;
+      config.rawPandocArgs = pandocArgs;
+      config.pandocArgs = expandTildePaths(pandocArgs);
+
+      // Persist to TOML file
+      if (config.configPath) {
+        const tomlData = {
+          render: {
+            debounce_ms: debounceMs,
+            timeout_ms: timeoutMs,
+          },
+          pandoc: {
+            command: pandocCommand,
+            args: pandocArgs,
+            templates_dir: templatesDir,
+            filters_dir: filtersDir,
+          },
+        };
+        writeFileSync(config.configPath, dump(tomlData), 'utf-8');
+      }
+
       res.json({ ok: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
