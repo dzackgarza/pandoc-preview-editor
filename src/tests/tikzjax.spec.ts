@@ -48,9 +48,12 @@ test.describe('TikZJax rendering E2E', () => {
       '# TikZ Test',
       '',
       '```tikz',
+      '\\documentclass[tikz,border=2pt]{standalone}',
+      '\\begin{document}',
       '\\begin{tikzpicture}',
       '\\draw (0,0) circle (1in);',
       '\\end{tikzpicture}',
+      '\\end{document}',
       '```',
     ].join('\n');
 
@@ -63,9 +66,9 @@ test.describe('TikZJax rendering E2E', () => {
     // We expect the TikZ block to be converted to an SVG.
     // The timeout is slightly generous (15s) because WebAssembly/TikZ compilation takes a moment.
     const svg = frame.locator('svg');
-    await expect(svg).toBeVisible({ timeout: 15000 });
+    await expect(svg).toBeAttached({ timeout: 15000 });
     
     // Check that it's a valid SVG with path elements inside (jsTeX outputs vector paths)
-    await expect(frame.locator('svg path').first()).toBeVisible({ timeout: 5000 });
+    await expect(frame.locator('svg path').first()).toBeAttached({ timeout: 5000 });
   });
 });

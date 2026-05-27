@@ -13,8 +13,8 @@ test.describe('Server-side TikZ Lua Filter E2E', () => {
   let consoleErrors: string[] = [];
 
   test.beforeAll(async () => {
-    // Launch server with the custom test config that includes the global TikZ filter
-    server = await launchServer(undefined, undefined, '/tmp/pandoc-preview-test-tikz.toml');
+    // Launch server with default config (which now has the Lua filter by default)
+    server = await launchServer();
   });
 
   test.afterAll(async () => {
