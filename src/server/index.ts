@@ -398,12 +398,8 @@ export function createApp(config: ServerConfig) {
     }
     try {
       const targetPath = resolveUserPath(config, requestedPath);
-      const exists = existsSync(targetPath);
-      console.log(`[EXISTS CHECK] requestedPath: "${requestedPath}", targetPath: "${targetPath}", exists: ${exists}`);
-      res.json({ exists });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error(`[EXISTS CHECK ERROR] requestedPath: "${requestedPath}", error: ${message}`);
+      res.json({ exists: existsSync(targetPath) });
+    } catch {
       res.json({ exists: false });
     }
   });
