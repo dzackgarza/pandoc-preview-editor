@@ -173,4 +173,65 @@ test.describe('Bug fixes TDD', () => {
       await killServer(server);
     }
   });
+
+  test('Save As on existing file prompts for confirmation and can be cancelled or approved', async ({
+    page,
+  }) => {
+    const saveDir = mkdtempSync(join(tmpdir(), 'pandoc-overwrite-confirm-'));
+    const savePath = join(saveDir, 'doc.md');
+    const existingPath = join(saveDir, 'existing.md');
+    writeFileSync(savePath, '# Original Document\n', 'utf-8');
+    writeFileSync(existingPath, '# Clashing File\n', 'utf-8');
+
+    const server = await launchServer(undefined, savePath);
+
+    try {
+      await page.goto(server.url);
+      await expect(page.locator('#editor .cm-content')).toBeVisible({ timeout: 5000 });
+
+      // Change content
+      await setEditorMarkdown(page, '# Overwritten Document\n');
+
+      // Trigger Save As
+      await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+S' : 'Control+Shift+S');
+      await expect(page.getByTestId('file-selector-dialog')).toBeVisible({ timeout: 5000 });
+
+      // Fill existing.md in the file input
+      await page.locator('.fixed.inset-0 input').fill('existing.md');
+
+      // Setup dialog handler to dismiss (Cancel)
+      let dialogPrompted = false;
+      page.once('dialog', async (dialog) => {
+        dialogPrompted = true;
+        expect(dialog.message()).toContain('already exists. Do you want to replace it?');
+        await dialog.dismiss();
+      });
+
+      // Click save
+      await page.locator('.fixed.inset-0 button:not([disabled])').last().click();
+
+      // Expect dialog to have been prompted and file-selector-dialog to still be visible
+      await expect(page.getByTestId('file-selector-dialog')).toBeVisible({ timeout: 5000 });
+      expect(dialogPrompted).toBe(true);
+
+      // Now click save again but approve overwrite
+      page.once('dialog', async (dialog) => {
+        expect(dialog.message()).toContain('already exists. Do you want to replace it?');
+        await dialog.accept();
+      });
+
+      await page.locator('.fixed.inset-0 button:not([disabled])').last().click();
+
+      // Dialog should close, and existing.md should be overwritten with '# Overwritten Document\n'
+      await expect(page.getByTestId('file-selector-dialog')).toHaveCount(0);
+      await expect
+        .poll(() => existsSync(existingPath) ? readFileSync(existingPath, 'utf-8') : null, {
+          timeout: 5000,
+          intervals: [100, 200],
+        })
+        .toBe('# Overwritten Document\n');
+    } finally {
+      await killServer(server);
+    }
+  });
 });
