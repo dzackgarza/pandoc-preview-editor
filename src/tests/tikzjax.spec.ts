@@ -65,7 +65,7 @@ test.describe('TikZJax rendering E2E', () => {
     const svg = frame.locator('svg');
     await expect(svg).toBeVisible({ timeout: 15000 });
     
-    // Check that it's a valid SVG with circle inside
-    await expect(frame.locator('svg circle')).toBeVisible({ timeout: 5000 });
+    // Check that it's a valid SVG with path elements inside (jsTeX outputs vector paths)
+    await expect(frame.locator('svg path').first()).toBeVisible({ timeout: 5000 });
   });
 });
