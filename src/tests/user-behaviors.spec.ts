@@ -456,4 +456,73 @@ test.describe('user workflows', () => {
       cleanupDir(externalDir);
     }
   });
+
+  test('pasting an image via paste event (Wayland path) inserts figure markdown', async ({
+    page,
+  }) => {
+    // On Wayland, navigator.clipboard.read() is broken for binary image types.
+    // The correct code path is the paste DOM event, which always fires with
+    // ClipboardEvent.clipboardData populated — even on Wayland.
+    // This test proves that code path: it dispatches a synthetic paste event
+    // carrying a 1x1 PNG and expects the figure to appear in the editor without
+    // ever calling navigator.clipboard.read().
+    const saveDir = mkdtempSync(join(tmpdir(), 'pandoc-paste-event-'));
+    const savePath = join(saveDir, 'doc.md');
+    writeFileSync(savePath, '# Paste Test\n', 'utf-8');
+    const server = await launchServer(undefined, savePath);
+    try {
+      await page.goto(server.url);
+      await expect(page.locator('#editor .cm-content')).toBeVisible({ timeout: 5000 });
+      await expectEditorMarkdown(page, '# Paste Test\n');
+      expect((await editorState(page)).currentFile).toBe(savePath);
+
+      // Dispatch a synthetic paste event with a 1x1 PNG in clipboardData.
+      // This is the event the browser fires on Ctrl+V, with image data available
+      // through clipboardData — NOT through navigator.clipboard.read().
+      const pngBytes: number[] = await page.evaluate(async () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1;
+        canvas.height = 1;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('no canvas context');
+        ctx.fillStyle = '#00ff00';
+        ctx.fillRect(0, 0, 1, 1);
+        const blob = await new Promise<Blob>((resolve, reject) => {
+          canvas.toBlob((b) => {
+            if (b) resolve(b);
+            else reject(new Error('canvas.toBlob failed'));
+          }, 'image/png');
+        });
+        const file = new File([blob], 'pasted.png', { type: 'image/png' });
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        const event = new ClipboardEvent('paste', {
+          bubbles: true,
+          cancelable: true,
+          clipboardData: dt,
+        });
+        document.dispatchEvent(event);
+        return Array.from(new Uint8Array(await blob.arrayBuffer()));
+      });
+      const expectedPng = Buffer.from(pngBytes);
+
+      await expect
+        .poll(() => editorState(page).then((s) => s.markdown), {
+          timeout: 5000,
+          intervals: [100, 200],
+        })
+        .toMatch(/!\[\]\(\.\/figures\/figure-[\w-]+\.png\)/);
+
+      const documentWithFigure = (await editorState(page)).markdown;
+      const figureMatch = documentWithFigure.match(
+        /!\[\]\(\.\/(figures\/figure-[\w-]+\.png)\)/,
+      );
+      expect(figureMatch).not.toBeNull();
+      const figurePath = join(saveDir, figureMatch![1]);
+      expect(readFileSync(figurePath)).toEqual(expectedPng);
+    } finally {
+      await killServer(server);
+      cleanupDir(saveDir);
+    }
+  });
 });
