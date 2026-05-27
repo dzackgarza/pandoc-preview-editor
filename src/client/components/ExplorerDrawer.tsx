@@ -97,6 +97,7 @@ export function ExplorerDrawer({
             onOpenFile={openFile}
             onToggleDirectory={toggleDirectory}
             path=""
+            root={root}
           />
           {error ? (
             <div className="px-3 py-2 text-xs text-[#ff9b8f]">{error}</div>
@@ -107,6 +108,13 @@ export function ExplorerDrawer({
   );
 }
 
+function resolveClientPath(root: string, relPath: string): string {
+  if (!root) return relPath;
+  const normalizedRoot = root.endsWith('/') ? root.slice(0, -1) : root;
+  const normalizedRel = relPath.startsWith('/') ? relPath.slice(1) : relPath;
+  return `${normalizedRoot}/${normalizedRel}`;
+}
+
 function ExplorerBranch({
   currentFile,
   entriesByDir,
@@ -115,6 +123,7 @@ function ExplorerBranch({
   onOpenFile,
   onToggleDirectory,
   path,
+  root,
   depth = 0,
 }: {
   currentFile: string | null;
@@ -124,6 +133,7 @@ function ExplorerBranch({
   onOpenFile: (path: string) => void;
   onToggleDirectory: (path: string) => void;
   path: string;
+  root: string;
   depth?: number;
 }) {
   const entries = entriesByDir[path] ?? [];
@@ -132,7 +142,8 @@ function ExplorerBranch({
     <>
       {entries.map((entry) => {
         const isExpanded = Boolean(expanded[entry.path]);
-        const isCurrent = currentFile?.endsWith(entry.path);
+        const entryAbsolute = resolveClientPath(root, entry.path);
+        const isCurrent = currentFile === entryAbsolute;
         const paddingLeft = 10 + depth * 16;
 
         if (entry.kind === 'directory') {
@@ -168,6 +179,7 @@ function ExplorerBranch({
                   onOpenFile={onOpenFile}
                   onToggleDirectory={onToggleDirectory}
                   path={entry.path}
+                  root={root}
                   depth={depth + 1}
                 />
               ) : null}

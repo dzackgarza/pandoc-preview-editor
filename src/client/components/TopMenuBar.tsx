@@ -168,7 +168,7 @@ export function TopMenuBar({
         <IconButton label="Save" onClick={onSave}>
           <Save className="h-4 w-4" />
         </IconButton>
-        <IconButton label="Insert Citation" onClick={onSave}>
+        <IconButton label="Insert Citation" onClick={onInsertCitation}>
           <BookOpen className="h-4 w-4" />
         </IconButton>
         <IconButton label="Insert Figure from Clipboard" onClick={onInsertClipboardFigure}>

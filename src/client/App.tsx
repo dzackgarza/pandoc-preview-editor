@@ -250,6 +250,12 @@ export function App() {
     } catch (err) {
       setSaveState('error');
       setStatus('error');
+      const message = err instanceof Error ? err.message : String(err);
+      toast({
+        title: 'Save failed',
+        description: message,
+        variant: 'destructive',
+      });
       return null;
     }
   }, [workspaceRoot]);
@@ -496,6 +502,12 @@ export function App() {
     } catch (err) {
       setSaveState('error');
       setStatus('error');
+      const message = err instanceof Error ? err.message : String(err);
+      toast({
+        title: 'Create file failed',
+        description: message,
+        variant: 'destructive',
+      });
     }
   }, [ensureBufferSafeToReplace, promptForSavePath, workspaceRoot]);
 
