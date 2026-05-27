@@ -17,6 +17,7 @@ import { StatusCluster } from './components/StatusCluster.jsx';
 import { FileSelectorDialog } from './components/FileSelectorDialog.jsx';
 import { QuickOpenDialog } from './components/QuickOpenDialog.jsx';
 import { Toaster } from './components/Toaster.jsx';
+import { SettingsDialog } from './components/SettingsDialog.jsx';
 
 export type RenderStatus = 'ready' | 'rendering' | 'error' | 'saved';
 export type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
@@ -88,6 +89,7 @@ export function App() {
   const [saveAsDialogOpen, setSaveAsDialogOpen] = useState(false);
   const [saveAsDialogMode, setSaveAsDialogMode] = useState<'save' | 'new'>('save');
   const [workspaceRoot, setWorkspaceRoot] = useState(window.__WORKSPACE_ROOT ?? '');
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const renderVersion = useRef(0);
   const debounceTimer = useRef<number | null>(null);
   const groupRef = useGroupRef();
@@ -636,6 +638,7 @@ export function App() {
           onResetSplit={resetSplit}
           onSave={saveCurrent}
           onToggleExplorer={() => setExplorerOpen((open) => !open)}
+          onOpenSettings={() => setSettingsOpen(true)}
           plugins={plugins}
         />
         <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -699,6 +702,11 @@ export function App() {
           onOpenFile={openFile}
           open={quickOpenOpen}
           workspaceRoot={workspaceRoot}
+        />
+        <SettingsDialog
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          onSave={() => renderImmediate(markdownText)}
         />
         <Toaster />
       </div>
