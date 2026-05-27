@@ -444,11 +444,37 @@ export function App() {
         setSavedAt(new Date());
         setPluginState('complete');
 
+        const handleOpen = async (e: React.MouseEvent) => {
+          e.preventDefault();
+          try {
+            await fetch('/api/open-file', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ path: data.outputPath }),
+            });
+          } catch (err) {
+            console.error('Failed to open file:', err);
+          }
+        };
+
         toast({
           title: pluginMeta?.name ?? pluginId,
-          description: data.stderr
-            ? `stderr: ${data.stderr}`
-            : 'completed successfully',
+          description: data.outputPath ? (
+            <span>
+              completed successfully. Output:{' '}
+              <button
+                onClick={handleOpen}
+                className="underline text-[#8fb8ff] hover:text-[#b4d2ff] font-medium transition-colors focus-visible:outline-none"
+                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+              >
+                {data.outputPath.split('/').at(-1)}
+              </button>
+            </span>
+          ) : data.stderr ? (
+            `stderr: ${data.stderr}`
+          ) : (
+            'completed successfully'
+          ),
           variant: 'default',
         });
       } catch (err) {

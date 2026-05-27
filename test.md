@@ -2,14 +2,5 @@
 
 
 :::{.remark}
-Hi
+Hello.
 :::
-
-
-:::{.theorem}
-Hi
-:::
-
-[@Cox35]
-
-
