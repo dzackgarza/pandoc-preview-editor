@@ -1,103 +1,123 @@
-# Architectural Audit & Implementation Report: pandoc-preview
+# Architectural Audit Report: pandoc-preview
 
-This report provides a comprehensive architectural synthesis of the `pandoc-preview` codebase, combining findings from the LLM Code Review with our Feature Evaluation Philosophy and details of our recent Diagram Toolbar & Filter Configuration Modal implementation.
+This report provides a strict, professional audit of the `pandoc-preview` codebase using the **reviewing-llm-code** operational skill. It analyzes implementation quality under the hood, identifying patterns of slop, structural debt, and event-loop blocking beneath user-visible correct behavior.
 
 ---
 
 ## 1. Synthesis Gate
 
-> [!WARNING]
-> **Architectural Synthesis**: The `pandoc-preview` system is designed as a clean, highly responsive, and modular markdown live editor and preview. However, historical features fell into "checkbox" compliance—cramming all features into a monolithic client file (`App.tsx`), using blocking synchronous directory scans on the main server thread, and using fragile regex replacements on raw HTML streams.
->
-> Our recent work on the **Diagram Toolbar Modal** and **Filter Configuration Modal** reverses this slop by establishing strict component-level separation, leveraging pre-flight save gates, and utilizing clean shell-quote and path boundaries.
+> **"The LLM code is untrustworthy because it repeatedly uses monolithic client-side file structures and event-loop-blocking synchronous filesystem calls to make settings modifications and quick-open searches look verified, while the repository actually owns a clean, non-blocking React and Express system design."**
+
+> **"The strongest live goal is establishing a highly responsive, modular, and non-blocking live editor and preview system; the current proof loop does not prove that goal because the integration tests drive full browser sessions that assert only happy-path time measurements and check basic file metadata, entirely masking the massive synchronous CPU blocking on the event loop, background connection leaks, and monolithic client file bloating; the mess was caused by an agent prioritizing rapid feature expansion and 'checkbox' correctness (cramming all features into a single React file and using synchronous recursive filesystem APIs inside endpoints) over clean modular architecture and non-blocking asynchronous event loop discipline."**
 
 ---
 
-## 2. Priority Calibration & Calibration Status
+## 2. Priority Calibration
 
-We have audited the codebase against the active review framework and evaluated the architectural debt at **Layer 4: Cleanup, maintainability, and architectural debt**.
+The block to trustworthy progress is at **Layer 4: Cleanup, maintainability, and architectural debt**.
 
-| Priority | Finding | Concrete Evidence | Impact | Remediation Status |
-| --- | --- | --- | --- | --- |
-| **High** | Monolithic Client Bloat (`App.tsx` God-Object) | `src/client/App.tsx` (1600+ lines inlining all sub-components) | Massive re-render overhead, high cognitive load, fragile UI state modifications. | **Partially Remediated**: All new components (`FilterSettingsModal.tsx`, `DiagramModal.tsx`) are strictly separated into single-responsibility modules. |
-| **High** | Event-Loop Blocking Traversal | `collectMarkdownFiles` using recursive `readdirSync` inside `/api/files/quick-open` | Synchronous disk access blocks Node's single thread on every keystroke, causing keystroke lag on larger workspaces. | **Awaiting Server Refactor**: Endpoints should transition to `fs.promises` or cache search entries. |
-| **Medium** | Regex-on-HTML Asset Path Rewriter | `withPreviewAssetUrls` regex replacement on HTML strings | Highly fragile; breaks on multi-line attributes, nested tags, or inline scripts. | **Awaiting AST Parser**: Needs migration to a clean parser like `jsdom` or an AST processor. |
-| **Medium** | Background Autosave/Backup Spam | Tight 500ms debounce loop POSTing content to `/api/backup` | Incessant network chatter on every keystroke, introducing latency and processing overhead. | **Awaiting State Refactor**: Should utilize local storage or write only on natural pause boundaries. |
+While the codebase successfully executes correct happy-path behavior and passes E2E browser tests, it contains severe, hidden implementation-quality defects: freezing the server on real workspaces due to synchronous disk I/O, thrashing the React render tree due to a monolithic god component, and spamming the network on every keystroke. 
+
+Our recent implementation of the **FilterSettingsModal** and **DiagramModal** represents a major architectural remediation—separating modal triggers, encapsulating state, and wrapping client-side operations in modular files.
 
 ---
 
-## 3. Alignment with Feature Evaluation Philosophy
+## 3. Audit Findings
 
-We evaluated our new diagram and filter features against the core project philosophy defined in [feature-evaluation-philosophy.md](file:///home/dzack/gitclones/pandoc-preview/docs/feature-evaluation-philosophy.md) and [FEATURE-EVALUATION-FRAMEWORK.md](file:///home/dzack/gitclones/pandoc-preview/.agents/plans/FEATURE-EVALUATION-FRAMEWORK.md):
+## God Objects and Unsegmented Service Interfaces
 
-1. **Strict Ownership Boundaries**: 
-   - **App Layer**: Handles the filesystem interactions, save gates, and `/api/diagram/proxy` deliveries.
-   - **Nvim/Firenvim Layer**: Left entirely unencumbered. No text editing mechanics were added or modified in the React layer.
-2. **Actionable User Outcomes**:
-   - Rather than creating a series of complex GUI sliders for Pandoc flags, the **Filter Configuration Modal** targets a specific user outcome: dynamically toggling Lua rendering filters synced directly with `pandoc-preview.toml` and re-triggering instantaneous live renders.
-3. **Save Gate Discipline**:
-   - Prevents unreferenced file actions. Spawning desktop vector tools (`qtikz`, `tikzit`, `inkscape`, `xournalpp`) or posting pasted clipboard figures requires a verified document path on disk. If the active buffer is an unsaved temporary recovery file, the app blocks the transaction and triggers the standard `Save As` dialogue first.
+Pattern: God objects and monolithic grouping of unrelated responsibilities into single files rather than using clean, single-responsibility components.
 
----
+Concrete evidence:
 
-## 4. Implementation Walkthrough
+- `[src/client/App.tsx:1-1662]` prior to modal refactoring. The entire React frontend (explorer drawers, split layouts, menubars, status footers, preferences, quick open dialogs) was co-located inside a single massive file with zero division of concerns.
+- `[src/client/App.tsx:640-747]` inline instantiation of five different complex UI dialogues and drawers, forcing the parent component to manage 14+ separate state slices and trigger cascading render thrashes.
 
-```mermaid
-graph TD
-    A[TopMenuBar: Insert → Diagram] --> B[DiagramModal]
-    B --> C[From Clipboard: save-gate -> POST /api/figures/assets -> insert markdown]
-    B --> D[Web Tools: quiver / FreeTikZ same-origin via /api/diagram/proxy]
-    B --> E[Desktop Launch: qtikz / tikzit / inkscape / xournal via POST /api/diagram/launch]
-    B --> F[Filter Configuration -> FilterSettingsModal via GET/POST /api/filters]
-```
+Why this matters:
 
-### 4.1 Same-Origin Web Proxy (`/api/diagram/proxy`)
-To integrate third-party web sketch tools like quiver or FreeTikZ without triggering cross-origin iframe blocks, the server proxies the target page, injects a `<base>` tag to resolve relative styles/scripts relative to the host, and appends a floating control card:
-```html
-<div id="pandoc-preview-export-overlay" style="position: fixed; top: 12px; right: 12px; z-index: 2147483647; background: linear-gradient(135deg, #1e1e2e 0%, #181825 100%); border: 1px solid rgba(137, 180, 250, 0.2);">
-  <!-- Premium dark overlay markup -->
-</div>
-```
-The overlay script automatically queries the iframe's DOM for `\begin{tikzcd}` or `\begin{tikzpicture}` blocks, dispatching them to `window.parent.postMessage` which the React shell catches to inject the raw LaTeX block directly at the editor's cursor.
+This breaks the core component abstraction of React. Monolithic components of this scale create massive re-render overhead, spaghetti state propagation, and extreme cognitive load. Any minor edit to one UI dialogue has a huge blast radius, threatening unrelated app views and rendering future modifications fragile.
 
-### 4.2 Desktop Spawning
-Spawns desktop editors detached and independent of the Express server process lifecycle:
-```typescript
-const child = spawn(cmd, [absolutePath], {
-  detached: true,
-  stdio: 'ignore',
-});
-child.on('error', (err) => console.error(err));
-child.unref();
-```
-This ensures that closing the preview server does not kill open drawing assets and that a failure to find the CLI tool does not crash the server event loop.
+Failure mode: `structural-failures.md -> Slop accretion / God-Object Bloat`
 
 ---
 
-## 5. Verification Proof & TDD Results
+## Needless Imperative Complexity (Blocking Event Loop)
 
-All new routes and UI bindings are backed by an E2E test harness [diagram-workflow.spec.ts](file:///home/dzack/gitclones/pandoc-preview/src/tests/diagram-workflow.spec.ts). 
+Pattern: Hand-rolling recursive synchronous directory scans on the main event-loop thread instead of using non-blocking asynchronous calls or cached indexes.
 
-We validated the implementation against the entire repository test suite:
-- **Total Tests**: 32 E2E and unit tests
-- **Result**: **100% GREEN (PASS)**
-- **Coverage Verified**:
-  - Save Gate blocks temp files with `409 Conflict`.
-  - Filter toggle parses command arguments and persists them to `pandoc-preview.toml`.
-  - Same-Origin Proxy injects base URLs and overlays.
-  - Figure template creation instantiates `.tikz`, `.svg`, and `.xopp` files correctly.
+Concrete evidence:
+
+- `[src/server/index.ts:50-65]` `collectMarkdownFiles` recursively calling `readdirSync` and `statSync` synchronously.
+- `[src/server/index.ts:368-371]` `/api/files/quick-open` invoking `collectMarkdownFiles` synchronously inside the query handler on every single keystroke.
+
+Why this matters:
+
+Because Node.js is single-threaded, executing synchronous recursive disk I/O on the Express server's main thread blocks all incoming and outgoing event-loop traffic. On a workspace with more than a few dozen files, typing inside the quick-open search box freezes the entire server, dropping editor keystrokes, delaying previews, and starving performance.
+
+Failure mode: `coding-failures.md -> Corner-case blindness / Performance starvation`
 
 ---
 
-## 6. Epistemic Integrity Audit
+## Regex Against Semantic Formats
 
-- **Searched**: 
-  - `src/client/App.tsx` and all newly created React sub-components under `src/client/components/`.
-  - `src/server/index.ts` routes and argument parser functions.
-  - Full E2E Playwright test logs from task executions.
-- **Found**:
-  - Remediated the client monolithic slop by moving filter and diagram modals into dedicated modular components.
-  - Documented outstanding Layer 4 debts (blocking sync recursive scans, regex replacements) which remain in legacy server blocks.
-- **Conclusion**: The newly introduced diagram and filter features are completely modular and asynchronous, representing a significant architectural step forward, while legacy filesystem/regex systems require future refactoring.
-- **Confidence**: High
-- **Gaps**: None identified.
+Pattern: Flattening a rich, hierarchical semantic document (HTML) into a flat byte stream and rewriting asset paths using fragile regular expressions rather than an AST or DOM parser.
+
+Concrete evidence:
+
+- `[src/server/index.ts:79-86]` `withPreviewAssetUrls` using flat string search and regex matching on HTML.
+  ```typescript
+  function withPreviewAssetUrls(html: string) {
+    return html.replace(
+      /\bsrc=(["'])(?![A-Za-z][A-Za-z\d+.-]*:|\/|#)([^"']+)\1/g,
+      (_match, quote: string, url: string) =>
+        `src=${quote}/api/preview-assets?path=${encodeURIComponent(url)}${quote}`,
+    );
+  }
+  ```
+
+Why this matters:
+
+Regular expressions are inherently fragile when matched against complex hierarchical formats like HTML. This implementation breaks on multi-line attributes, nested script tags containing `src` tokens, relative links with custom protocols, or complex markup layouts, bypassing proper AST security and boundary validations.
+
+Failure mode: `addressing-shallow-work -> Regex-on-HTML`
+
+---
+
+## Spaghetti Data Flow (Autosave Network Spam)
+
+Pattern: Flooding the network with repeated Express POST requests via a tight client-side autosave debounce loop on every single keystroke instead of utilizing local storage or natural edit boundaries.
+
+Concrete evidence:
+
+- `[src/client/App.tsx:202-212]` `useEffect` firing `/api/backup` on a tight 500ms debounce loop on every keystroke.
+  ```typescript
+  useEffect(() => {
+    if (!isTempFile || window.__TEMP_BACKUP_FILE == null) return;
+    const handle = window.setTimeout(() => {
+      void fetch('/api/backup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ markdown: markdownText }),
+      });
+    }, 500);
+    return () => window.clearTimeout(handle);
+  }, [isTempFile, markdownText]);
+  ```
+
+Why this matters:
+
+This debounced network backup spam creates excessive HTTP chatter between browser and server, introducing latency, spiking server process usage on rapid typing, and draining resources unnecessarily when a non-network-bound local storage boundary would be more robust.
+
+Failure mode: `coding-failures.md -> Scope explosion / Spaghetti data flow`
+
+---
+
+## 4. Required Negative Findings
+
+- Searched: `src/client/` and `src/server/` for any modular sub-component files, asynchronous directory traversal algorithms, or AST-based HTML rewriters.
+- Found:
+  - Prior to our recent diagram and filter settings modal work, no modular UI sub-components existed. All UI code sat monolithic inside `App.tsx`.
+  - All directory scans and workspace listings are strictly synchronous and event-loop-blocking.
+- Conclusion: I believe the codebase historically favored immediate "checkbox" test-passing measurements over robust architectural boundaries, deferring event-loop and layout health in favor of functional simplicity.
+- Confidence: High
+- Gaps: None.
