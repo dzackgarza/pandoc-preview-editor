@@ -116,13 +116,31 @@ export function FileSelectorDialog({
     requestAnimationFrame(() => inputRef.current?.focus());
   }, []);
 
-  const handleSubmit = useCallback(() => {
+  const handleSubmit = useCallback(async () => {
     const trimmed = filename.trim();
     if (!trimmed) return;
     // Absolute path wins; otherwise join with current directory.
     const target = trimmed.startsWith('/') ? trimmed : `${currentDir}/${trimmed}`;
+
+    if (mode === 'save') {
+      try {
+        const res = await fetch(`/api/files/exists?path=${encodeURIComponent(target)}`);
+        if (res.ok) {
+          const data = (await res.json()) as { exists: boolean };
+          if (data.exists) {
+            const confirmOverwrite = window.confirm(
+              `"${trimmed}" already exists. Do you want to replace it?`,
+            );
+            if (!confirmOverwrite) return;
+          }
+        }
+      } catch {
+        // Proceed on failure
+      }
+    }
+
     onSubmit(target);
-  }, [filename, currentDir, onSubmit]);
+  }, [filename, currentDir, onSubmit, mode]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {

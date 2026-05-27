@@ -231,6 +231,8 @@ test.describe('Bug fixes TDD', () => {
         })
         .toBe('# Overwritten Document\n');
     } finally {
+      console.log('=== SERVER OUT ===\n', server.out.join(''));
+      console.log('=== SERVER ERR ===\n', server.err.join(''));
       await killServer(server);
     }
   });

@@ -390,6 +390,24 @@ export function createApp(config: ServerConfig) {
       res.status(400).json({ error: message });
     }
   });
+  app.get('/api/files/exists', (req, res) => {
+    const requestedPath = typeof req.query.path === 'string' ? req.query.path : '';
+    if (!requestedPath) {
+      res.status(400).json({ error: 'path query parameter is required' });
+      return;
+    }
+    try {
+      const targetPath = resolveUserPath(config, requestedPath);
+      const exists = existsSync(targetPath);
+      console.log(`[EXISTS CHECK] requestedPath: "${requestedPath}", targetPath: "${targetPath}", exists: ${exists}`);
+      res.json({ exists });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[EXISTS CHECK ERROR] requestedPath: "${requestedPath}", error: ${message}`);
+      res.json({ exists: false });
+    }
+  });
+
 
   app.post('/api/files/new', (req, res) => {
     try {
