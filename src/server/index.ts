@@ -14,7 +14,7 @@ import { readdir } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
 import { dump } from 'js-toml';
-import { quote, parse } from 'shell-quote';
+import { parse } from 'shell-quote';
 import {
   findPlugin,
   loadBundledPlugins,
@@ -76,7 +76,7 @@ function pathIsInside(root: string, targetPath: string): boolean {
 }
 
 export interface ServerConfig {
-  renderCommand: string[];
+  renderCommand: string;
   timeoutMs: number;
   port: number;
   host: string;
@@ -501,7 +501,7 @@ export function createApp(config: ServerConfig) {
       filtersDir: config.filtersDir ?? '~/.pandoc/filters',
       debounceMs: config.debounceMs ?? 750,
       timeoutMs: config.timeoutMs ?? 30000,
-      renderCommand: quote(config.renderCommand),
+      renderCommand: config.renderCommand,
     });
   });
 
@@ -527,15 +527,14 @@ export function createApp(config: ServerConfig) {
       return;
     }
 
+    if (typeof renderCommand !== 'string' || renderCommand.trim() === '') {
+      res.status(400).json({ error: 'renderCommand must be a non-empty shell command' });
+      return;
+    }
+
     const parsed = parse(renderCommand).filter(
       (entry): entry is string => typeof entry === 'string',
     );
-    if (parsed.length === 0) {
-      res
-        .status(400)
-        .json({ error: 'renderCommand must be a non-empty shell command' });
-      return;
-    }
 
     const home = homedir();
     const resolveTilde = (p: string) => {
@@ -543,25 +542,6 @@ export function createApp(config: ServerConfig) {
       if (p === '~') return home;
       return p;
     };
-
-    const expandTildePaths = (argsArray: string[]): string[] => {
-      return argsArray.map((arg) => {
-        if (arg.startsWith('~/') || arg === '~') {
-          return home + arg.slice(1);
-        }
-        const eqIdx = arg.indexOf('=');
-        if (eqIdx >= 0) {
-          const prefix = arg.slice(0, eqIdx + 1);
-          const value = arg.slice(eqIdx + 1);
-          if (value.startsWith('~/') || value === '~') {
-            return prefix + home + value.slice(1);
-          }
-        }
-        return arg;
-      });
-    };
-
-    // Validation
     const absTemplatesDir = resolve(resolveTilde(templatesDir));
     const absFiltersDir = resolve(resolveTilde(filtersDir));
 
@@ -613,7 +593,7 @@ export function createApp(config: ServerConfig) {
       config.filtersDir = filtersDir;
       config.debounceMs = debounceMs;
       config.timeoutMs = timeoutMs;
-      config.renderCommand = expandTildePaths(parsed);
+      config.renderCommand = renderCommand;
 
       // Persist to TOML file
       if (config.configPath) {
@@ -637,6 +617,7 @@ export function createApp(config: ServerConfig) {
       res.status(500).json({ error: message });
     }
   });
+
 
   app.post('/api/files/new', (req, res) => {
     try {

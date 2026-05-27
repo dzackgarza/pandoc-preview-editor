@@ -2,32 +2,13 @@ import { Command } from 'commander';
 import { readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { tmpdir, homedir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { load } from 'js-toml';
-import { parse } from 'shell-quote';
 import { startServer, type ServerConfig } from './index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-function expandTildePaths(args: string[]): string[] {
-  const home = homedir();
-  return args.map((arg) => {
-    // Expand standalone ~/, ~, and ~/ after =
-    if (arg.startsWith('~/') || arg === '~') {
-      return home + arg.slice(1);
-    }
-    const eqIdx = arg.indexOf('=');
-    if (eqIdx >= 0) {
-      const prefix = arg.slice(0, eqIdx + 1);
-      const value = arg.slice(eqIdx + 1);
-      if (value.startsWith('~/') || value === '~') {
-        return prefix + home + value.slice(1);
-      }
-    }
-    return arg;
-  });
-}
 
 interface CliOptions {
   port?: string;
@@ -50,23 +31,13 @@ function loadConfig(configPath: string | undefined, cwd: string): ServerConfig |
   const pandoc = (raw.pandoc ?? {}) as Record<string, unknown>;
   const render = (raw.render ?? {}) as Record<string, unknown>;
 
-  if (typeof pandoc.render_command !== 'string') {
-    console.error('pandoc-preview.toml must specify [pandoc] render_command.');
-    return null;
-  }
-
-  const parsed = parse(pandoc.render_command as string).filter(
-    (entry): entry is string => typeof entry === 'string',
-  );
-  if (parsed.length === 0) {
-    console.error(
-      'pandoc-preview.toml [pandoc] render_command must be a non-empty shell command.',
-    );
+  if (typeof pandoc.render_command !== 'string' || pandoc.render_command.trim() === '') {
+    console.error('pandoc-preview.toml must specify a non-empty [pandoc] render_command.');
     return null;
   }
 
   return {
-    renderCommand: expandTildePaths(parsed),
+    renderCommand: pandoc.render_command as string,
     timeoutMs: typeof render.timeout_ms === 'number' ? render.timeout_ms : 30000,
     port: 3000,
     host: '127.0.0.1',

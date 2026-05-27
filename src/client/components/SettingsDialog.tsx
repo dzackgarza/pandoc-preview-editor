@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as Tabs from '@radix-ui/react-tabs';
 import { X, Settings, Cpu, FolderOpen, Terminal } from 'lucide-react';
+import { parse } from 'shell-quote';
 
 interface SettingsData {
   templatesDir: string;
@@ -17,6 +18,101 @@ interface SettingsDialogProps {
   onSave: () => void;
 }
 
+interface ParsedFlags {
+  commandName: string;
+  standalone: boolean;
+  citeproc: boolean;
+  toc: boolean;
+  numberSections: boolean;
+  embedResources: boolean;
+  math: 'mathjax' | 'katex' | 'webtex' | 'none';
+  selectedTemplate: string;
+  selectedFilters: string[];
+  otherFlags: string[];
+}
+
+// Parse a raw command string into its constituent flags.
+// Uses shell-quote so quoted arguments (e.g. paths with spaces) are handled correctly.
+function parseFlags(rawText: string): ParsedFlags {
+  const tokens = parse(rawText).filter((t): t is string => typeof t === 'string');
+  const [commandName = 'pandoc', ...args] = tokens;
+
+  let standalone = false;
+  let citeproc = false;
+  let toc = false;
+  let numberSections = false;
+  let embedResources = false;
+  let math: ParsedFlags['math'] = 'none';
+  let selectedTemplate = '';
+  const selectedFilters: string[] = [];
+  const otherFlags: string[] = [];
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '-s' || arg === '--standalone') {
+      standalone = true;
+    } else if (arg === '--citeproc') {
+      citeproc = true;
+    } else if (arg === '-N' || arg === '--number-sections') {
+      numberSections = true;
+    } else if (arg === '--table-of-contents' || arg === '--toc') {
+      toc = true;
+    } else if (arg === '--self-contained' || arg === '--embed-resources') {
+      embedResources = true;
+    } else if (arg === '--mathjax') {
+      math = 'mathjax';
+    } else if (arg === '--katex') {
+      math = 'katex';
+    } else if (arg === '--webtex') {
+      math = 'webtex';
+    } else if (arg.startsWith('--template=')) {
+      const val = arg.slice('--template='.length);
+      selectedTemplate = val.split('/').at(-1) || val;
+    } else if (arg === '--template' && i + 1 < args.length) {
+      const val = args[++i];
+      selectedTemplate = val.split('/').at(-1) || val;
+    } else if (arg.startsWith('--lua-filter=')) {
+      const val = arg.slice('--lua-filter='.length);
+      selectedFilters.push(val.split('/').at(-1) || val);
+    } else if (arg === '--lua-filter' && i + 1 < args.length) {
+      const val = args[++i];
+      selectedFilters.push(val.split('/').at(-1) || val);
+    } else if (arg.startsWith('--filter=')) {
+      const val = arg.slice('--filter='.length);
+      selectedFilters.push(val.split('/').at(-1) || val);
+    } else if (arg === '--filter' && i + 1 < args.length) {
+      const val = args[++i];
+      selectedFilters.push(val.split('/').at(-1) || val);
+    } else {
+      otherFlags.push(arg);
+    }
+  }
+
+  return { commandName, standalone, citeproc, toc, numberSections, embedResources, math, selectedTemplate, selectedFilters, otherFlags };
+}
+
+// Reconstruct a raw command string from parsed flag state.
+function buildCommand(flags: ParsedFlags, templatesDir: string, filtersDir: string): string {
+  const args: string[] = [];
+  if (flags.standalone) args.push('--standalone');
+  if (flags.citeproc) args.push('--citeproc');
+  if (flags.toc) args.push('--table-of-contents');
+  if (flags.numberSections) args.push('--number-sections');
+  if (flags.embedResources) args.push('--embed-resources');
+  if (flags.math === 'mathjax') args.push('--mathjax');
+  if (flags.math === 'katex') args.push('--katex');
+  if (flags.math === 'webtex') args.push('--webtex');
+  if (flags.selectedTemplate) {
+    args.push(`--template=${templatesDir.replace(/\/$/, '')}/${flags.selectedTemplate}`);
+  }
+  for (const filter of flags.selectedFilters) {
+    const ext = filter.endsWith('.lua') ? '--lua-filter' : '--filter';
+    args.push(`${ext}=${filtersDir.replace(/\/$/, '')}/${filter}`);
+  }
+  args.push(...flags.otherFlags);
+  return [flags.commandName, ...args].join(' ');
+}
+
 export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
   const [activeTab, setActiveTab] = useState('general');
 
@@ -24,38 +120,26 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
   const [availableTemplates, setAvailableTemplates] = useState<string[]>([]);
   const [availableFilters, setAvailableFilters] = useState<string[]>([]);
 
-  // Config States
+  // Config state
   const [templatesDir, setTemplatesDir] = useState('~/.pandoc/templates');
   const [filtersDir, setFiltersDir] = useState('~/.pandoc/filters');
   const [debounceMs, setDebounceMs] = useState(750);
   const [timeoutMs, setTimeoutMs] = useState(30000);
 
-  // GUI Flag States
-  const [standalone, setStandalone] = useState(false);
-  const [citeproc, setCiteproc] = useState(false);
-  const [toc, setToc] = useState(false);
-  const [numberSections, setNumberSections] = useState(false);
-  const [embedResources, setEmbedResources] = useState(false);
-  const [math, setMath] = useState<'mathjax' | 'katex' | 'webtex' | 'none'>('none');
-  const [selectedTemplate, setSelectedTemplate] = useState('');
-  const [selectedFilters, setSelectedFilters] = useState<string[]>([]);
-  const [otherFlags, setOtherFlags] = useState<string[]>([]);
-
-  // Command name extracted from the render command
-  const [commandName, setCommandName] = useState('pandoc');
-
-  // Raw arguments input
+  // Raw command string — single source of truth for all flag state
   const [rawArgsText, setRawArgsText] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
 
-  // Sync state tracking to prevent infinite loops
-  const isSyncing = useRef(false);
+  // All flag state derived from rawArgsText; no separate per-flag state vars
+  const parsedFlags = useMemo(
+    () => parseFlags(rawArgsText),
+    [rawArgsText],
+  );
 
-  // 1. Fetch config and asset states when the dialog opens
+  // Fetch config and asset lists when the dialog opens
   useEffect(() => {
     if (open) {
       setValidationError(null);
-      // Fetch initial settings config
       fetch('/api/config')
         .then((res) => res.json())
         .then((data: SettingsData) => {
@@ -63,18 +147,10 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
           setFiltersDir(data.filtersDir);
           setDebounceMs(data.debounceMs);
           setTimeoutMs(data.timeoutMs);
-
-          const parts = (data.renderCommand || 'pandoc').split(/\s+/).filter(Boolean);
-          const cmd = parts[0] || 'pandoc';
-          const args = parts.slice(1);
           setRawArgsText(data.renderCommand || 'pandoc');
-
-          // Initial sync from raw args
-          syncFromArgsArray(cmd, args, data.templatesDir, data.filtersDir);
         })
         .catch(console.error);
 
-      // Fetch templates and filters assets
       fetch('/api/pandoc/assets')
         .then((res) => res.json())
         .then((data: { templates: string[]; filters: string[] }) => {
@@ -85,258 +161,24 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
     }
   }, [open]);
 
-  // Sync from raw array representation to GUI states
-  const syncFromArgsArray = (
-    cmd: string,
-    args: string[],
-    currentTDir: string,
-    currentFDir: string,
-  ) => {
-    isSyncing.current = true;
-
-    setCommandName(cmd);
-
-    let isStandalone = false;
-    let isCiteproc = false;
-    let isToc = false;
-    let isNumberSections = false;
-    let isEmbedResources = false;
-    let currentMath: 'mathjax' | 'katex' | 'webtex' | 'none' = 'none';
-    let currentTemplate = '';
-    const currentFilters: string[] = [];
-    const currentOthers: string[] = [];
-
-    for (let i = 0; i < args.length; i++) {
-      const arg = args[i];
-      if (arg === '-s' || arg === '--standalone') {
-        isStandalone = true;
-      } else if (arg === '--citeproc') {
-        isCiteproc = true;
-      } else if (arg === '-N' || arg === '--number-sections') {
-        isNumberSections = true;
-      } else if (arg === '--table-of-contents' || arg === '--toc') {
-        isToc = true;
-      } else if (arg === '--self-contained' || arg === '--embed-resources') {
-        isEmbedResources = true;
-      } else if (arg === '--mathjax') {
-        currentMath = 'mathjax';
-      } else if (arg === '--katex') {
-        currentMath = 'katex';
-      } else if (arg === '--webtex') {
-        currentMath = 'webtex';
-      } else if (arg.startsWith('--template=')) {
-        const val = arg.slice('--template='.length);
-        currentTemplate = val.split(/[\\/]/).at(-1) || val;
-      } else if (arg === '--template' && i + 1 < args.length) {
-        const val = args[i + 1];
-        currentTemplate = val.split(/[\\/]/).at(-1) || val;
-        i++;
-      } else if (arg.startsWith('--lua-filter=')) {
-        const val = arg.slice('--lua-filter='.length);
-        currentFilters.push(val.split(/[\\/]/).at(-1) || val);
-      } else if (arg === '--lua-filter' && i + 1 < args.length) {
-        const val = args[i + 1];
-        currentFilters.push(val.split(/[\\/]/).at(-1) || val);
-        i++;
-      } else if (arg.startsWith('--filter=')) {
-        const val = arg.slice('--filter='.length);
-        currentFilters.push(val.split(/[\\/]/).at(-1) || val);
-      } else if (arg === '--filter' && i + 1 < args.length) {
-        const val = args[i + 1];
-        currentFilters.push(val.split(/[\\/]/).at(-1) || val);
-        i++;
-      } else {
-        currentOthers.push(arg);
-      }
-    }
-
-    setStandalone(isStandalone);
-    setCiteproc(isCiteproc);
-    setToc(isToc);
-    setNumberSections(isNumberSections);
-    setEmbedResources(isEmbedResources);
-    setMath(currentMath);
-    setSelectedTemplate(currentTemplate);
-    setSelectedFilters(currentFilters);
-    setOtherFlags(currentOthers);
-
-    isSyncing.current = false;
-  };
-
-  // Sync from GUI states to raw array and text representation
-  const syncToRawText = (updatedState: {
-    standalone: boolean;
-    citeproc: boolean;
-    toc: boolean;
-    numberSections: boolean;
-    embedResources: boolean;
-    math: 'mathjax' | 'katex' | 'webtex' | 'none';
-    template: string;
-    selectedFilters: string[];
-    otherFlags: string[];
-  }) => {
-    if (isSyncing.current) return;
-
-    const args: string[] = [];
-    if (updatedState.standalone) args.push('--standalone');
-    if (updatedState.citeproc) args.push('--citeproc');
-    if (updatedState.toc) args.push('--table-of-contents');
-    if (updatedState.numberSections) args.push('--number-sections');
-    if (updatedState.embedResources) args.push('--embed-resources');
-
-    if (updatedState.math === 'mathjax') args.push('--mathjax');
-    if (updatedState.math === 'katex') args.push('--katex');
-    if (updatedState.math === 'webtex') args.push('--webtex');
-
-    if (updatedState.template) {
-      const cleanDir = templatesDir.replace(/\/$/, '');
-      args.push(`--template=${cleanDir}/${updatedState.template}`);
-    }
-
-    for (const filter of updatedState.selectedFilters) {
-      const cleanDir = filtersDir.replace(/\/$/, '');
-      const ext = filter.endsWith('.lua') ? '--lua-filter' : '--filter';
-      args.push(`${ext}=${cleanDir}/${filter}`);
-    }
-
-    args.push(...updatedState.otherFlags);
-    setRawArgsText([commandName, ...args].join(' '));
-  };
-
-  // Handlers for individual GUI toggles
-  const handleStandaloneChange = (val: boolean) => {
-    setStandalone(val);
-    syncToRawText({
-      standalone: val,
-      citeproc,
-      toc,
-      numberSections,
-      embedResources,
-      math,
-      template: selectedTemplate,
-      selectedFilters,
-      otherFlags,
-    });
-  };
-
-  const handleCiteprocChange = (val: boolean) => {
-    setCiteproc(val);
-    syncToRawText({
-      standalone,
-      citeproc: val,
-      toc,
-      numberSections,
-      embedResources,
-      math,
-      template: selectedTemplate,
-      selectedFilters,
-      otherFlags,
-    });
-  };
-
-  const handleTocChange = (val: boolean) => {
-    setToc(val);
-    syncToRawText({
-      standalone,
-      citeproc,
-      toc: val,
-      numberSections,
-      embedResources,
-      math,
-      template: selectedTemplate,
-      selectedFilters,
-      otherFlags,
-    });
-  };
-
-  const handleNumberSectionsChange = (val: boolean) => {
-    setNumberSections(val);
-    syncToRawText({
-      standalone,
-      citeproc,
-      toc,
-      numberSections: val,
-      embedResources,
-      math,
-      template: selectedTemplate,
-      selectedFilters,
-      otherFlags,
-    });
-  };
-
-  const handleEmbedResourcesChange = (val: boolean) => {
-    setEmbedResources(val);
-    syncToRawText({
-      standalone,
-      citeproc,
-      toc,
-      numberSections,
-      embedResources: val,
-      math,
-      template: selectedTemplate,
-      selectedFilters,
-      otherFlags,
-    });
-  };
-
-  const handleMathChange = (val: 'mathjax' | 'katex' | 'webtex' | 'none') => {
-    setMath(val);
-    syncToRawText({
-      standalone,
-      citeproc,
-      toc,
-      numberSections,
-      embedResources,
-      math: val,
-      template: selectedTemplate,
-      selectedFilters,
-      otherFlags,
-    });
-  };
-
-  const handleTemplateChange = (val: string) => {
-    setSelectedTemplate(val);
-    syncToRawText({
-      standalone,
-      citeproc,
-      toc,
-      numberSections,
-      embedResources,
-      math,
-      template: val,
-      selectedFilters,
-      otherFlags,
-    });
+  // Update a single flag: rebuild the raw command string from the new flag state
+  const updateFlag = (patch: Partial<ParsedFlags>) => {
+    setRawArgsText(buildCommand({ ...parsedFlags, ...patch }, templatesDir, filtersDir));
   };
 
   const handleFilterToggle = (filterName: string) => {
-    const nextFilters = selectedFilters.includes(filterName)
-      ? selectedFilters.filter((f) => f !== filterName)
-      : [...selectedFilters, filterName];
-    setSelectedFilters(nextFilters);
-    syncToRawText({
-      standalone,
-      citeproc,
-      toc,
-      numberSections,
-      embedResources,
-      math,
-      template: selectedTemplate,
-      selectedFilters: nextFilters,
-      otherFlags,
-    });
+    const nextFilters = parsedFlags.selectedFilters.includes(filterName)
+      ? parsedFlags.selectedFilters.filter((f) => f !== filterName)
+      : [...parsedFlags.selectedFilters, filterName];
+    updateFlag({ selectedFilters: nextFilters });
   };
 
-  // Handler for Raw arguments text modification
   const handleRawTextChange = (text: string) => {
     setRawArgsText(text);
-    const parts = text.split(/\s+/).filter(Boolean);
-    const cmd = parts[0] || 'pandoc';
-    const args = parts.slice(1);
-    syncFromArgsArray(cmd, args, templatesDir, filtersDir);
   };
 
   const handleSave = () => {
+
     const payload = {
       templatesDir,
       filtersDir,
@@ -472,29 +314,29 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
                     COMMON RENDERING FLAGS
                   </label>
                   <Checkbox
-                    checked={standalone}
+                    checked={parsedFlags.standalone}
                     label="Standalone"
-                    onChange={handleStandaloneChange}
+                    onChange={(val) => updateFlag({ standalone: val })}
                   />
                   <Checkbox
-                    checked={citeproc}
+                    checked={parsedFlags.citeproc}
                     label="Citeproc"
-                    onChange={handleCiteprocChange}
+                    onChange={(val) => updateFlag({ citeproc: val })}
                   />
                   <Checkbox
-                    checked={toc}
+                    checked={parsedFlags.toc}
                     label="Table of Contents"
-                    onChange={handleTocChange}
+                    onChange={(val) => updateFlag({ toc: val })}
                   />
                   <Checkbox
-                    checked={numberSections}
+                    checked={parsedFlags.numberSections}
                     label="Number Sections"
-                    onChange={handleNumberSectionsChange}
+                    onChange={(val) => updateFlag({ numberSections: val })}
                   />
                   <Checkbox
-                    checked={embedResources}
+                    checked={parsedFlags.embedResources}
                     label="Embed Resources"
-                    onChange={handleEmbedResourcesChange}
+                    onChange={(val) => updateFlag({ embedResources: val })}
                   />
                 </div>
 
@@ -504,8 +346,8 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
                   </label>
                   <select
                     className="w-full rounded border border-[#2b2f38] bg-[#15171d] px-3 py-1.5 text-sm text-[#e6e8eb] outline-none focus:border-[#6aa8ff]"
-                    value={math}
-                    onChange={(e) => handleMathChange(e.target.value as any)}
+                    value={parsedFlags.math}
+                    onChange={(e) => updateFlag({ math: e.target.value as ParsedFlags['math'] })}
                   >
                     <option value="none">None</option>
                     <option value="mathjax">MathJax (--mathjax)</option>
@@ -535,8 +377,8 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
                   </label>
                   <select
                     className="w-full rounded border border-[#2b2f38] bg-[#15171d] px-3 py-1.5 text-sm text-[#e6e8eb] outline-none focus:border-[#6aa8ff]"
-                    value={selectedTemplate}
-                    onChange={(e) => handleTemplateChange(e.target.value)}
+                    value={parsedFlags.selectedTemplate}
+                    onChange={(e) => updateFlag({ selectedTemplate: e.target.value })}
                   >
                     <option value="">No Custom Template (Default)</option>
                     {availableTemplates.map((tpl) => (
@@ -574,7 +416,7 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
                       availableFilters.map((filt) => (
                         <Checkbox
                           key={filt}
-                          checked={selectedFilters.includes(filt)}
+                          checked={parsedFlags.selectedFilters.includes(filt)}
                           label={filt}
                           onChange={() => handleFilterToggle(filt)}
                         />

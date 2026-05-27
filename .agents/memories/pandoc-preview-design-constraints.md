@@ -36,6 +36,14 @@ the OS shell. The correct fix is to invoke the renderer with `shell: true` in
 Any bespoke `expandTildePaths` function is a design error: it is the app
 reinventing shell semantics it does not own and cannot get fully right.
 
+**POSIX nuance**: POSIX sh does NOT expand `~` after `=` in command arguments
+(e.g. `--lua-filter=~/.pandoc/foo`). To handle this, render.ts normalizes
+`~/` → `$HOME/` in the raw command string before spawning. This is a notation
+normalization (one regex replace), not bespoke path expansion — the shell still
+does the actual `$HOME` resolution. This keeps the `expandTildePaths` argv-walker
+out of the codebase while handling the common `--flag=~/...` pattern.
+
+
 ## `~/.pandoc/` Enforcement Is Load-Bearing
 
 Templates must live in `~/.pandoc/templates/` and filters in `~/.pandoc/filters/`.

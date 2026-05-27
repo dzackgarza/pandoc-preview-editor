@@ -9,7 +9,7 @@ export interface RenderResult {
 
 export function renderMarkdown(
   markdown: string,
-  command: string[],
+  command: string,
   timeoutMs: number,
   signal?: AbortSignal,
 ): Promise<RenderResult> {
@@ -21,8 +21,10 @@ export function renderMarkdown(
       return;
     }
 
-    const [cmd, ...args] = command;
-    const child = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    // POSIX sh does not expand `~` after `=` (e.g. --lua-filter=~/.pandoc/...).
+    // Normalize `~/` → `$HOME/` so the shell handles expansion in all positions.
+    const shellCommand = command.replace(/(^|\s|=)~\//g, '$1$HOME/');
+    const child = spawn(shellCommand, [], { shell: true, stdio: ['pipe', 'pipe', 'pipe'] });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let settled = false;
