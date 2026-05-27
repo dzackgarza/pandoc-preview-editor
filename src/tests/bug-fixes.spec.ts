@@ -234,4 +234,52 @@ test.describe('Bug fixes TDD', () => {
       await killServer(server);
     }
   });
+
+  test('Successful plugin run displays toast with clickable output link which calls open-file', async ({
+    page,
+  }) => {
+    const saveDir = mkdtempSync(join(tmpdir(), 'pandoc-plugin-link-'));
+    const savePath = join(saveDir, 'doc.md');
+    const expectedPdfPath = join(saveDir, 'doc.pdf');
+    writeFileSync(savePath, '# Document to Export\n', 'utf-8');
+
+    const server = await launchServer(undefined, savePath);
+
+    try {
+      await page.goto(server.url);
+      await expect(page.locator('#editor .cm-content')).toBeVisible({ timeout: 5000 });
+
+      // Record any POST request to /api/open-file
+      let openFileRequestedPath: string | null = null;
+      await page.route('**/api/open-file', async (route) => {
+        const postData = route.request().postDataJSON() as { path?: string };
+        openFileRequestedPath = postData.path ?? null;
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ ok: true }),
+        });
+      });
+
+      // Open Plugin -> Export -> Export to PDF
+      await page.getByRole('menuitem', { name: 'Plugin' }).click();
+      await page.getByRole('menuitem', { name: 'Export', exact: true }).click();
+      await page.getByRole('menuitem', { name: 'Export to PDF', exact: true }).click();
+
+      // Wait for success toast to appear
+      const toastLocator = page.locator('ol[tabindex="-1"]');
+      await expect(toastLocator).toContainText('Export to PDF', { timeout: 10000 });
+      await expect(toastLocator).toContainText('Output: doc.pdf');
+
+      // Click the output link inside the toast
+      const openBtn = toastLocator.getByRole('button', { name: 'doc.pdf' });
+      await expect(openBtn).toBeVisible();
+      await openBtn.click();
+
+      // Expect /api/open-file to have been requested with the correct absolute path
+      await expect.poll(() => openFileRequestedPath).toBe(expectedPdfPath);
+    } finally {
+      await killServer(server);
+    }
+  });
 });
