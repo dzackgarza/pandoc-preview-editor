@@ -11,6 +11,7 @@ import {
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readdir } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
 import {
   findPlugin,
   loadBundledPlugins,
@@ -401,6 +402,26 @@ export function createApp(config: ServerConfig) {
       res.json({ exists: existsSync(targetPath) });
     } catch {
       res.json({ exists: false });
+    }
+  });
+
+  app.post('/api/open-file', (req, res) => {
+    const { path: filePath } = req.body as { path?: string };
+    if (typeof filePath !== 'string' || filePath.length === 0) {
+      res.status(400).json({ error: 'path field is required' });
+      return;
+    }
+    try {
+      const targetPath = resolveUserPath(config, filePath);
+      const child = spawn('xdg-open', [targetPath], {
+        detached: true,
+        stdio: 'ignore',
+      });
+      child.unref();
+      res.json({ ok: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
     }
   });
 
