@@ -9,8 +9,7 @@ export interface RenderResult {
 
 export function renderMarkdown(
   markdown: string,
-  command: string,
-  args: string[],
+  command: string[],
   timeoutMs: number,
   signal?: AbortSignal,
 ): Promise<RenderResult> {
@@ -22,7 +21,8 @@ export function renderMarkdown(
       return;
     }
 
-    const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    const [cmd, ...args] = command;
+    const child = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'] });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let settled = false;
@@ -31,7 +31,7 @@ export function renderMarkdown(
       if (settled) return;
       settled = true;
       child.kill('SIGTERM');
-      const message = `pandoc timed out after ${timeoutMs}ms`;
+      const message = `renderer timed out after ${timeoutMs}ms`;
       resolve(renderError(message, startedAt));
     }, timeoutMs);
 
@@ -63,7 +63,7 @@ export function renderMarkdown(
       const stderrText = Buffer.concat(stderr).toString('utf-8');
       if (code !== 0) {
         resolve(
-          renderError(stderrText || `pandoc exited with status ${code}`, startedAt),
+          renderError(stderrText || `renderer exited with status ${code}`, startedAt),
         );
         return;
       }
@@ -86,7 +86,7 @@ export function renderMarkdown(
 
 function renderError(message: string, startedAt: number): RenderResult {
   return {
-    html: `<!-- pandoc error:\n${message}\n-->`,
+    html: `<!-- renderer error:\n${message}\n-->`,
     durationMs: Math.round(performance.now() - startedAt),
     ok: false,
     stderr: message,
