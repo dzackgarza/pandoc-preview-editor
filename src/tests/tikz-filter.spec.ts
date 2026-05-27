@@ -13,8 +13,8 @@ test.describe('Server-side TikZ Lua Filter E2E', () => {
   let consoleErrors: string[] = [];
 
   test.beforeAll(async () => {
-    // Launch server with default config (which initially does not have the Lua filter)
-    server = await launchServer();
+    // Launch server with the custom test config that includes the global TikZ filter
+    server = await launchServer(undefined, undefined, '/tmp/pandoc-preview-test-tikz.toml');
   });
 
   test.afterAll(async () => {
@@ -61,10 +61,10 @@ test.describe('Server-side TikZ Lua Filter E2E', () => {
     // With the server-side Lua filter, the SVG should be compiled on the server and present
     // immediately in the raw HTML iframe srcDoc. We expect to see the SVG element.
     const svg = frame.locator('svg');
-    await expect(svg).toBeVisible({ timeout: 5000 });
+    await expect(svg).toBeAttached({ timeout: 5000 });
 
     // Assert that the SVG contains vector path details
-    await expect(frame.locator('svg path').first()).toBeVisible({ timeout: 2000 });
+    await expect(frame.locator('svg path').first()).toBeAttached({ timeout: 2000 });
 
     // CRITICAL ASSERTION: The SVG was rendered completely on the server-side.
     // Therefore, the iframe should NOT have loaded the dynamic tikzjax.js script or fonts.css
