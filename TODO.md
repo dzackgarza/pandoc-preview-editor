@@ -6,7 +6,7 @@
   - Implement safe atomic writes via a temporary sibling file (e.g., `.${filename}.tmp.[uuid]`) in the same directory.
   - Sync the file descriptor to physical disk before renaming.
   - Atomically rename the temporary file over the target destination using `fs.renameSync`.
-- [ ] **Task 2: Implement File Fingerprinting & Conflict Prevention**
+- [x] **Task 2: Implement File Fingerprinting & Conflict Prevention**
   - Cache modification time (`mtimeMs`) and content hash upon opening or successfully saving a file.
   - Verify if the disk version has been modified by an external process before writing.
   - Halt saving and return a conflict error if an external change is detected, enabling user resolution.
