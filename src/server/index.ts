@@ -163,6 +163,24 @@ export function createApp(config: ServerConfig) {
   });
 
   // Serve other static files from client directory
+  if (process.env.MOCK_MIME_FAIL === 'true') {
+    app.use((req, res, next) => {
+      const originalSetHeader = res.setHeader;
+      res.setHeader = function (name: string, value: any) {
+        if (name.toLowerCase() === 'content-type' && typeof value === 'string') {
+          if (
+            value.includes('javascript') ||
+            value.includes('wasm') ||
+            value.includes('css')
+          ) {
+            return originalSetHeader.call(this, name, 'application/octet-stream');
+          }
+        }
+        return originalSetHeader.apply(this, arguments as any);
+      };
+      next();
+    });
+  }
   app.use(express.static(clientDir));
 
   app.get('/api/preview-assets', (req, res) => {
