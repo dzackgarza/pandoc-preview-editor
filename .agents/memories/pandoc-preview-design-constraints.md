@@ -59,3 +59,13 @@ Any functionality a mature dependency already provides must be delegated to that
 dependency. Writing bespoke helpers for: shell parsing, tilde expansion, TOML
 serialization, path validation, HTML sanitization — is a design error. Use the
 dependency; own only the orchestration.
+
+## Local Desktop Trust Model
+
+The application runs locally on the user's desktop/machine. The user is the administrator and owner of the rendering pipeline. The trust model assumes complete user ownership over command execution.
+
+Therefore:
+- Security policies designed for multi-tenant, public-facing web applications (such as strictly sandboxing shell commands or disabling shell execution via `shell: false`) do not apply and would actively degrade standard shell-layer features.
+- Running the renderer via a standard shell using `shell: true` is correct and necessary to allow the user to use native shell features (pipes, environment variable interpolation, system-level paths).
+- The focus of safety is strictly on **local file integrity** (preventing corruption via atomic writes and avoiding silent overwrites through external modification conflict checking), not sandboxing user-configured commands.
+

@@ -50,7 +50,9 @@ test.describe('Renderer Diagnostics UI E2E', () => {
     expect(consoleErrors).toEqual([]);
   });
 
-  test('displays detailed renderer stderr and recovers on successful render', async ({ page }) => {
+  test('displays detailed renderer stderr and recovers on successful render', async ({
+    page,
+  }) => {
     await page.goto(server.url);
     await expect(page.locator('#editor')).toBeVisible({ timeout: 5000 });
     await expect(page.locator('#editor .cm-content')).toBeVisible({ timeout: 5000 });
@@ -64,11 +66,16 @@ test.describe('Renderer Diagnostics UI E2E', () => {
     // 3. Expect the diagnostics panel to be visible in the app chrome with the exact stderr output
     const diagnosticsPanel = page.locator('[data-testid="diagnostics-panel"]');
     await expect(diagnosticsPanel).toBeVisible({ timeout: 5000 });
-    await expect(diagnosticsPanel.locator('[data-testid="diagnostics-title"]')).toContainText('Renderer Error');
-    await expect(diagnosticsPanel.locator('[data-testid="diagnostics-detail"]')).toContainText('Fatal compilation error:\nMissing \\end{document}\nat line 14');
+    await expect(
+      diagnosticsPanel.locator('[data-testid="diagnostics-title"]'),
+    ).toContainText('Renderer Error');
+    await expect(
+      diagnosticsPanel.locator('[data-testid="diagnostics-detail"]'),
+    ).toContainText('Fatal compilation error:\nMissing \\end{document}\nat line 14');
 
     // 4. Update configuration dynamically via the api to simulate a working renderer (recovery)
-    const originalCommand = "pandoc -f markdown+tex_math_dollars+citations -t html --standalone --citeproc --mathjax --lua-filter=~/.pandoc/filters/tikzcd.lua --lua-filter=~/.pandoc/filters/convert_amsthm_envs.lua --template=~/.pandoc/templates/pandoc_HTML.template";
+    const originalCommand =
+      'pandoc -f markdown+tex_math_dollars+citations -t html --standalone --citeproc --mathjax --lua-filter=~/.pandoc/filters/tikzcd.lua --lua-filter=~/.pandoc/filters/convert_amsthm_envs.lua --template=~/.pandoc/templates/pandoc_preview_template.html';
     const configRes = await page.evaluate(async (cmd) => {
       const res = await fetch('/api/config', {
         method: 'POST',
@@ -92,6 +99,8 @@ test.describe('Renderer Diagnostics UI E2E', () => {
     await expect(diagnosticsPanel).not.toBeVisible({ timeout: 10000 });
 
     // 7. Assert status becomes ready/saved
-    await expect(page.locator('#status')).toContainText(/ready|saved/, { timeout: 5000 });
+    await expect(page.locator('#status')).toContainText(/ready|saved/, {
+      timeout: 5000,
+    });
   });
 });
