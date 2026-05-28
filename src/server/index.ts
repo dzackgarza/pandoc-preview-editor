@@ -1,3 +1,4 @@
+import express from 'express';
 import { randomUUID, createHash } from 'node:crypto';
 import {
   extractFilterPaths,
@@ -145,6 +146,10 @@ export function createApp(config: ServerConfig) {
     const indexPath = resolve(clientDir, 'index.html');
     let html = readFileSync(indexPath, 'utf-8');
 
+    if (config.file && !config.isTempFile && existsSync(config.file)) {
+      registerFingerprint(config.file);
+    }
+
     const initialScript = [
       `window.__INITIAL_CONTENT = ${safeJson(currentFileContent(config))};`,
       `window.__INITIAL_FILE = ${safeJson(config.isTempFile ? null : (config.file ?? null))};`,
@@ -238,7 +243,20 @@ export function createApp(config: ServerConfig) {
       const workspaceRoot = currentWorkspaceRoot(config);
       // Ensure parent directories exist so saves into new subdirs always succeed.
       mkdirSync(dirname(targetPath), { recursive: true });
+
+      if (existsSync(targetPath)) {
+        const registeredFp = fileFingerprints.get(targetPath);
+        if (registeredFp) {
+          const diskFp = getFileFingerprint(targetPath);
+          if (diskFp && diskFp.mtimeMs !== registeredFp.mtimeMs && diskFp.hash !== registeredFp.hash) {
+            res.status(409).json({ error: 'The file has been modified externally.' });
+            return;
+          }
+        }
+      }
+
       writeFileSyncAtomic(targetPath, markdown);
+      registerFingerprint(targetPath);
       trackRecent(targetPath);
       // Track the saved file for reloads; move the workspace root only when the
       // user explicitly saves outside the current workspace.
@@ -481,6 +499,7 @@ export function createApp(config: ServerConfig) {
           trackRecent(targetPath);
           const relativePath = toClientPath(workspaceRoot, targetPath);
           const content = readFileSync(targetPath, 'utf-8');
+          registerFingerprint(targetPath);
 
           res.json({
             ok: true,
@@ -516,6 +535,7 @@ export function createApp(config: ServerConfig) {
         return;
       }
       trackRecent(targetPath);
+      registerFingerprint(targetPath);
 
       res.json({
         path: toClientPath(workspaceRoot, targetPath),
