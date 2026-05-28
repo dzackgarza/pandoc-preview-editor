@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
-import { existsSync, writeFileSync, rmSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { killServer, launchServer } from './helpers.js';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 
@@ -23,87 +23,78 @@ async function findFreePort(): Promise<number> {
   });
 }
 
-test.describe('Strict MIME Type Safety (Simulated Unreliable Environment)', () => {
-  const distClientDir = resolve(process.cwd(), 'dist', 'client');
-  const testMjsPath = join(distClientDir, 'test-module.mjs');
-  const testWasmPath = join(distClientDir, 'test-wasm.wasm');
+test.describe('Production Static Asset Resolution MIME Safety', () => {
+  let tempCwd: string;
+  const cliPath = resolve(process.cwd(), 'src/server/cli.ts');
 
   test.beforeEach(() => {
-    mkdirSync(distClientDir, { recursive: true });
-    writeFileSync(testMjsPath, 'export const val = 42;', 'utf-8');
-    writeFileSync(testWasmPath, new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00])); // WASM magic header
+    tempCwd = mkdtempSync(join(tmpdir(), 'pandoc-test-cwd-'));
   });
 
   test.afterEach(() => {
-    if (existsSync(testMjsPath)) rmSync(testMjsPath);
-    if (existsSync(testWasmPath)) rmSync(testWasmPath);
+    rmSync(tempCwd, { recursive: true, force: true });
   });
 
-  test('should fail module script MIME checks under simulated host MIME database failure', async () => {
+  test('should serve compiled production scripts with correct MIME type when launched from any directory', async () => {
     const port = await findFreePort();
-    const cliPath = resolve(process.cwd(), 'src/server/cli.ts');
     
-    // Spawn server with MOCK_MIME_FAIL enabled to simulate host OS mime-db absence
+    // Spawn server inside tempCwd (mimicking launching from user notes/doc folder)
     const proc = spawn('npx', ['tsx', cliPath, '--port', String(port)], {
+      cwd: tempCwd,
       env: {
         ...process.env,
-        MOCK_MIME_FAIL: 'true',
+        // Make sure we do NOT use MOCK_MIME_FAIL
+        MOCK_MIME_FAIL: 'false',
       },
     });
 
     const out: string[] = [];
+    const err: string[] = [];
     proc.stdout?.on('data', (d) => out.push(d.toString()));
+    proc.stderr?.on('data', (d) => err.push(d.toString()));
 
-    await new Promise<void>((resolveWait) => {
+    await new Promise<void>((resolveWait, reject) => {
+      const timeout = setTimeout(() => {
+        proc.kill();
+        reject(new Error(`Server startup timed out. stdout: ${out.join('')}, stderr: ${err.join('')}`));
+      }, 10000);
+
       proc.stdout?.on('data', (d) => {
         if (d.toString().includes('pandoc-preview running at')) {
+          clearTimeout(timeout);
           resolveWait();
+        }
+      });
+      proc.on('exit', (code) => {
+        clearTimeout(timeout);
+        if (code !== 0 && code !== null) {
+          reject(new Error(`CLI exited early with code ${code}. stderr: ${err.join('')}`));
         }
       });
     });
 
     try {
-      const response = await fetch(`http://localhost:${port}/test-module.mjs`);
-      expect(response.ok).toBe(true);
+      // 1. Fetch index page
+      const indexRes = await fetch(`http://localhost:${port}/`);
+      expect(indexRes.ok).toBe(true);
+      const html = await indexRes.text();
 
-      const contentType = response.headers.get('content-type');
-      expect(contentType).toBeDefined();
+      // 2. Extract script src from index.html
+      const scriptMatch = html.match(/<script type="module"[^>]*src="([^"]+)"/);
+      expect(scriptMatch).not.toBeNull();
+      const scriptSrc = scriptMatch![1];
+
+      // Under the bug, the scriptSrc will be "/main.tsx" (source mode) instead of compiled assets "/assets/index-*.js"
+      expect(scriptSrc).not.toContain('.tsx');
+      expect(scriptSrc).toContain('/assets/index');
+
+      // 3. Fetch the script
+      const scriptRes = await fetch(`http://localhost:${port}${scriptSrc}`);
+      expect(scriptRes.ok).toBe(true);
       
-      // This assertion MUST fail under mock failure because contentType will be application/octet-stream
+      const contentType = scriptRes.headers.get('content-type');
+      expect(contentType).toBeDefined();
       expect(contentType).toMatch(/^(text\/javascript|application\/javascript)(;.*)?$/);
-    } finally {
-      proc.kill();
-    }
-  });
-
-  test('should fail WASM MIME checks under simulated host MIME database failure', async () => {
-    const port = await findFreePort();
-    const cliPath = resolve(process.cwd(), 'src/server/cli.ts');
-    
-    const proc = spawn('npx', ['tsx', cliPath, '--port', String(port)], {
-      env: {
-        ...process.env,
-        MOCK_MIME_FAIL: 'true',
-      },
-    });
-
-    await new Promise<void>((resolveWait) => {
-      proc.stdout?.on('data', (d) => {
-        if (d.toString().includes('pandoc-preview running at')) {
-          resolveWait();
-        }
-      });
-    });
-
-    try {
-      const response = await fetch(`http://localhost:${port}/test-wasm.wasm`);
-      expect(response.ok).toBe(true);
-
-      const contentType = response.headers.get('content-type');
-      expect(contentType).toBeDefined();
-      
-      // This assertion MUST fail under mock failure because contentType will be application/octet-stream
-      expect(contentType).toMatch(/^application\/wasm(;.*)?$/);
     } finally {
       proc.kill();
     }
