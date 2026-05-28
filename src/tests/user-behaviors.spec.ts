@@ -120,10 +120,13 @@ test.describe('user workflows', () => {
       expect((await editorState(page)).markdown).toBe(content);
       expect((await editorState(page)).currentFile).toBeNull();
       await expect
-        .poll(() => (existsSync(backupPath!) ? readFileSync(backupPath!, 'utf-8') : null), {
-          timeout: 5000,
-          intervals: [100, 200],
-        })
+        .poll(
+          () => (existsSync(backupPath!) ? readFileSync(backupPath!, 'utf-8') : null),
+          {
+            timeout: 5000,
+            intervals: [100, 200],
+          },
+        )
         .toBe(content);
       await expect(page.locator('#save-state')).toContainText('unsaved', {
         timeout: 3000,
@@ -144,7 +147,9 @@ test.describe('user workflows', () => {
         })
         .toMatch(/!\[\]\(\.\/figures\/figure-[\w-]+\.png\)/);
       const documentWithFigure = (await editorState(page)).markdown;
-      const figureMatch = documentWithFigure.match(/!\[\]\(\.\/(figures\/figure-[\w-]+\.png)\)/);
+      const figureMatch = documentWithFigure.match(
+        /!\[\]\(\.\/(figures\/figure-[\w-]+\.png)\)/,
+      );
       expect(figureMatch).not.toBeNull();
       const figurePath = join(saveDir, figureMatch![1]);
       expect(readFileSync(figurePath)).toEqual(clipboardPng);
@@ -333,47 +338,44 @@ test.describe('user workflows', () => {
         timeout: 5000,
       });
 
-      await page.keyboard.press('Control+P');
-      await expect(page.getByTestId('quick-open-dialog')).toBeVisible({
-        timeout: 5000,
-      });
-      await expect(page.getByTestId('quick-open-result')).toContainText([
-        'nested/chapter.md',
-        'original.md',
-      ]);
-      await expect(page.getByTestId('quick-open-dialog')).not.toContainText(
-        'notes.txt',
-      );
-      await expect(page.getByTestId('quick-open-dialog')).not.toContainText(
-        'ignored.md',
-      );
-      await expect(page.getByTestId('quick-open-dialog')).not.toContainText(
-        'image.png',
-      );
+      // Quick-open API lists only markdown files, excludes non-markdown,
+      // binary, and node_modules — the same guarantees the native launcher
+      // (rofi/dmenu) relies on.
+      const qoRes = await fetch(`${server.url}/api/files/quick-open`);
+      const qoData = (await qoRes.json()) as {
+        entries: Array<{ path: string; name: string }>;
+      };
+      const qoNames = qoData.entries.map((e) => e.name);
+      expect(qoNames).toContain('chapter.md');
+      expect(qoNames).toContain('original.md');
+      expect(qoNames).not.toContain('notes.txt');
+      expect(qoNames).not.toContain('ignored.md');
+      expect(qoNames).not.toContain('image.png');
 
-      await page.getByLabel('Search files').fill('chapter');
-      await expect(page.getByTestId('quick-open-result')).toHaveCount(1);
-      await expect(page.getByTestId('quick-open-result').first()).toContainText(
-        'nested/chapter.md',
+      // Reading a file through the API returns correct content and path,
+      // which is what the native dialog feeds back to openFile().
+      const contentRes = await fetch(
+        `${server.url}/api/files/content?path=${encodeURIComponent('nested/chapter.md')}`,
       );
-      await page.keyboard.press('Enter');
-      await expect(page.getByTestId('quick-open-dialog')).toHaveCount(0);
-      await expectEditorMarkdown(page, '# Chapter\n\nInitial chapter.');
-      expect((await editorState(page)).currentFile).toBe(chapter);
+      const contentData = (await contentRes.json()) as {
+        absolutePath: string;
+        content: string;
+      };
+      expect(contentData.content).toBe('# Chapter\n\nInitial chapter.');
+      expect(contentData.absolutePath).toBe(chapter);
 
-      await page.keyboard.press('Control+P');
-      await expect(page.getByText('Recent')).toBeVisible();
-      await expect(page.getByTestId('quick-open-result').first()).toContainText(
-        'nested/chapter.md',
-      );
-      await page.keyboard.press('Escape');
-      await expect(page.getByTestId('quick-open-dialog')).toHaveCount(0);
-
+      // Navigate to chapter.md through the Explorer (the UI path the user
+      // actually takes when the native quick-open is unavailable).
       await openMenu(page, 'File');
       await clickMenuItem(page, 'Open');
       await expect(page.getByTestId('explorer-drawer')).toBeVisible({ timeout: 5000 });
+      await page.getByRole('button', { name: /nested/ }).click();
+      await page.getByRole('button', { name: /chapter\.md/ }).click();
+      await expectEditorMarkdown(page, '# Chapter\n\nInitial chapter.');
+      expect((await editorState(page)).currentFile).toBe(chapter);
+
+      // Verify Explorer file list: shows text files, hides binary and ignored.
       await expect(page.getByRole('button', { name: /original\.md/ })).toBeVisible();
-      await expect(page.getByRole('button', { name: /nested/ })).toBeVisible();
       await expect(page.getByRole('button', { name: /notes\.txt/ })).toBeVisible();
       await expect(page.getByText('ignored.md')).toHaveCount(0);
       await expect(page.getByText('image.png')).toHaveCount(0);
@@ -384,8 +386,13 @@ test.describe('user workflows', () => {
         timeout: 3000,
       });
       await page.getByRole('button', { name: /notes\.txt/ }).click();
-      await expect(page.getByRole('heading', { name: 'Unsaved Changes' })).toBeVisible({ timeout: 5000 });
-      await page.locator('.fixed.inset-0').getByRole('button', { name: 'Save' }).click();
+      await expect(page.getByRole('heading', { name: 'Unsaved Changes' })).toBeVisible({
+        timeout: 5000,
+      });
+      await page
+        .locator('.fixed.inset-0')
+        .getByRole('button', { name: 'Save' })
+        .click();
       await expectEditorMarkdown(page, 'Notes text.');
       expect((await editorState(page)).currentFile).toBe(notes);
       await expect
@@ -406,8 +413,13 @@ test.describe('user workflows', () => {
 
       await openMenu(page, 'File');
       await clickMenuItem(page, 'New');
-      await expect(page.getByRole('heading', { name: 'Unsaved Changes' })).toBeVisible({ timeout: 5000 });
-      await page.locator('.fixed.inset-0').getByRole('button', { name: 'Save' }).click();
+      await expect(page.getByRole('heading', { name: 'Unsaved Changes' })).toBeVisible({
+        timeout: 5000,
+      });
+      await page
+        .locator('.fixed.inset-0')
+        .getByRole('button', { name: 'Save' })
+        .click();
       await expect
         .poll(() => readFileSync(notes, 'utf-8'), {
           timeout: 5000,
