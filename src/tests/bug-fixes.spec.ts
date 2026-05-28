@@ -282,4 +282,113 @@ test.describe('Bug fixes TDD', () => {
       await killServer(server);
     }
   });
+
+  test('beforeunload is triggered when document is dirty', async ({ page }) => {
+    const saveDir = mkdtempSync(join(tmpdir(), 'pandoc-beforeunload-'));
+    const savePath = join(saveDir, 'doc.md');
+    writeFileSync(savePath, '# Document\n', 'utf-8');
+    const server = await launchServer(undefined, savePath);
+
+    try {
+      await page.goto(server.url);
+      await expect(page.locator('#editor .cm-content')).toBeVisible({ timeout: 5000 });
+
+      // Modify document to trigger saveState as dirty
+      await setEditorMarkdown(page, '# Document\nmodified');
+
+      // Setup dialog listener to catch the beforeunload prompt and dismiss it
+      let beforeUnloadTriggered = false;
+      page.on('dialog', async (dialog) => {
+        if (dialog.type() === 'beforeunload') {
+          beforeUnloadTriggered = true;
+          await dialog.dismiss();
+        }
+      });
+
+      // Try to reload page
+      try {
+        await page.reload({ timeout: 3000 });
+      } catch (err) {
+        // Expected navigation cancel
+      }
+
+      // Verify the dialog was indeed triggered
+      expect(beforeUnloadTriggered).toBe(true);
+
+      // Verify we stayed on the modified page and text is still there
+      await expectEditorMarkdown(page, '# Document\nmodified');
+    } finally {
+      await killServer(server);
+    }
+  });
+
+  test('UnsavedChangesDialog is triggered when clicking another file in Explorer and Cancel, Discard, and Save work correctly', async ({
+    page,
+  }) => {
+    const saveDir = mkdtempSync(join(tmpdir(), 'pandoc-unsaved-dialog-'));
+    const doc1Path = join(saveDir, 'doc1.md');
+    const doc2Path = join(saveDir, 'doc2.md');
+    writeFileSync(doc1Path, '# Document 1\n', 'utf-8');
+    writeFileSync(doc2Path, '# Document 2\n', 'utf-8');
+
+    const server = await launchServer(undefined, doc1Path);
+
+    try {
+      await page.goto(server.url);
+      await expect(page.locator('#editor .cm-content')).toBeVisible({ timeout: 5000 });
+
+      // 1. Modify Document 1 to make it dirty
+      await setEditorMarkdown(page, '# Document 1\nmodified');
+
+      // 2. Open Explorer drawer
+      await page.getByRole('menuitem', { name: 'File' }).click();
+      await page.getByRole('menuitem', { name: 'Open', exact: true }).click();
+      await expect(page.getByTestId('explorer-drawer')).toBeVisible({ timeout: 5000 });
+
+      // 3. Click doc2.md in explorer tree
+      const doc2Btn = page.getByRole('button', { name: /doc2\.md/ });
+      await expect(doc2Btn).toBeVisible();
+      await doc2Btn.click();
+
+      // 4. Expect UnsavedChangesDialog to be visible
+      const unsavedModal = page.getByText('Unsaved Changes');
+      await expect(unsavedModal).toBeVisible({ timeout: 5000 });
+
+      // 5. Click Cancel
+      await page.getByRole('button', { name: 'Cancel' }).click();
+
+      // 6. Verify we stay on doc1.md and it is still dirty with modified content
+      await expect(unsavedModal).not.toBeVisible();
+      await expectEditorMarkdown(page, '# Document 1\nmodified');
+      await expect(page.locator('#save-state')).toContainText('dirty');
+
+      // 7. Click doc2.md again, click Discard
+      await doc2Btn.click();
+      await expect(unsavedModal).toBeVisible();
+      await page.getByRole('button', { name: 'Discard' }).click();
+
+      // 8. Verify we successfully switched to doc2.md and original doc1.md on disk was NOT modified
+      await expect(unsavedModal).not.toBeVisible();
+      await expectEditorMarkdown(page, '# Document 2\n');
+      expect(readFileSync(doc1Path, 'utf-8')).toBe('# Document 1\n');
+
+      // 9. Now switch back to doc1.md (it should switch immediately because we are clean on doc2.md)
+      const doc1Btn = page.getByRole('button', { name: /doc1\.md/ });
+      await doc1Btn.click();
+      await expectEditorMarkdown(page, '# Document 1\n');
+
+      // 10. Make doc1 dirty again, switch to doc2, and choose Save
+      await setEditorMarkdown(page, '# Document 1\nmodified again');
+      await doc2Btn.click();
+      await expect(unsavedModal).toBeVisible();
+      await page.getByRole('button', { name: 'Save' }).click();
+
+      // 11. Verify we switched to doc2.md and doc1.md on disk was successfully updated!
+      await expect(unsavedModal).not.toBeVisible();
+      await expectEditorMarkdown(page, '# Document 2\n');
+      expect(readFileSync(doc1Path, 'utf-8')).toBe('# Document 1\nmodified again');
+    } finally {
+      await killServer(server);
+    }
+  });
 });
