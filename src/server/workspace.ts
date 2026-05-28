@@ -1,6 +1,6 @@
-import { readFileSync, existsSync, openSync, writeSync, fsyncSync, closeSync, renameSync, unlinkSync } from 'node:fs';
-import { extname, isAbsolute, relative, resolve, sep, dirname, basename, join } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { readFileSync, existsSync } from 'node:fs';
+import { extname, dirname } from 'node:path';
+import writeFileAtomic from 'write-file-atomic';
 
 export type FileTreeEntry = {
   name: string;
@@ -101,29 +101,5 @@ export function compareEntries(a: FileTreeEntry, b: FileTreeEntry) {
 }
 
 export function writeFileSyncAtomic(targetPath: string, content: string): void {
-  const dir = dirname(targetPath);
-  const base = basename(targetPath);
-  const tempPath = join(dir, `.${base}.tmp.${randomUUID()}`);
-
-  let fd: number | null = null;
-  try {
-    fd = openSync(tempPath, 'w');
-    writeSync(fd, content, null, 'utf-8');
-    fsyncSync(fd);
-    closeSync(fd);
-    fd = null;
-    renameSync(tempPath, targetPath);
-  } catch (err) {
-    if (fd !== null) {
-      try {
-        closeSync(fd);
-      } catch {}
-    }
-    if (existsSync(tempPath)) {
-      try {
-        unlinkSync(tempPath);
-      } catch {}
-    }
-    throw err;
-  }
+  writeFileAtomic.sync(targetPath, content);
 }
