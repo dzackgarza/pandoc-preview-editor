@@ -2,13 +2,18 @@ import { Command } from 'commander';
 import { readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { load } from 'js-toml';
 import { startServer, type ServerConfig } from './index.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+function expandTilde(p: string): string {
+  if (p.startsWith('~/')) return join(homedir(), p.slice(2));
+  if (p === '~') return homedir();
+  return p;
+}
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 interface CliOptions {
   port?: string;
@@ -32,8 +37,13 @@ function loadConfig(configPath: string | undefined, cwd: string): ServerConfig |
   const render = (raw.render ?? {}) as Record<string, unknown>;
   const quickOpen = (raw.quick_open ?? {}) as Record<string, unknown>;
 
-  if (typeof pandoc.render_command !== 'string' || pandoc.render_command.trim() === '') {
-    console.error('pandoc-preview.toml must specify a non-empty [pandoc] render_command.');
+  if (
+    typeof pandoc.render_command !== 'string' ||
+    pandoc.render_command.trim() === ''
+  ) {
+    console.error(
+      'pandoc-preview.toml must specify a non-empty [pandoc] render_command.',
+    );
     return null;
   }
 
@@ -43,12 +53,20 @@ function loadConfig(configPath: string | undefined, cwd: string): ServerConfig |
     port: 3000,
     host: '127.0.0.1',
     configPath: found,
-    templatesDir:
-      typeof pandoc.templates_dir === 'string'
-        ? pandoc.templates_dir
-        : '~/.pandoc/templates',
-    filtersDir:
-      typeof pandoc.filters_dir === 'string' ? pandoc.filters_dir : '~/.pandoc/filters',
+    templatesDir: resolve(
+      expandTilde(
+        typeof pandoc.templates_dir === 'string'
+          ? pandoc.templates_dir
+          : '~/.pandoc/templates',
+      ),
+    ),
+    filtersDir: resolve(
+      expandTilde(
+        typeof pandoc.filters_dir === 'string'
+          ? pandoc.filters_dir
+          : '~/.pandoc/filters',
+      ),
+    ),
     debounceMs: typeof render.debounce_ms === 'number' ? render.debounce_ms : 750,
     launcherCommand:
       typeof quickOpen.launcher_command === 'string'

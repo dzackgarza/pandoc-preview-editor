@@ -90,9 +90,9 @@ export interface ServerConfig {
   workspaceRoot?: string;
   isTempFile?: boolean;
   configPath?: string;
-  templatesDir?: string;
-  filtersDir?: string;
-  debounceMs?: number;
+  templatesDir: string;
+  filtersDir: string;
+  debounceMs: number;
   launcherCommand?: string;
 }
 
@@ -539,28 +539,18 @@ export function createApp(config: ServerConfig) {
   // GET /api/pandoc/assets
   app.get('/api/pandoc/assets', async (_req, res) => {
     try {
-      const home = homedir();
-      const resolveTilde = (p: string) => {
-        if (p.startsWith('~/')) return join(home, p.slice(2));
-        if (p === '~') return home;
-        return p;
-      };
-
-      const templatesDir = resolveTilde(config.templatesDir ?? '~/.pandoc/templates');
-      const filtersDir = resolveTilde(config.filtersDir ?? '~/.pandoc/filters');
-
       let templates: string[] = [];
       let filters: string[] = [];
 
-      if (existsSync(templatesDir)) {
-        templates = readdirSync(templatesDir)
+      if (existsSync(config.templatesDir)) {
+        templates = readdirSync(config.templatesDir)
           .filter((name) => name.endsWith('.html') || name.endsWith('.template'))
-          .filter((name) => statSync(join(templatesDir, name)).isFile());
+          .filter((name) => statSync(join(config.templatesDir, name)).isFile());
       }
 
-      if (existsSync(filtersDir)) {
-        filters = readdirSync(filtersDir).filter((name) =>
-          statSync(join(filtersDir, name)).isFile(),
+      if (existsSync(config.filtersDir)) {
+        filters = readdirSync(config.filtersDir).filter((name) =>
+          statSync(join(config.filtersDir, name)).isFile(),
         );
       }
 
@@ -574,8 +564,8 @@ export function createApp(config: ServerConfig) {
   // GET /api/config
   app.get('/api/config', (_req, res) => {
     res.json({
-      templatesDir: config.templatesDir ?? '~/.pandoc/templates',
-      filtersDir: config.filtersDir ?? '~/.pandoc/filters',
+      templatesDir: config.templatesDir,
+      filtersDir: config.filtersDir,
       debounceMs: config.debounceMs ?? 750,
       timeoutMs: config.timeoutMs ?? 30000,
       renderCommand: config.renderCommand,
@@ -618,9 +608,9 @@ export function createApp(config: ServerConfig) {
         return;
       }
 
-      // Update in-memory config
-      config.templatesDir = templatesDir;
-      config.filtersDir = filtersDir;
+      // Update in-memory config with absolute paths
+      config.templatesDir = resolve(templatesDir);
+      config.filtersDir = resolve(filtersDir);
       config.debounceMs = debounceMs;
       config.timeoutMs = timeoutMs;
       config.renderCommand = renderCommand;
@@ -651,32 +641,31 @@ export function createApp(config: ServerConfig) {
   // GET /api/filters - list available Lua filters and their state in renderCommand
   app.get('/api/filters', (_req, res) => {
     try {
+      let files: string[] = [];
+      if (existsSync(config.filtersDir)) {
+        files = readdirSync(config.filtersDir).filter((name) => {
+          return (
+            name.endsWith('.lua') && statSync(join(config.filtersDir, name)).isFile()
+          );
+        });
+      }
+
+      // Filter paths in the command string may use ~/ notation — expand them
       const home = homedir();
-      const resolveTilde = (p: string): string => {
+      const expandTilde = (p: string) => {
         if (p.startsWith('~/')) return join(home, p.slice(2));
         if (p === '~') return home;
         return p;
       };
 
-      const filtersDir = resolveTilde(config.filtersDir ?? '~/.pandoc/filters');
-      let files: string[] = [];
-      if (existsSync(filtersDir)) {
-        files = readdirSync(filtersDir).filter((name) => {
-          return name.endsWith('.lua') && statSync(join(filtersDir, name)).isFile();
-        });
-      }
-
       const rawFilterPaths = extractFilterPaths(config.renderCommand);
-      const activeFilters = new Set(
-        rawFilterPaths.map((p) => resolve(resolveTilde(p))),
-      );
+      const activeFilters = new Set(rawFilterPaths.map((p) => resolve(expandTilde(p))));
 
       const filters = files.map((name) => {
-        const fullPath = join(filtersDir, name);
-        const absPath = resolve(fullPath);
+        const absPath = resolve(join(config.filtersDir, name));
         return {
           name,
-          path: join(config.filtersDir ?? '~/.pandoc/filters', name),
+          path: join(config.filtersDir, name),
           enabled: activeFilters.has(absPath),
         };
       });
@@ -699,17 +688,8 @@ export function createApp(config: ServerConfig) {
     }
 
     try {
-      const home = homedir();
-      const resolveTilde = (p: string): string => {
-        if (p.startsWith('~/')) return join(home, p.slice(2));
-        if (p === '~') return home;
-        return p;
-      };
-
-      const filtersDir = resolveTilde(config.filtersDir ?? '~/.pandoc/filters');
-
       // Remove existing filter flags that point to files in the filters directory
-      const remainingArgs = removeFilterFlags(config.renderCommand, filtersDir);
+      const remainingArgs = removeFilterFlags(config.renderCommand, config.filtersDir);
 
       // Add new filter flags for the enabled filters
       for (const filterItem of enabled) {
@@ -717,7 +697,7 @@ export function createApp(config: ServerConfig) {
         const filename = filterItem.endsWith('.lua')
           ? basename(filterItem)
           : `${basename(filterItem)}.lua`;
-        const pathOption = join(config.filtersDir ?? '~/.pandoc/filters', filename);
+        const pathOption = join(config.filtersDir, filename);
         remainingArgs.push(`--lua-filter=${pathOption}`);
       }
 
@@ -732,8 +712,8 @@ export function createApp(config: ServerConfig) {
           },
           pandoc: {
             render_command: newCommand,
-            templates_dir: config.templatesDir ?? '~/.pandoc/templates',
-            filters_dir: config.filtersDir ?? '~/.pandoc/filters',
+            templates_dir: config.templatesDir,
+            filters_dir: config.filtersDir,
           },
         };
         writeFileSync(config.configPath, dump(tomlData), 'utf-8');
