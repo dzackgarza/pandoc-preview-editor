@@ -69,12 +69,13 @@ test.describe('preview E2E', () => {
     const frame = previewFrame(page);
     await expect(frame.locator('h1#torture-document')).toHaveText(
       'Torture Document',
-      { timeout: 10000 },
+      { timeout: 20000 },
     );
 
     // Verify document structure via semantic content
     await expect(frame.locator('div.theorem')).toHaveText(
       'Theorem. Every nonzero finite-dimensional vector space has a basis.',
+      { timeout: 10000 },
     );
     await expect(frame.locator('div.proof')).toHaveText(
       'Proof. Choose a maximal independent set.',

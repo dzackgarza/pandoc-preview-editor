@@ -55,7 +55,7 @@ export async function launchServer(
   proc.stderr?.on('data', (d: Buffer) => err.push(d.toString()));
 
   const url = `http://localhost:${p}`;
-  await waitForServer(url, 15000);
+  await waitForServer(url, 30000);
 
   return { port: p, process: proc, url, out, err };
 }

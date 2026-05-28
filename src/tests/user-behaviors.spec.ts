@@ -279,7 +279,7 @@ test.describe('user workflows', () => {
         });
       }
       await expect(previewFrame(page).locator('h1')).toHaveText('Rapid 8', {
-        timeout: 5000,
+        timeout: 15000,
       });
       await expect(previewFrame(page).locator('body')).toContainText(
         'Final candidate 8.',

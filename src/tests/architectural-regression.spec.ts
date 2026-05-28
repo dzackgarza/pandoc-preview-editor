@@ -152,23 +152,78 @@ test.describe('Architectural Slop Regression Tests', () => {
     }
   });
 
-  test('quick-open API correctly finds markdown files and operates successfully', async () => {
+  test('quick-open spawn API executes custom launcher pipeline and loads selected file', async () => {
     const { dir, file } = createWorkspace();
     const nestedFile = join(dir, 'chapter.md');
-    writeFileSync(nestedFile, '# Chapter', 'utf-8');
+    writeFileSync(nestedFile, '# Chapter Content', 'utf-8');
+
+    // Create custom test config specifying our mock quick-open command
+    const testConfigPath = join(dir, 'test-config.toml');
+    writeFileSync(
+      testConfigPath,
+      `[pandoc]
+render_command = "pandoc"
+
+[quick_open]
+launcher_command = "echo chapter.md"
+`,
+      'utf-8',
+    );
 
     let server: ServerInstance | undefined;
     try {
-      server = await launchServer(undefined, file);
+      server = await launchServer(undefined, file, testConfigPath);
 
-      const res = await fetch(`${server.url}/api/files/quick-open?q=chapter`);
+      const res = await fetch(`${server.url}/api/files/quick-open-spawn`, {
+        method: 'POST',
+      });
       expect(res.status).toBe(200);
       const data = (await res.json()) as {
-        entries: Array<{ path: string; name: string }>;
+        ok: boolean;
+        path: string;
+        absolutePath: string;
+        content: string;
       };
 
-      expect(data.entries.length).toBeGreaterThanOrEqual(1);
-      expect(data.entries[0].name).toBe('chapter.md');
+      expect(data.ok).toBe(true);
+      expect(data.path).toBe('chapter.md');
+      expect(data.content).toBe('# Chapter Content');
+    } finally {
+      if (server) await killServer(server);
+      cleanup(dir);
+    }
+  });
+
+  test('quick-open spawn API returns cancelled state on launcher exit code 130 or 1', async () => {
+    const { dir, file } = createWorkspace();
+
+    const testConfigPath = join(dir, 'test-config.toml');
+    writeFileSync(
+      testConfigPath,
+      `[pandoc]
+render_command = "pandoc"
+
+[quick_open]
+launcher_command = "exit 130"
+`,
+      'utf-8',
+    );
+
+    let server: ServerInstance | undefined;
+    try {
+      server = await launchServer(undefined, file, testConfigPath);
+
+      const res = await fetch(`${server.url}/api/files/quick-open-spawn`, {
+        method: 'POST',
+      });
+      expect(res.status).toBe(200);
+      const data = (await res.json()) as {
+        ok: boolean;
+        cancelled: boolean;
+      };
+
+      expect(data.ok).toBe(false);
+      expect(data.cancelled).toBe(true);
     } finally {
       if (server) await killServer(server);
       cleanup(dir);

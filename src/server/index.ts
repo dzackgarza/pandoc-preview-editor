@@ -11,7 +11,7 @@ import {
 import { dirname, isAbsolute, relative, resolve, basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readdir } from 'node:fs/promises';
-import { spawn } from 'node:child_process';
+import { spawn, exec } from 'node:child_process';
 import { homedir } from 'node:os';
 import { dump } from 'js-toml';
 import { parse, quote } from 'shell-quote';
@@ -88,6 +88,7 @@ export interface ServerConfig {
   templatesDir?: string;
   filtersDir?: string;
   debounceMs?: number;
+  launcherCommand?: string;
 }
 
 export function createApp(config: ServerConfig) {
@@ -392,6 +393,70 @@ export function createApp(config: ServerConfig) {
       ].filter((entry) => quickOpenMatches(entry, query));
 
       res.json({ root: workspaceRoot, entries });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(400).json({ error: message });
+    }
+  });
+
+  app.post('/api/files/quick-open-spawn', (req, res) => {
+    try {
+      const workspaceRoot = currentWorkspaceRoot(config);
+      let cmd = config.launcherCommand;
+
+      if (!cmd) {
+        const hasRofi = existsSync('/bin/rofi') || existsSync('/usr/bin/rofi');
+        const hasDmenu = existsSync('/bin/dmenu') || existsSync('/usr/bin/dmenu');
+        const hasFd = existsSync('/bin/fd') || existsSync('/usr/bin/fd');
+
+        const finder = hasFd ? 'fd -e md -t f' : 'find . -name "*.md"';
+        if (hasRofi) {
+          cmd = `${finder} | rofi -dmenu -i -p "Quick Open:"`;
+        } else if (hasDmenu) {
+          cmd = `${finder} | dmenu -i -p "Quick Open:"`;
+        } else {
+          cmd = `${finder} | dmenu -i -p "Quick Open:"`;
+        }
+      }
+
+      exec(cmd, { cwd: workspaceRoot }, (err, stdout, stderr) => {
+        if (err && (err.code === 130 || err.code === 1)) {
+          res.json({ ok: false, cancelled: true });
+          return;
+        }
+
+        const trimmed = stdout.trim();
+        if (!trimmed) {
+          res.json({ ok: false, cancelled: true });
+          return;
+        }
+
+        try {
+          const targetPath = resolveInside(workspaceRoot, trimmed);
+          if (!existsSync(targetPath) || !statSync(targetPath).isFile()) {
+            res.json({ ok: false, error: `Selected path "${trimmed}" does not exist or is not a file.` });
+            return;
+          }
+          if (!isMarkdownFile(targetPath)) {
+            res.json({ ok: false, error: `Selected path "${trimmed}" is not a markdown file.` });
+            return;
+          }
+
+          trackRecent(targetPath);
+          const relativePath = toClientPath(workspaceRoot, targetPath);
+          const content = readFileSync(targetPath, 'utf-8');
+
+          res.json({
+            ok: true,
+            path: relativePath,
+            absolutePath: targetPath,
+            content,
+          });
+        } catch (innerErr) {
+          const message = innerErr instanceof Error ? innerErr.message : String(innerErr);
+          res.json({ ok: false, error: message });
+        }
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       res.status(400).json({ error: message });
