@@ -2,17 +2,17 @@ import path from 'node:path';
 import os from 'node:os';
 import {
   tokenize,
-  ParsedFlags,
   parseCommand,
   buildCommand,
 } from '../shared/command-parser.js';
+import type { ParsedFlags } from '../shared/command-parser.js';
 
 export {
   tokenize,
-  ParsedFlags,
   parseCommand,
   buildCommand,
 } from '../shared/command-parser.js';
+export type { ParsedFlags } from '../shared/command-parser.js';
 
 /**
  * Extract all filter paths (--lua-filter and --filter) from a command string.
