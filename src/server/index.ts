@@ -1,6 +1,11 @@
 import express from 'express';
 import { randomUUID } from 'node:crypto';
 import {
+  extractFilterPaths,
+  removeFilterFlags,
+  validateCommandPaths,
+} from './command-parser.js';
+import {
   existsSync,
   mkdirSync,
   readFileSync,
@@ -14,7 +19,7 @@ import { readdir } from 'node:fs/promises';
 import { spawn, exec } from 'node:child_process';
 import { homedir } from 'node:os';
 import { dump } from 'js-toml';
-import { parse, quote } from 'shell-quote';
+import { quote } from 'shell-quote';
 import {
   findPlugin,
   loadBundledPlugins,
@@ -606,60 +611,11 @@ export function createApp(config: ServerConfig) {
       return;
     }
 
-    const parsed = parse(renderCommand).filter(
-      (entry): entry is string => typeof entry === 'string',
-    );
-
-    const home = homedir();
-    const resolveTilde = (p: string) => {
-      if (p.startsWith('~/')) return join(home, p.slice(2));
-      if (p === '~') return home;
-      return p;
-    };
-    const absTemplatesDir = resolve(resolveTilde(templatesDir));
-    const absFiltersDir = resolve(resolveTilde(filtersDir));
-
     try {
-      for (let i = 0; i < parsed.length; i++) {
-        const arg = parsed[i];
-        let templatePath: string | null = null;
-        let filterPath: string | null = null;
-
-        if (arg.startsWith('--template=')) {
-          templatePath = arg.slice('--template='.length);
-        } else if (arg === '--template' && i + 1 < parsed.length) {
-          templatePath = parsed[i + 1];
-        } else if (arg.startsWith('--lua-filter=')) {
-          filterPath = arg.slice('--lua-filter='.length);
-        } else if (arg === '--lua-filter' && i + 1 < parsed.length) {
-          filterPath = parsed[i + 1];
-        } else if (arg.startsWith('--filter=')) {
-          filterPath = arg.slice('--filter='.length);
-        } else if (arg === '--filter' && i + 1 < parsed.length) {
-          filterPath = parsed[i + 1];
-        }
-
-        if (templatePath) {
-          const resolvedT = resolve(resolveTilde(templatePath));
-          const parentDir = dirname(resolvedT);
-          if (parentDir !== absTemplatesDir) {
-            res.status(400).json({
-              error: `Template file '${basename(templatePath)}' is external. Please place it in the templates directory '${templatesDir}' first so the app can discover it.`,
-            });
-            return;
-          }
-        }
-
-        if (filterPath) {
-          const resolvedF = resolve(resolveTilde(filterPath));
-          const parentDir = dirname(resolvedF);
-          if (parentDir !== absFiltersDir) {
-            res.status(400).json({
-              error: `Filter file '${basename(filterPath)}' is external. Please place it in the filters directory '${filtersDir}' first so the app can discover it.`,
-            });
-            return;
-          }
-        }
+      const validation = validateCommandPaths(renderCommand, templatesDir, filtersDir);
+      if (!validation.valid) {
+        res.status(400).json({ error: validation.error });
+        return;
       }
 
       // Update in-memory config
@@ -710,27 +666,10 @@ export function createApp(config: ServerConfig) {
         });
       }
 
-      const parsed = parse(config.renderCommand).filter(
-        (entry): entry is string => typeof entry === 'string',
+      const rawFilterPaths = extractFilterPaths(config.renderCommand);
+      const activeFilters = new Set(
+        rawFilterPaths.map((p) => resolve(resolveTilde(p))),
       );
-
-      const activeFilters = new Set<string>();
-      for (let i = 0; i < parsed.length; i++) {
-        const arg = parsed[i];
-        let filterPath: string | null = null;
-        if (arg.startsWith('--lua-filter=')) {
-          filterPath = arg.slice('--lua-filter='.length);
-        } else if (arg === '--lua-filter' && i + 1 < parsed.length) {
-          filterPath = parsed[i + 1];
-        } else if (arg.startsWith('--filter=')) {
-          filterPath = arg.slice('--filter='.length);
-        } else if (arg === '--filter' && i + 1 < parsed.length) {
-          filterPath = parsed[i + 1];
-        }
-        if (filterPath) {
-          activeFilters.add(resolve(resolveTilde(filterPath)));
-        }
-      }
 
       const filters = files.map((name) => {
         const fullPath = join(filtersDir, name);
@@ -768,49 +707,21 @@ export function createApp(config: ServerConfig) {
       };
 
       const filtersDir = resolveTilde(config.filtersDir ?? '~/.pandoc/filters');
-      const absFiltersDir = resolve(filtersDir);
 
-      const parsed = parse(config.renderCommand).filter(
-        (entry): entry is string => typeof entry === 'string',
-      );
+      // Remove existing filter flags that point to files in the filters directory
+      const remainingArgs = removeFilterFlags(config.renderCommand, filtersDir);
 
-      const newArgs: string[] = [];
-      for (let i = 0; i < parsed.length; i++) {
-        const arg = parsed[i];
-        let filterPath: string | null = null;
-        let isPair = false;
-        if (arg.startsWith('--lua-filter=')) {
-          filterPath = arg.slice('--lua-filter='.length);
-        } else if (arg === '--lua-filter' && i + 1 < parsed.length) {
-          filterPath = parsed[i + 1];
-          isPair = true;
-        } else if (arg.startsWith('--filter=')) {
-          filterPath = arg.slice('--filter='.length);
-        } else if (arg === '--filter' && i + 1 < parsed.length) {
-          filterPath = parsed[i + 1];
-          isPair = true;
-        }
-
-        if (filterPath) {
-          const absPath = resolve(resolveTilde(filterPath));
-          if (dirname(absPath) === absFiltersDir) {
-            if (isPair) i++;
-            continue;
-          }
-        }
-        newArgs.push(arg);
-      }
-
+      // Add new filter flags for the enabled filters
       for (const filterItem of enabled) {
         if (typeof filterItem !== 'string') continue;
         const filename = filterItem.endsWith('.lua')
           ? basename(filterItem)
           : `${basename(filterItem)}.lua`;
         const pathOption = join(config.filtersDir ?? '~/.pandoc/filters', filename);
-        newArgs.push(`--lua-filter=${pathOption}`);
+        remainingArgs.push(`--lua-filter=${pathOption}`);
       }
 
-      const newCommand = quote(newArgs);
+      const newCommand = quote(['pandoc', ...remainingArgs]);
       config.renderCommand = newCommand;
 
       if (config.configPath) {
