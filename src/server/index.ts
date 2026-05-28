@@ -34,6 +34,7 @@ import {
   resolveInside,
   shouldIgnore,
   toClientPath,
+  writeFileSyncAtomic,
   type FileTreeEntry,
 } from './workspace.js';
 
@@ -213,7 +214,7 @@ export function createApp(config: ServerConfig) {
       const workspaceRoot = currentWorkspaceRoot(config);
       // Ensure parent directories exist so saves into new subdirs always succeed.
       mkdirSync(dirname(targetPath), { recursive: true });
-      writeFileSync(targetPath, markdown, 'utf-8');
+      writeFileSyncAtomic(targetPath, markdown);
       trackRecent(targetPath);
       // Track the saved file for reloads; move the workspace root only when the
       // user explicitly saves outside the current workspace.
