@@ -30,6 +30,7 @@ function loadConfig(configPath: string | undefined, cwd: string): ServerConfig |
   const raw = load(readFileSync(found, 'utf-8')) as Record<string, unknown>;
   const pandoc = (raw.pandoc ?? {}) as Record<string, unknown>;
   const render = (raw.render ?? {}) as Record<string, unknown>;
+  const quickOpen = (raw.quick_open ?? {}) as Record<string, unknown>;
 
   if (typeof pandoc.render_command !== 'string' || pandoc.render_command.trim() === '') {
     console.error('pandoc-preview.toml must specify a non-empty [pandoc] render_command.');
@@ -49,6 +50,10 @@ function loadConfig(configPath: string | undefined, cwd: string): ServerConfig |
     filtersDir:
       typeof pandoc.filters_dir === 'string' ? pandoc.filters_dir : '~/.pandoc/filters',
     debounceMs: typeof render.debounce_ms === 'number' ? render.debounce_ms : 750,
+    launcherCommand:
+      typeof quickOpen.launcher_command === 'string'
+        ? quickOpen.launcher_command
+        : undefined,
   };
 }
 

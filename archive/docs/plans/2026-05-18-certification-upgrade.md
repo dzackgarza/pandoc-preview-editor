@@ -1,26 +1,21 @@
 # Certification Test Upgrade to Witness Trace Spec
 
-> **Goal:** Upgrade all 7 certification tests (cert_001 through cert_006 +
-> cert_blackbox_001) to match the witness trace specification: versioned facts, strict
-> trace ordering, automated artifact collection, and certification scorecard.
+> **Goal:** Upgrade all 7 certification tests (cert_001 through cert_006 + cert_blackbox_001) to match the witness trace specification: versioned facts, strict trace ordering, automated artifact collection, and certification scorecard.
 
-**Architecture:** Two-layer approach — (1) infrastructure upgrades to `TraceContext` add
-version tracking, ordering enforcement, and artifact collection; (2) each test is
-upgraded independently to emit structured trace events, enforce trace ordering
-invariants, and produce artifacts.
+**Architecture:** Two-layer approach — (1) infrastructure upgrades to `TraceContext` add version tracking, ordering enforcement, and artifact collection; (2) each test is upgraded independently to emit structured trace events, enforce trace ordering invariants, and produce artifacts.
 
 **Tech Stack:** TypeScript, Playwright, node:child_process, node:crypto, node:fs
 
-* * *
+------------------------------------------------------------------------
 
 ## INFRASTRUCTURE
 
 ### Task 1: Upgrade TraceContext with version tracking
 
-**Objective:** Add buffer version counter and version-aware event helpers to
-TraceContext.
+**Objective:** Add buffer version counter and version-aware event helpers to TraceContext.
 
 **Files:**
+
 - Modify: `tests/trace.ts` (lines 22-80)
 
 **Step 1: Read current file**
@@ -31,7 +26,7 @@ Read: `tests/trace.ts` to confirm current state.
 
 Add to the TraceContext class:
 
-```typescript
+``` typescript
 export class TraceContext {
   private dir: string;
   private path: string;
@@ -102,7 +97,7 @@ export class TraceContext {
 
 Add after the existing assertion helpers (after line 107):
 
-```typescript
+``` typescript
 /**
  * Assert that events appear in order with version consistency:
  * - nvim.buffer.read(version=N) must precede pandoc.render.success(sourceVersion=N)
@@ -187,10 +182,9 @@ export function assertSaveInvariant(
 
 **Step 4: Add automated artifact collection**
 
-Add methods to TraceContext for writing initial file, final file, screenshot, and render
-output:
+Add methods to TraceContext for writing initial file, final file, screenshot, and render output:
 
-```typescript
+``` typescript
   /** Write initial file artifact */
   writeInitialFile(path: string, content: string): void {
     this.writeArtifact('initial.md', content);
@@ -222,29 +216,28 @@ output:
 
 **Step 5: Verify compilation**
 
-Run: `npx tsc --noEmit` Expected: TypeScript compiles without errors (or only
-pre-existing errors unrelated to trace.ts changes).
+Run: `npx tsc --noEmit` Expected: TypeScript compiles without errors (or only pre-existing errors unrelated to trace.ts changes).
 
 **Step 6: Commit**
 
-```bash
+``` bash
 git add tests/trace.ts
 git commit -m "feat(trace): add version tracking, ordering assertions, artifact collection"
 ```
 
-* * *
+------------------------------------------------------------------------
 
 ### Task 2: Create certification scorecard module
 
-**Objective:** Generate a machine-readable JSON scorecard file after certification test
-runs.
+**Objective:** Generate a machine-readable JSON scorecard file after certification test runs.
 
 **Files:**
+
 - Create: `tests/scorecard.ts`
 
 **Step 1: Create scorecard module**
 
-```typescript
+``` typescript
 import { execFileSync } from 'node:child_process';
 import { writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -331,21 +324,21 @@ Run: `npx tsc --noEmit` Expected: No errors related to scorecard.ts
 
 **Step 3: Commit**
 
-```bash
+``` bash
 git add tests/scorecard.ts
 git commit -m "feat(scorecard): add certification scorecard generation"
 ```
 
-* * *
+------------------------------------------------------------------------
 
 ## CERTIFICATION TEST UPGRADES
 
 ### Task 3: Upgrade cert_001 — startup proof
 
-**Objective:** Match spec: process tree, nvim argv, socket, `--remote-expr 1`,
-structured trace events with artifacts.
+**Objective:** Match spec: process tree, nvim argv, socket, `--remote-expr 1`, structured trace events with artifacts.
 
 **Files:**
+
 - Modify: `tests/certification.spec.ts` (lines 43-104)
 
 **Step 1: Read existing cert_001 test**
@@ -356,7 +349,7 @@ Read: `tests/certification.spec.ts` lines 43-104 to confirm current state.
 
 Replace the body of cert_001 with:
 
-```typescript
+``` typescript
 test('cert_001 startup — real nvim (not headless), real browser, real file', async ({
   page,
 }) => {
@@ -425,6 +418,7 @@ test('cert_001 startup — real nvim (not headless), real browser, real file', a
 ```
 
 Key changes from existing:
+
 - Uses `trace.writeInitialFile` for `initial.md` artifact
 - Records `app.start` event
 - Records `pty.spawn.success` with pid
@@ -434,24 +428,23 @@ Key changes from existing:
 
 **Step 3: Run cert_001 in isolation**
 
-Run: `npx playwright test -c playwright.cert.config.ts -g "cert_001" 2>&1` Expected:
-PASS
+Run: `npx playwright test -c playwright.cert.config.ts -g "cert_001" 2>&1` Expected: PASS
 
 **Step 4: Commit**
 
-```bash
+``` bash
 git add tests/certification.spec.ts
 git commit -m "test(cert_001): upgrade to witness trace spec"
 ```
 
-* * *
+------------------------------------------------------------------------
 
 ### Task 4: Upgrade cert_002 — initial preview rendering
 
-**Objective:** Match spec: nvim buffer contains sentinel, pandoc.render.success with
-source version, preview DOM with h1 and math element.
+**Objective:** Match spec: nvim buffer contains sentinel, pandoc.render.success with source version, preview DOM with h1 and math element.
 
 **Files:**
+
 - Modify: `tests/certification.spec.ts` (lines 119-196)
 
 **Step 1: Read existing cert_002 test**
@@ -462,7 +455,7 @@ Read: `tests/certification.spec.ts` lines 119-196.
 
 Replace the body with version-aware trace events:
 
-```typescript
+``` typescript
 test('cert_002 initial file renders in preview before typing', async ({ page }) => {
   const trace = new TraceContext('cert_002');
   trace.record({ event: 'cert.start', test: 'cert_002' });
@@ -535,6 +528,7 @@ test('cert_002 initial file renders in preview before typing', async ({ page }) 
 ```
 
 Key changes:
+
 - Uses `trace.recordBufferRead()` for auto-versioned buffer read events
 - Uses `trace.recordRenderSuccess()` to link pandoc output to source version
 - Uses `trace.recordPreviewUpdated()` to link preview DOM to source version
@@ -544,24 +538,23 @@ Key changes:
 
 **Step 3: Run cert_002 in isolation**
 
-Run: `npx playwright test -c playwright.cert.config.ts -g "cert_002" 2>&1` Expected:
-PASS
+Run: `npx playwright test -c playwright.cert.config.ts -g "cert_002" 2>&1` Expected: PASS
 
 **Step 4: Commit**
 
-```bash
+``` bash
 git add tests/certification.spec.ts
 git commit -m "test(cert_002): upgrade to witness trace spec with version ordering"
 ```
 
-* * *
+------------------------------------------------------------------------
 
 ### Task 5: Upgrade cert_003 — keyboard input reaches nvim
 
-**Objective:** Match spec: real xterm.js keyboard input, independent nvim socket query,
-structured trace events.
+**Objective:** Match spec: real xterm.js keyboard input, independent nvim socket query, structured trace events.
 
 **Files:**
+
 - Modify: `tests/certification.spec.ts` (lines 211-251)
 
 **Step 1: Read existing cert_003 test**
@@ -572,7 +565,7 @@ Lines 211-251.
 
 Replace with version-aware trace events:
 
-```typescript
+``` typescript
 test('cert_003 keyboard input reaches real nvim buffer', async ({ page }) => {
   const trace = new TraceContext('cert_003');
   trace.record({ event: 'cert.start', test: 'cert_003' });
@@ -613,30 +606,29 @@ test('cert_003 keyboard input reaches real nvim buffer', async ({ page }) => {
 ```
 
 Key changes:
+
 - Uses `trace.recordBufferRead()` for versioned buffer read
 - Adds screenshot and final.md artifacts
 
 **Step 3: Run cert_003 in isolation**
 
-Run: `npx playwright test -c playwright.cert.config.ts -g "cert_003" 2>&1` Expected:
-PASS
+Run: `npx playwright test -c playwright.cert.config.ts -g "cert_003" 2>&1` Expected: PASS
 
 **Step 4: Commit**
 
-```bash
+``` bash
 git add tests/certification.spec.ts
 git commit -m "test(cert_003): upgrade to witness trace spec"
 ```
 
-* * *
+------------------------------------------------------------------------
 
 ### Task 6: Upgrade cert_004 — keyboard input updates preview DOM
 
-**Objective:** Match spec: strict trace ordering
-`browser.keyboard.sent → nvim.buffer.read(v=N) → pandoc.render.success(v=N) → preview.dom.updated(v=N)`
-with version consistency enforcement.
+**Objective:** Match spec: strict trace ordering `browser.keyboard.sent → nvim.buffer.read(v=N) → pandoc.render.success(v=N) → preview.dom.updated(v=N)` with version consistency enforcement.
 
 **Files:**
+
 - Modify: `tests/certification.spec.ts` (lines 266-335)
 
 **Step 1: Read existing cert_004 test**
@@ -647,7 +639,7 @@ Lines 266-335.
 
 Replace with strict version-ordered trace:
 
-```typescript
+``` typescript
 test('cert_004 keyboard input updates Pandoc preview DOM', async ({ page }) => {
   const trace = new TraceContext('cert_004');
   trace.record({ event: 'cert.start', test: 'cert_004' });
@@ -737,6 +729,7 @@ test('cert_004 keyboard input updates Pandoc preview DOM', async ({ page }) => {
 ```
 
 Key changes:
+
 - Records buffer version before keyboard input as baseline
 - Uses `recordBufferRead`, `recordRenderSuccess`, `recordPreviewUpdated` throughout
 - Calls `assertTraceVersionOrder` to enforce strict ordering
@@ -744,24 +737,23 @@ Key changes:
 
 **Step 3: Run cert_004 in isolation**
 
-Run: `npx playwright test -c playwright.cert.config.ts -g "cert_004" 2>&1` Expected:
-PASS
+Run: `npx playwright test -c playwright.cert.config.ts -g "cert_004" 2>&1` Expected: PASS
 
 **Step 4: Commit**
 
-```bash
+``` bash
 git add tests/certification.spec.ts
 git commit -m "test(cert_004): upgrade to witness trace with version ordering enforcement"
 ```
 
-* * *
+------------------------------------------------------------------------
 
 ### Task 7: Upgrade cert_005 — immediate save uses latest buffer
 
-**Objective:** Match spec: save.success(v=N) is forbidden unless nvim.buffer.read(v=N)
-succeeded first. Enforce invariant via `assertSaveInvariant()`.
+**Objective:** Match spec: save.success(v=N) is forbidden unless nvim.buffer.read(v=N) succeeded first. Enforce invariant via `assertSaveInvariant()`.
 
 **Files:**
+
 - Modify: `tests/certification.spec.ts` (lines 350-408)
 
 **Step 1: Read existing cert_005 test**
@@ -772,7 +764,7 @@ Lines 350-408.
 
 Replace with save invariant enforcement:
 
-```typescript
+``` typescript
 test('cert_005 immediate save uses latest nvim buffer', async ({ page }) => {
   const trace = new TraceContext('cert_005');
   trace.record({ event: 'cert.start', test: 'cert_005' });
@@ -838,35 +830,32 @@ test('cert_005 immediate save uses latest nvim buffer', async ({ page }) => {
 ```
 
 Key changes:
+
 - Reads baseline buffer for version 1
 - After keyboard input, reads buffer again (version 2) before save
-- Uses `trace.recordSaveStart()` and `trace.recordSaveSuccess()` to emit structured save
-  events
-- Calls `assertSaveInvariant()` to enforce: `save.success(v=N)` only allowed if
-  `nvim.buffer.read(v=N)` preceded
+- Uses `trace.recordSaveStart()` and `trace.recordSaveSuccess()` to emit structured save events
+- Calls `assertSaveInvariant()` to enforce: `save.success(v=N)` only allowed if `nvim.buffer.read(v=N)` preceded
 - Artifacts: screenshot, final.md
 
 **Step 3: Run cert_005 in isolation**
 
-Run: `npx playwright test -c playwright.cert.config.ts -g "cert_005" 2>&1` Expected:
-PASS
+Run: `npx playwright test -c playwright.cert.config.ts -g "cert_005" 2>&1` Expected: PASS
 
 **Step 4: Commit**
 
-```bash
+``` bash
 git add tests/certification.spec.ts
 git commit -m "test(cert_005): upgrade to witness trace with save invariant enforcement"
 ```
 
-* * *
+------------------------------------------------------------------------
 
 ### Task 8: Upgrade cert_006 — three-way source equivalence
 
-**Objective:** Match spec: document includes Unicode, blank lines, math, lists, trailing
-newline; edits include heading, paragraph, delete, theorem block, citation.
-Exact equality under documented final-newline policy.
+**Objective:** Match spec: document includes Unicode, blank lines, math, lists, trailing newline; edits include heading, paragraph, delete, theorem block, citation. Exact equality under documented final-newline policy.
 
 **Files:**
+
 - Modify: `tests/certification.spec.ts` (lines 423-510)
 
 **Step 1: Read existing cert_006 test**
@@ -877,7 +866,7 @@ Lines 423-510.
 
 Replace with richer document and more edit types:
 
-```typescript
+``` typescript
 test('cert_006 three-way source equivalence: nvim buffer = disk = preview source', async ({
   page,
 }) => {
@@ -998,10 +987,9 @@ test('cert_006 three-way source equivalence: nvim buffer = disk = preview source
 ```
 
 Key changes:
-- Richer seed document: explicit blank lines, Unicode, math, lists, code, blockquote,
-  trailing newline
-- Edits: heading insertion, paragraph append, character delete (via `x`), theorem block,
-  citation
+
+- Richer seed document: explicit blank lines, Unicode, math, lists, code, blockquote, trailing newline
+- Edits: heading insertion, paragraph append, character delete (via `x`), theorem block, citation
 - Uses `trace.recordBufferRead()` for versioned buffer read
 - Uses `trace.recordRenderSuccess()` for pandoc render with source version
 - Uses `trace.writeInitialFile()`, `trace.writeFinalFile()`, `trace.writePreviewHtml()`
@@ -1010,24 +998,23 @@ Key changes:
 
 **Step 3: Run cert_006 in isolation**
 
-Run: `npx playwright test -c playwright.cert.config.ts -g "cert_006" 2>&1` Expected:
-PASS
+Run: `npx playwright test -c playwright.cert.config.ts -g "cert_006" 2>&1` Expected: PASS
 
 **Step 4: Commit**
 
-```bash
+``` bash
 git add tests/certification.spec.ts
 git commit -m "test(cert_006): upgrade to witness trace spec with richer document and edits"
 ```
 
-* * *
+------------------------------------------------------------------------
 
 ### Task 9: Upgrade cert_blackbox_001 — use installed CLI binary
 
-**Objective:** Run the actual CLI command (`npx tsx server/cli.ts`) as the user would,
-not `launchServer` which is a test helper.
+**Objective:** Run the actual CLI command (`npx tsx server/cli.ts`) as the user would, not `launchServer` which is a test helper.
 
 **Files:**
+
 - Modify: `tests/certification.spec.ts` (lines 525-612)
 
 **Step 1: Read existing cert_blackbox_001 test**
@@ -1038,7 +1025,7 @@ Lines 525-612.
 
 Replace with direct CLI invocation:
 
-```typescript
+``` typescript
 test('cert_blackbox_001 full open-type-preview-save against CLI', async ({ page }) => {
   const trace = new TraceContext('cert_blackbox_001');
   trace.record({ event: 'cert.start', test: 'cert_blackbox_001' });
@@ -1163,26 +1150,25 @@ test('cert_blackbox_001 full open-type-preview-save against CLI', async ({ page 
 ```
 
 Key changes:
+
 - Uses `spawn('npx', ['tsx', 'server/cli.ts', ...])` instead of `launchServer()` helper
 - Gets nvim PID from `/api/status` response directly
-- Uses `trace.recordBufferRead()`, `trace.recordSaveStart()`,
-  `trace.recordSaveSuccess()`
+- Uses `trace.recordBufferRead()`, `trace.recordSaveStart()`, `trace.recordSaveSuccess()`
 - Calls `assertSaveInvariant()` to enforce save rule
 - Artifacts: screenshot, final.md, stdout.log, stderr.log
 
 **Step 3: Run cert_blackbox_001 in isolation**
 
-Run: `npx playwright test -c playwright.cert.config.ts -g "blackbox" 2>&1` Expected:
-PASS
+Run: `npx playwright test -c playwright.cert.config.ts -g "blackbox" 2>&1` Expected: PASS
 
 **Step 4: Commit**
 
-```bash
+``` bash
 git add tests/certification.spec.ts
 git commit -m "test(cert_blackbox_001): upgrade to CLI binary invocation and witness trace"
 ```
 
-* * *
+------------------------------------------------------------------------
 
 ## VERIFICATION
 
@@ -1196,34 +1182,30 @@ Run: `just clean-runtime && just build` Expected: Build succeeds, no leftover pr
 
 **Step 2: Run all certification tests**
 
-Run: `npx playwright test -c playwright.cert.config.ts 2>&1` Expected: 7 passed, 0
-failed
+Run: `npx playwright test -c playwright.cert.config.ts 2>&1` Expected: 7 passed, 0 failed
 
 **Step 3: Inspect test artifacts**
 
-```bash
+``` bash
 ls -la test-artifacts/
 ls -la test-artifacts/cert_001/
 cat test-artifacts/cert_001/trace.jsonl
 ```
 
-Expected: Each test directory has initial.md, trace.jsonl, screenshot.png.
-cert_002/cert_004/cert_006 have preview.html.
-cert_001 has stdout.log and stderr.log.
+Expected: Each test directory has initial.md, trace.jsonl, screenshot.png. cert_002/cert_004/cert_006 have preview.html. cert_001 has stdout.log and stderr.log.
 
 **Step 4: Verify scorecard**
 
-Read `test-artifacts/scorecard.json` — should exist with `certified: true` and all
-contracts `'pass'` or `'not_implemented'`.
+Read `test-artifacts/scorecard.json` — should exist with `certified: true` and all contracts `'pass'` or `'not_implemented'`.
 
 **Step 5: Commit if all pass**
 
-```bash
+``` bash
 git add -A
 git commit -m "test: all 7 certification tests pass with witness traces"
 ```
 
-* * *
+------------------------------------------------------------------------
 
 ### Task 11: Run proof ladder tests, fix any regressions
 
@@ -1231,27 +1213,23 @@ git commit -m "test: all 7 certification tests pass with witness traces"
 
 **Step 1: Run proof ladder tests**
 
-Run: `npx playwright test --config=playwright.ladder.config.ts 2>&1` Expected: 11
-passed, 0 failed
+Run: `npx playwright test --config=playwright.ladder.config.ts 2>&1` Expected: 11 passed, 0 failed
 
 **Step 2: If any failures, investigate and fix**
 
-The proof ladder tests are in `tests/proof-ladder.spec.ts`. They should not be affected
-by the certification test changes since they are independent test files.
-If any fail, they are likely pre-existing issues or test environment problems.
+The proof ladder tests are in `tests/proof-ladder.spec.ts`. They should not be affected by the certification test changes since they are independent test files. If any fail, they are likely pre-existing issues or test environment problems.
 
-* * *
+------------------------------------------------------------------------
 
 ### Task 12: Generate final certification scorecard
 
-**Objective:** Build a script or test that generates the scorecard automatically from
-test results.
+**Objective:** Build a script or test that generates the scorecard automatically from test results.
 
 **Step 1: Create a test that calls scorecard generation**
 
 Add to the certification test file after the individual tests:
 
-```typescript
+``` typescript
 import { generateScorecard, ScorecardContract } from './scorecard';
 
 // After all certification tests, generate scorecard
@@ -1275,12 +1253,11 @@ test.afterAll(async () => {
 
 **Step 2: Run tests and verify scorecard**
 
-Run: `npx playwright test -c playwright.cert.config.ts 2>&1` Check:
-`cat test-artifacts/scorecard.json` — should be valid JSON with contracts filled.
+Run: `npx playwright test -c playwright.cert.config.ts 2>&1` Check: `cat test-artifacts/scorecard.json` — should be valid JSON with contracts filled.
 
 **Step 3: Commit**
 
-```bash
+``` bash
 git add tests/certification.spec.ts test-artifacts/scorecard.json
 git commit -m "feat(scorecard): add certification scorecard with contract results"
 ```

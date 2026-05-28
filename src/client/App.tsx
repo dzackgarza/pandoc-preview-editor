@@ -15,7 +15,6 @@ import { EditorPane } from './components/EditorPane.jsx';
 import { PreviewPane } from './components/PreviewPane.jsx';
 import { StatusCluster } from './components/StatusCluster.jsx';
 import { FileSelectorDialog } from './components/FileSelectorDialog.jsx';
-import { QuickOpenDialog } from './components/QuickOpenDialog.jsx';
 import { Toaster } from './components/Toaster.jsx';
 import { SettingsDialog } from './components/SettingsDialog.jsx';
 import { FilterSettingsModal } from './components/FilterSettingsModal.jsx';
@@ -89,7 +88,6 @@ export function App() {
   const [pluginState, setPluginState] = useState<PluginState>('idle');
   const [plugins, setPlugins] = useState<PluginMetadata[]>([]);
   const [explorerOpen, setExplorerOpen] = useState(false);
-  const [quickOpenOpen, setQuickOpenOpen] = useState(false);
   const [saveAsDialogOpen, setSaveAsDialogOpen] = useState(false);
   const [saveAsDialogMode, setSaveAsDialogMode] = useState<'save' | 'new'>('save');
   const [workspaceRoot, setWorkspaceRoot] = useState(window.__WORKSPACE_ROOT ?? '');
@@ -101,7 +99,6 @@ export function App() {
   const groupRef = useGroupRef();
   const editorViewRef = useRef<EditorView | null>(null);
   const saveAsInputRef = useRef<HTMLInputElement>(null);
-  const quickOpenInputRef = useRef<HTMLInputElement>(null);
   const saveAsResolveRef = useRef<((path: string | null) => void) | null>(null);
   const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
   const unsavedChangesResolveRef = useRef<((choice: 'save' | 'discard' | 'cancel') => void) | null>(null);
@@ -612,16 +609,39 @@ export function App() {
     return true;
   }, [ensureBufferSafeToReplace]);
 
-  const openQuickOpen = useCallback(() => {
-    setQuickOpenOpen(true);
-    requestAnimationFrame(() => quickOpenInputRef.current?.focus());
-  }, []);
+  const handleQuickOpen = useCallback(async () => {
+    try {
+      const res = await fetch('/api/files/quick-open-spawn', { method: 'POST' });
+      if (!res.ok) throw new Error(`server returned ${res.status}`);
+      const data = await res.json();
+      if (data.ok) {
+        await openFile({
+          path: data.path,
+          absolutePath: data.absolutePath,
+          content: data.content,
+        });
+      } else if (data.error) {
+        toast({
+          title: 'Quick Open Error',
+          description: data.error,
+          variant: 'destructive',
+        });
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast({
+        title: 'Quick Open Failed',
+        description: msg,
+        variant: 'destructive',
+      });
+    }
+  }, [openFile]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'p') {
         event.preventDefault();
-        openQuickOpen();
+        void handleQuickOpen();
         return;
       }
       if (
@@ -645,7 +665,7 @@ export function App() {
 
     window.addEventListener('keydown', handleKeyDown, { capture: true });
     return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
-  }, [insertCitation, openQuickOpen, saveCurrentAs]);
+  }, [handleQuickOpen, insertCitation, saveCurrentAs]);
 
   // Wayland-compatible paste handler: navigator.clipboard.read() is broken on
   // Wayland for binary image types. The paste DOM event's clipboardData.items is
@@ -695,7 +715,7 @@ export function App() {
           onNewFile={createNewFile}
           onInsertCitation={insertCitation}
           onOpenExplorer={() => setExplorerOpen(true)}
-          onOpenQuickOpen={openQuickOpen}
+          onOpenQuickOpen={handleQuickOpen}
           onRefresh={() => renderImmediate(markdownText)}
           onRunPlugin={runPluginAction}
           onResetSplit={resetSplit}
@@ -792,13 +812,6 @@ export function App() {
            onDiscard={handleUnsavedChangesDiscard}
            onSave={handleUnsavedChangesSave}
          />
-        <QuickOpenDialog
-          inputRef={quickOpenInputRef}
-          onCancel={() => setQuickOpenOpen(false)}
-          onOpenFile={openFile}
-          open={quickOpenOpen}
-          workspaceRoot={workspaceRoot}
-        />
         <SettingsDialog
           open={settingsOpen}
           onClose={() => setSettingsOpen(false)}

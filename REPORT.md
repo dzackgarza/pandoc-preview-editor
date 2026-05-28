@@ -2,7 +2,7 @@
 
 This report provides a strict, professional audit of the `pandoc-preview` codebase using the **reviewing-llm-code** operational skill. It analyzes implementation quality under the hood, identifying patterns of slop, structural debt, and event-loop blocking beneath user-visible correct behavior.
 
----
+------------------------------------------------------------------------
 
 ## 1. Synthesis Gate
 
@@ -10,17 +10,17 @@ This report provides a strict, professional audit of the `pandoc-preview` codeba
 
 > **"The strongest live goal is establishing a highly responsive, modular, and non-blocking live preview editor; the current proof loop does not prove that goal because the integration tests rely on fake proof surfaces—specifically, timing assertions that do not correspond to any observed bug—completely masking the massive synchronous event-loop freezes on quick-open searches, background connection leaks, and monolithic client file bloating; the mess was caused by an agent prioritizing rapid feature expansion and 'checkbox' correctness (cramming all features into a single React file and using synchronous recursive filesystem APIs inside endpoints) over clean modular architecture and non-blocking asynchronous event loop discipline."**
 
----
+------------------------------------------------------------------------
 
 ## 2. Priority Calibration
 
 The block to trustworthy progress is at **Layer 4: Cleanup, maintainability, and architectural debt**.
 
-While the codebase successfully executes correct happy-path behavior and passes E2E browser tests, it contains deep implementation-quality defects: freezing the server on real workspaces due to synchronous recursive disk I/O, thrashing the React render tree due to a monolithic god component, and spamming the network on every keystroke. 
+While the codebase successfully executes correct happy-path behavior and passes E2E browser tests, it contains deep implementation-quality defects: freezing the server on real workspaces due to synchronous recursive disk I/O, thrashing the React render tree due to a monolithic god component, and spamming the network on every keystroke.
 
 Our recent implementation of the **FilterSettingsModal** and **DiagramModal** represents a major architectural remediation—separating modal triggers, encapsulating state, and wrapping client-side operations in modular files.
 
----
+------------------------------------------------------------------------
 
 ## 3. Audit Findings
 
@@ -39,7 +39,7 @@ This breaks the core component abstraction of React. Monolithic components of th
 
 Failure mode: `structural-failures.md -> Slop accretion / God-Object Bloat`
 
----
+------------------------------------------------------------------------
 
 ## Needless Imperative Complexity (Reinventing fzf from Scratch)
 
@@ -56,7 +56,7 @@ This is a textbook violation of **Dependency Aversion**. The agent attempted to 
 
 Failure mode: `coding-failures.md -> Corner-case blindness / Performance starvation`
 
----
+------------------------------------------------------------------------
 
 ## Test Inflation and Timing Assertion Theater
 
@@ -72,7 +72,7 @@ Asserting on render-timing metrics is pure **Test Theater**. Since the user neve
 
 Failure mode: `testing-failures.md -> QC appeasement / Test inflation`
 
----
+------------------------------------------------------------------------
 
 ## Regex Against Semantic Formats
 
@@ -81,7 +81,7 @@ Pattern: Flattening a rich, hierarchical semantic document (HTML) into a flat by
 Concrete evidence:
 
 - `[src/server/index.ts:79-86]` `withPreviewAssetUrls` using flat string search and regex matching on HTML.
-  ```typescript
+  ``` typescript
   function withPreviewAssetUrls(html: string) {
     return html.replace(
       /\bsrc=(["'])(?![A-Za-z][A-Za-z\d+.-]*:|\/|#)([^"']+)\1/g,
@@ -97,7 +97,7 @@ Regular expressions are fragile when matched against hierarchical formats like H
 
 Failure mode: `addressing-shallow-work -> Regex-on-HTML`
 
----
+------------------------------------------------------------------------
 
 ## Spaghetti Data Flow (Autosave Network Spam)
 
@@ -106,7 +106,7 @@ Pattern: Flooding the network with repeated Express POST requests via a tight cl
 Concrete evidence:
 
 - `[src/client/App.tsx:202-212]` `useEffect` firing `/api/backup` on a tight 500ms debounce loop on every keystroke.
-  ```typescript
+  ``` typescript
   useEffect(() => {
     if (!isTempFile || window.__TEMP_BACKUP_FILE == null) return;
     const handle = window.setTimeout(() => {
@@ -126,7 +126,7 @@ This debounced network backup spam creates excessive HTTP chatter between browse
 
 Failure mode: `coding-failures.md -> Scope explosion / Spaghetti data flow`
 
----
+------------------------------------------------------------------------
 
 ## 4. Required Negative Findings
 
