@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as Tabs from '@radix-ui/react-tabs';
 import { X, Settings, Cpu, FolderOpen, Terminal } from 'lucide-react';
-import { parse } from 'shell-quote';
+import {
+  ParsedFlags,
+  parseCommand as parseFlags,
+  buildCommand,
+} from '../../shared/command-parser';
 
 interface SettingsData {
   templatesDir: string;
@@ -16,101 +20,6 @@ interface SettingsDialogProps {
   open: boolean;
   onClose: () => void;
   onSave: () => void;
-}
-
-interface ParsedFlags {
-  commandName: string;
-  standalone: boolean;
-  citeproc: boolean;
-  toc: boolean;
-  numberSections: boolean;
-  embedResources: boolean;
-  math: 'mathjax' | 'katex' | 'webtex' | 'none';
-  selectedTemplate: string;
-  selectedFilters: string[];
-  otherFlags: string[];
-}
-
-// Parse a raw command string into its constituent flags.
-// Uses shell-quote so quoted arguments (e.g. paths with spaces) are handled correctly.
-function parseFlags(rawText: string): ParsedFlags {
-  const tokens = parse(rawText).filter((t): t is string => typeof t === 'string');
-  const [commandName = 'pandoc', ...args] = tokens;
-
-  let standalone = false;
-  let citeproc = false;
-  let toc = false;
-  let numberSections = false;
-  let embedResources = false;
-  let math: ParsedFlags['math'] = 'none';
-  let selectedTemplate = '';
-  const selectedFilters: string[] = [];
-  const otherFlags: string[] = [];
-
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-    if (arg === '-s' || arg === '--standalone') {
-      standalone = true;
-    } else if (arg === '--citeproc') {
-      citeproc = true;
-    } else if (arg === '-N' || arg === '--number-sections') {
-      numberSections = true;
-    } else if (arg === '--table-of-contents' || arg === '--toc') {
-      toc = true;
-    } else if (arg === '--self-contained' || arg === '--embed-resources') {
-      embedResources = true;
-    } else if (arg === '--mathjax') {
-      math = 'mathjax';
-    } else if (arg === '--katex') {
-      math = 'katex';
-    } else if (arg === '--webtex') {
-      math = 'webtex';
-    } else if (arg.startsWith('--template=')) {
-      const val = arg.slice('--template='.length);
-      selectedTemplate = val.split('/').at(-1) || val;
-    } else if (arg === '--template' && i + 1 < args.length) {
-      const val = args[++i];
-      selectedTemplate = val.split('/').at(-1) || val;
-    } else if (arg.startsWith('--lua-filter=')) {
-      const val = arg.slice('--lua-filter='.length);
-      selectedFilters.push(val.split('/').at(-1) || val);
-    } else if (arg === '--lua-filter' && i + 1 < args.length) {
-      const val = args[++i];
-      selectedFilters.push(val.split('/').at(-1) || val);
-    } else if (arg.startsWith('--filter=')) {
-      const val = arg.slice('--filter='.length);
-      selectedFilters.push(val.split('/').at(-1) || val);
-    } else if (arg === '--filter' && i + 1 < args.length) {
-      const val = args[++i];
-      selectedFilters.push(val.split('/').at(-1) || val);
-    } else {
-      otherFlags.push(arg);
-    }
-  }
-
-  return { commandName, standalone, citeproc, toc, numberSections, embedResources, math, selectedTemplate, selectedFilters, otherFlags };
-}
-
-// Reconstruct a raw command string from parsed flag state.
-function buildCommand(flags: ParsedFlags, templatesDir: string, filtersDir: string): string {
-  const args: string[] = [];
-  if (flags.standalone) args.push('--standalone');
-  if (flags.citeproc) args.push('--citeproc');
-  if (flags.toc) args.push('--table-of-contents');
-  if (flags.numberSections) args.push('--number-sections');
-  if (flags.embedResources) args.push('--embed-resources');
-  if (flags.math === 'mathjax') args.push('--mathjax');
-  if (flags.math === 'katex') args.push('--katex');
-  if (flags.math === 'webtex') args.push('--webtex');
-  if (flags.selectedTemplate) {
-    args.push(`--template=${templatesDir.replace(/\/$/, '')}/${flags.selectedTemplate}`);
-  }
-  for (const filter of flags.selectedFilters) {
-    const ext = filter.endsWith('.lua') ? '--lua-filter' : '--filter';
-    args.push(`${ext}=${filtersDir.replace(/\/$/, '')}/${filter}`);
-  }
-  args.push(...flags.otherFlags);
-  return [flags.commandName, ...args].join(' ');
 }
 
 export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
