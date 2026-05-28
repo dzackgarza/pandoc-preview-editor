@@ -384,6 +384,8 @@ test.describe('user workflows', () => {
         timeout: 3000,
       });
       await page.getByRole('button', { name: /notes\.txt/ }).click();
+      await expect(page.getByRole('heading', { name: 'Unsaved Changes' })).toBeVisible({ timeout: 5000 });
+      await page.locator('.fixed.inset-0').getByRole('button', { name: 'Save' }).click();
       await expectEditorMarkdown(page, 'Notes text.');
       expect((await editorState(page)).currentFile).toBe(notes);
       await expect
@@ -404,6 +406,8 @@ test.describe('user workflows', () => {
 
       await openMenu(page, 'File');
       await clickMenuItem(page, 'New');
+      await expect(page.getByRole('heading', { name: 'Unsaved Changes' })).toBeVisible({ timeout: 5000 });
+      await page.locator('.fixed.inset-0').getByRole('button', { name: 'Save' }).click();
       await expect
         .poll(() => readFileSync(notes, 'utf-8'), {
           timeout: 5000,

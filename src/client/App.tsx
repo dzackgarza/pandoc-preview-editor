@@ -20,6 +20,7 @@ import { Toaster } from './components/Toaster.jsx';
 import { SettingsDialog } from './components/SettingsDialog.jsx';
 import { FilterSettingsModal } from './components/FilterSettingsModal.jsx';
 import { DiagramModal } from './components/DiagramModal.jsx';
+import { UnsavedChangesDialog } from './components/UnsavedChangesDialog.jsx';
 
 export type RenderStatus = 'ready' | 'rendering' | 'error' | 'saved';
 export type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
@@ -102,6 +103,8 @@ export function App() {
   const saveAsInputRef = useRef<HTMLInputElement>(null);
   const quickOpenInputRef = useRef<HTMLInputElement>(null);
   const saveAsResolveRef = useRef<((path: string | null) => void) | null>(null);
+  const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
+  const unsavedChangesResolveRef = useRef<((choice: 'save' | 'discard' | 'cancel') => void) | null>(null);
 
   useEffect(() => {
     window.__PANDOC_PREVIEW_STATE__ = { markdown: markdownText, currentFile };
@@ -216,6 +219,19 @@ export function App() {
     return () => window.clearTimeout(handle);
   }, [isTempFile, markdownText]);
 
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (saveState === 'dirty') {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [saveState]);
+
   const promptForSavePath = useCallback(
     (mode: 'save' | 'new'): Promise<string | null> => {
       return new Promise((resolve) => {
@@ -235,6 +251,28 @@ export function App() {
   const handleSaveAsCancel = useCallback(() => {
     setSaveAsDialogOpen(false);
     saveAsResolveRef.current?.(null);
+  }, []);
+
+  const promptForUnsavedChanges = useCallback((): Promise<'save' | 'discard' | 'cancel'> => {
+    return new Promise((resolve) => {
+      unsavedChangesResolveRef.current = resolve;
+      setUnsavedChangesDialogOpen(true);
+    });
+  }, []);
+
+  const handleUnsavedChangesSave = useCallback(() => {
+    setUnsavedChangesDialogOpen(false);
+    unsavedChangesResolveRef.current?.('save');
+  }, []);
+
+  const handleUnsavedChangesDiscard = useCallback(() => {
+    setUnsavedChangesDialogOpen(false);
+    unsavedChangesResolveRef.current?.('discard');
+  }, []);
+
+  const handleUnsavedChangesCancel = useCallback(() => {
+    setUnsavedChangesDialogOpen(false);
+    unsavedChangesResolveRef.current?.('cancel');
   }, []);
 
   const persistMarkdown = useCallback(async (path: string, text: string) => {
@@ -300,8 +338,18 @@ export function App() {
     if ((isTempFile || !currentFile) && markdownText.length === 0 && saveState !== 'dirty') {
       return true;
     }
-    return (await ensureRealFile({ promptForEmpty: true })) != null;
-  }, [currentFile, ensureRealFile, isTempFile, markdownText, saveState]);
+    if (saveState !== 'dirty') {
+      return true;
+    }
+    const choice = await promptForUnsavedChanges();
+    if (choice === 'cancel') {
+      return false;
+    }
+    if (choice === 'save') {
+      return (await ensureRealFile({ promptForEmpty: true })) != null;
+    }
+    return true; // discard
+  }, [currentFile, ensureRealFile, isTempFile, markdownText, promptForUnsavedChanges, saveState]);
 
   const saveCurrent = useCallback(async () => {
     renderImmediate(markdownText);
@@ -731,13 +779,19 @@ export function App() {
           saveState={saveState}
           status={status}
         />
-        <FileSelectorDialog
-          mode={saveAsDialogMode}
-          open={saveAsDialogOpen}
-          workspaceRoot={workspaceRoot}
-          onCancel={handleSaveAsCancel}
-          onSubmit={handleSaveAsSubmit}
-        />
+         <FileSelectorDialog
+           mode={saveAsDialogMode}
+           open={saveAsDialogOpen}
+           workspaceRoot={workspaceRoot}
+           onCancel={handleSaveAsCancel}
+           onSubmit={handleSaveAsSubmit}
+         />
+         <UnsavedChangesDialog
+           open={unsavedChangesDialogOpen}
+           onCancel={handleUnsavedChangesCancel}
+           onDiscard={handleUnsavedChangesDiscard}
+           onSave={handleUnsavedChangesSave}
+         />
         <QuickOpenDialog
           inputRef={quickOpenInputRef}
           onCancel={() => setQuickOpenOpen(false)}

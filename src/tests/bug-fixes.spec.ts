@@ -298,12 +298,13 @@ test.describe('Bug fixes TDD', () => {
 
       // Setup dialog listener to catch the beforeunload prompt and dismiss it
       let beforeUnloadTriggered = false;
-      page.on('dialog', async (dialog) => {
+      const handleDialog = async (dialog) => {
         if (dialog.type() === 'beforeunload') {
           beforeUnloadTriggered = true;
           await dialog.dismiss();
         }
-      });
+      };
+      page.on('dialog', handleDialog);
 
       // Try to reload page
       try {
@@ -311,6 +312,9 @@ test.describe('Bug fixes TDD', () => {
       } catch (err) {
         // Expected navigation cancel
       }
+
+      // Cleanup listener so it doesn't block page teardown!
+      page.off('dialog', handleDialog);
 
       // Verify the dialog was indeed triggered
       expect(beforeUnloadTriggered).toBe(true);
@@ -351,21 +355,21 @@ test.describe('Bug fixes TDD', () => {
       await doc2Btn.click();
 
       // 4. Expect UnsavedChangesDialog to be visible
-      const unsavedModal = page.getByText('Unsaved Changes');
+      const unsavedModal = page.getByRole('heading', { name: 'Unsaved Changes' });
       await expect(unsavedModal).toBeVisible({ timeout: 5000 });
 
       // 5. Click Cancel
-      await page.getByRole('button', { name: 'Cancel' }).click();
+      await page.locator('.fixed.inset-0').getByRole('button', { name: 'Cancel' }).click();
 
       // 6. Verify we stay on doc1.md and it is still dirty with modified content
       await expect(unsavedModal).not.toBeVisible();
       await expectEditorMarkdown(page, '# Document 1\nmodified');
-      await expect(page.locator('#save-state')).toContainText('dirty');
+      await expect(page.locator('#save-state')).toContainText('unsaved');
 
       // 7. Click doc2.md again, click Discard
       await doc2Btn.click();
       await expect(unsavedModal).toBeVisible();
-      await page.getByRole('button', { name: 'Discard' }).click();
+      await page.locator('.fixed.inset-0').getByRole('button', { name: 'Discard' }).click();
 
       // 8. Verify we successfully switched to doc2.md and original doc1.md on disk was NOT modified
       await expect(unsavedModal).not.toBeVisible();
@@ -381,7 +385,7 @@ test.describe('Bug fixes TDD', () => {
       await setEditorMarkdown(page, '# Document 1\nmodified again');
       await doc2Btn.click();
       await expect(unsavedModal).toBeVisible();
-      await page.getByRole('button', { name: 'Save' }).click();
+      await page.locator('.fixed.inset-0').getByRole('button', { name: 'Save' }).click();
 
       // 11. Verify we switched to doc2.md and doc1.md on disk was successfully updated!
       await expect(unsavedModal).not.toBeVisible();
