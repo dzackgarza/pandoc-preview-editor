@@ -2,7 +2,7 @@
 
 ## File Integrity Implementation (Active Branch: feature/file-integrity)
 
-- [ ] **Task 1: Refactor Save Endpoints for Atomicity**
+- [x] **Task 1: Refactor Save Endpoints for Atomicity**
   - Implement safe atomic writes via a temporary sibling file (e.g., `.${filename}.tmp.[uuid]`) in the same directory.
   - Sync the file descriptor to physical disk before renaming.
   - Atomically rename the temporary file over the target destination using `fs.renameSync`.
