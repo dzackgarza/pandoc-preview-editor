@@ -1,5 +1,5 @@
 import { readFileSync, existsSync } from 'node:fs';
-import { extname, dirname } from 'node:path';
+import { extname, dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import writeFileAtomic from 'write-file-atomic';
 
 export type FileTreeEntry = {
