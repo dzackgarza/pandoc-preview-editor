@@ -6,7 +6,7 @@ import {
   ParsedFlags,
   parseCommand as parseFlags,
   buildCommand,
-} from '../../shared/command-parser';
+} from '../../shared/command-parser.js';
 
 interface SettingsData {
   templatesDir: string;

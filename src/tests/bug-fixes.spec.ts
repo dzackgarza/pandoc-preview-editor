@@ -298,7 +298,7 @@ test.describe('Bug fixes TDD', () => {
 
       // Setup dialog listener to catch the beforeunload prompt and dismiss it
       let beforeUnloadTriggered = false;
-      const handleDialog = async (dialog) => {
+      const handleDialog = async (dialog: import('@playwright/test').Dialog) => {
         if (dialog.type() === 'beforeunload') {
           beforeUnloadTriggered = true;
           await dialog.dismiss();
