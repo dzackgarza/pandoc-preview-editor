@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 import { Command } from 'commander';
 import { readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
