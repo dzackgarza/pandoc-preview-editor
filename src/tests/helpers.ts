@@ -49,6 +49,10 @@ export async function launchServer(
   const proc = spawn('npx', args, {
     cwd: ROOT,
     stdio: 'pipe',
+    env: {
+      ...process.env,
+      NODE_ENV: 'test',
+    },
   });
 
   proc.stdout?.on('data', (d: Buffer) => out.push(d.toString()));

@@ -897,6 +897,24 @@ export function createApp(config: ServerConfig) {
       return;
     }
 
+    let parsed: URL;
+    try {
+      parsed = new URL(urlStr);
+    } catch {
+      res.status(400).json({ error: 'Invalid URL format' });
+      return;
+    }
+
+    const allowedHosts = new Set(['q.uiver.app', 'freetikz.app']);
+    const isTest = process.env.NODE_ENV === 'test';
+    const isAllowedHost = allowedHosts.has(parsed.hostname) && parsed.protocol === 'https:';
+    const isAllowedTest = isTest && (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') && parsed.protocol === 'http:';
+
+    if (!isAllowedHost && !isAllowedTest) {
+      res.status(403).json({ error: 'Forbidden: URL is not whitelisted' });
+      return;
+    }
+
     try {
       const response = await fetch(urlStr);
       if (!response.ok) {
