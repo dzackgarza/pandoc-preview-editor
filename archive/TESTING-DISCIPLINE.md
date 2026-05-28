@@ -1,15 +1,14 @@
-
-The principled approach is to make “seeing the GUI” part of the test harness, not a human-side debugging activity. The agent should run the app, collect visual and non-visual evidence, inspect that evidence itself, and fail with a structured diagnosis. The uploaded traces show why this matters: the agent reasoned from internal xterm implementation details, contradicted itself about `.xterm-rows` having content versus being blank, and earlier treated production-path failures as environmental blockers without isolating smaller layers. Those are process failures, not just code bugs.   
+The principled approach is to make “seeing the GUI” part of the test harness, not a human-side debugging activity. The agent should run the app, collect visual and non-visual evidence, inspect that evidence itself, and fail with a structured diagnosis. The uploaded traces show why this matters: the agent reasoned from internal xterm implementation details, contradicted itself about `.xterm-rows` having content versus being blank, and earlier treated production-path failures as environmental blockers without isolating smaller layers. Those are process failures, not just code bugs.
 
 There should be two certification modes.
 
-## 1. When a vision/multimodal model is available
+# 1. When a vision/multimodal model is available
 
 This is the closest analog to a human looking at the screen. The agent should not merely take a screenshot and tell the user to inspect it. It should take the screenshot, open/read it itself, and compare it against explicit visual expectations.
 
 The E2E flow should be:
 
-```text
+``` text
 start app with a fresh file
 open browser via Playwright
 wait for nvim socket readiness
@@ -23,7 +22,7 @@ test also asserts process/socket/DOM/file facts
 
 The visual assertions should be concrete:
 
-```text
+``` text
 terminal pane:
   not blank
   contains visible terminal rows
@@ -48,7 +47,7 @@ layout:
 
 The agent should produce a visual report like:
 
-```json
+``` json
 {
   "test": "cert_initial_terminal_paints",
   "screenshots": {
@@ -75,18 +74,18 @@ The agent should produce a visual report like:
 
 A vision model is especially valuable for bugs like the one you described:
 
-```text
+``` text
 DOM/buffer may contain text,
 but the user sees a blank pane until Hyprland workspace switch.
 ```
 
 A DOM-only test can easily pass there. A screenshot-aware agent can say: “xterm buffer contains text, `.xterm-rows` contains text, but the screenshot is visually blank.” That immediately narrows the problem to paint/compositor/CSS/layout rather than PTY data flow.
 
-Playwright should be the base harness. Its trace viewer records test actions and lets you inspect traces after the run; Playwright explicitly supports saved traces for CI debugging. ([Playwright][1]) Playwright also supports screenshot comparisons through `expect(page).toHaveScreenshot()`, and its docs note that rendering can vary by OS, browser, hardware, headless mode, and fonts, so baselines must be generated in a controlled environment. ([Playwright][2])
+Playwright should be the base harness. Its trace viewer records test actions and lets you inspect traces after the run; Playwright explicitly supports saved traces for CI debugging. ([Playwright](https://playwright.dev/docs/trace-viewer)) Playwright also supports screenshot comparisons through `expect(page).toHaveScreenshot()`, and its docs note that rendering can vary by OS, browser, hardware, headless mode, and fonts, so baselines must be generated in a controlled environment. ([Playwright](https://playwright.dev/docs/test-snapshots))
 
 The agent should use these artifacts automatically:
 
-```ts
+``` ts
 await page.screenshot({ path: `${dir}/full.png`, fullPage: true });
 await page.getByTestId('terminal-pane').screenshot({ path: `${dir}/terminal.png` });
 await page.getByTestId('preview-pane').screenshot({ path: `${dir}/preview.png` });
@@ -98,13 +97,13 @@ await context.tracing.stop({ path: `${dir}/trace.zip` });
 
 For the vision-enabled mode, the certification rule should be:
 
-```text
+``` text
 A test cannot be marked visually correct unless the agent has inspected the actual screenshot artifact and written a verdict tied to that artifact.
 ```
 
 Not acceptable:
 
-```text
+``` text
 “Playwright says the locator is visible.”
 “textContent is nonempty.”
 “trace exists.”
@@ -112,13 +111,13 @@ Not acceptable:
 
 Acceptable:
 
-```text
+``` text
 “terminal.png visibly contains rows of terminal text and a nvim statusline; preview.png visibly contains the heading rendered from the test document.”
 ```
 
 The vision model should also inspect failure screenshots before modifying code. The failure report should say:
 
-```text
+``` text
 Observed screenshot:
   terminal pane black with no visible glyphs
   preview pane normal
@@ -133,11 +132,11 @@ Next layer:
 
 That prevents blind “maybe font, maybe PTY, maybe fit” mutations.
 
-## 2. When no vision model is available
+# 2. When no vision model is available
 
 Without vision, the agent can still “see” a lot. It should collect four kinds of evidence:
 
-```text
+``` text
 A. process evidence
 B. terminal state evidence
 C. DOM/layout/style evidence
@@ -146,11 +145,11 @@ D. screenshot-as-data evidence
 
 The key is to treat the screenshot as a machine-readable image, even if no model can visually interpret it.
 
-### A. Process evidence
+## A. Process evidence
 
 The test should record:
 
-```text
+``` text
 server pid
 nvim pid
 nvim argv
@@ -162,7 +161,7 @@ browser version
 
 Example assertions:
 
-```ts
+``` ts
 expect(processTree).toContainProcess(/nvim/);
 expect(processTree).toContainArg('--listen');
 expect(await remoteExpr(socket, '1')).toBe('1');
@@ -170,11 +169,11 @@ expect(await remoteExpr(socket, '1')).toBe('1');
 
 This proves the app started the real external machinery.
 
-### B. Terminal state evidence
+## B. Terminal state evidence
 
 Expose a debug hook in development/test builds:
 
-```ts
+``` ts
 window.__debugTerminal = () => {
   const lines = [];
   for (let i = 0; i < Math.min(term.rows, 40); i++) {
@@ -234,11 +233,11 @@ function styleSummary(el: Element | null) {
 }
 ```
 
-xterm’s `IBufferLine` API exposes `translateToString`, which lets tests read terminal buffer lines directly. ([Xterm.js][3]) The xterm serialize addon is also useful: it serializes terminal rows into a string, and can also serialize as HTML. ([GitHub][4])
+xterm’s `IBufferLine` API exposes `translateToString`, which lets tests read terminal buffer lines directly. ([Xterm.js](https://xtermjs.org/docs/api/terminal/interfaces/ibufferline/)) The xterm serialize addon is also useful: it serializes terminal rows into a string, and can also serialize as HTML. ([GitHub](https://github.com/xtermjs/xterm.js/blob/master/addons/addon-serialize/typings/addon-serialize.d.ts))
 
 Use both:
 
-```ts
+``` ts
 const state = await page.evaluate(() => window.__debugTerminal());
 expect(state.firstLines.join('\n')).toContain('NVIM_SENTINEL');
 expect(state.rowsText).toContain('NVIM_SENTINEL');
@@ -250,11 +249,11 @@ If both contain text but screenshot metrics say blank, the issue is paint/CSS/co
 
 If neither contains text, the issue is PTY/WebSocket/input delivery.
 
-### C. DOM/layout/style evidence
+## C. DOM/layout/style evidence
 
 A rendering issue is often a layout issue. The agent should always dump:
 
-```text
+``` text
 bounding boxes
 computed styles
 z-index/overlap data
@@ -268,7 +267,7 @@ scroll positions
 
 Example:
 
-```ts
+``` ts
 const layout = await page.evaluate(() => {
   const pane = document.querySelector('[data-testid="terminal-pane"]')!;
   const rows = document.querySelector('.xterm-rows');
@@ -295,7 +294,7 @@ const layout = await page.evaluate(() => {
 
 This catches:
 
-```text
+``` text
 terminal has zero size
 rows are offscreen
 rows are transparent
@@ -307,7 +306,7 @@ font-size/line-height are zero
 
 For the xterm initial-render bug, the agent should also capture time-series state:
 
-```ts
+``` ts
 for (const delay of [0, 50, 100, 250, 500, 1000, 2000]) {
   await page.waitForTimeout(delay);
   await dump(`t=${delay}`);
@@ -316,7 +315,7 @@ for (const delay of [0, 50, 100, 250, 500, 1000, 2000]) {
 
 Each dump should include:
 
-```text
+``` text
 xterm buffer lines
 DOM rows text
 rects
@@ -326,11 +325,11 @@ screenshot pixel metrics
 
 This replaces speculation with a timeline.
 
-### D. Screenshot-as-data evidence
+## D. Screenshot-as-data evidence
 
 Even without a vision model, screenshots can be tested. The agent can compute:
 
-```text
+``` text
 non-background pixel count
 foreground/background color contrast
 number of unique colors
@@ -342,18 +341,18 @@ difference from expected/golden screenshot
 
 Use packages such as:
 
-```text
+``` text
 pngjs
 sharp
 pixelmatch
 ssim.js or resemblejs, if needed
 ```
 
-`pixelmatch` is a small JS pixel-level image comparison library originally created to compare screenshots in tests. ([GitHub][5]) Playwright itself uses pixelmatch for screenshot comparisons and allows configuring diff thresholds. ([Playwright][2])
+`pixelmatch` is a small JS pixel-level image comparison library originally created to compare screenshots in tests. ([GitHub](https://github.com/mapbox/pixelmatch)) Playwright itself uses pixelmatch for screenshot comparisons and allows configuring diff thresholds. ([Playwright](https://playwright.dev/docs/test-snapshots))
 
 A simple “not blank” test:
 
-```ts
+``` ts
 import { PNG } from 'pngjs';
 
 function imageStats(buffer: Buffer) {
@@ -395,7 +394,7 @@ That is not as strong as vision, but it catches a black rectangle.
 
 A stronger test compares two states:
 
-```text
+``` text
 before typing screenshot
 after nvim initial screen screenshot
 after typing screenshot
@@ -403,7 +402,7 @@ after typing screenshot
 
 Assertions:
 
-```text
+``` text
 initial terminal screenshot differs from blank baseline;
 after typing screenshot differs from before;
 diff bounding box is inside terminal pane;
@@ -412,7 +411,7 @@ preview screenshot differs after markdown edit.
 
 Using `pixelmatch`:
 
-```ts
+``` ts
 const diffPixels = pixelmatch(
   blank.data,
   actual.data,
@@ -427,14 +426,14 @@ expect(diffPixels).toBeGreaterThan(1000);
 
 For the specific Hyprland/workspace issue, a useful non-vision test is:
 
-```text
+``` text
 If terminal buffer has content and DOM rows have content,
 then terminal screenshot must not be visually blank.
 ```
 
 That is the key triage invariant.
 
-```ts
+``` ts
 const state = await page.evaluate(() => window.__debugTerminal());
 expect(state.firstLines.join('\n')).toContain('NVIM_SENTINEL');
 
@@ -445,7 +444,7 @@ expect(stats.nonDominantRatio).toBeGreaterThan(0.01);
 
 If that fails, the test has proven:
 
-```text
+``` text
 not PTY;
 not nvim;
 not xterm buffer;
@@ -455,13 +454,13 @@ actual visual paint is failing.
 
 That is already a real diagnosis.
 
-## Required logging discipline
+# Required logging discipline
 
 The logs should be structured, written to files, read by the agent, and asserted in tests. Console spam is not enough.
 
 Use JSONL:
 
-```json
+``` json
 {"ts":1710000000.123,"event":"app.start","test":"cert_initial_render","file":"/tmp/doc.md"}
 {"ts":1710000000.456,"event":"pty.spawn.start","argv":["nvim","--listen","/tmp/nvim.sock","/tmp/doc.md"]}
 {"ts":1710000000.789,"event":"pty.spawn.success","pid":12345}
@@ -477,7 +476,7 @@ Use JSONL:
 
 Every test should write an artifact directory:
 
-```text
+``` text
 artifacts/<test-name>/
   trace.jsonl
   browser-console.jsonl
@@ -498,7 +497,7 @@ artifacts/<test-name>/
 
 The agent must read these files itself before changing code. The process should be:
 
-```text
+``` text
 run failing test
 open trace.jsonl
 open terminal-debug snapshots
@@ -512,7 +511,7 @@ compare new artifacts to old artifacts
 
 The classification should be mechanical:
 
-```text
+``` text
 Case 1:
   nvim socket not ready
   => process/socket failure
@@ -548,11 +547,11 @@ Case 8:
 
 This prevents guessing.
 
-## Concrete tests the agent should write
+# Concrete tests the agent should write
 
-### Visual-enabled test
+## Visual-enabled test
 
-```ts
+``` ts
 test('vision: initial terminal is visibly painted', async ({ page }) => {
   await page.goto(appUrl);
   await expect.poll(() => status()).toMatchObject({ nvimReady: true });
@@ -575,9 +574,9 @@ test('vision: initial terminal is visibly painted', async ({ page }) => {
 });
 ```
 
-### Non-vision equivalent
+## Non-vision equivalent
 
-```ts
+``` ts
 test('nonvision: xterm buffer, DOM, and pixels agree', async ({ page }) => {
   await page.goto(appUrl);
   await expect.poll(() => status()).toMatchObject({ nvimReady: true });
@@ -602,9 +601,9 @@ test('nonvision: xterm buffer, DOM, and pixels agree', async ({ page }) => {
 });
 ```
 
-### Timeline test for the missing-initial-render bug
+## Timeline test for the missing-initial-render bug
 
-```ts
+``` ts
 test('initial render timeline is observable', async ({ page }) => {
   await page.goto(appUrl);
 
@@ -628,11 +627,11 @@ test('initial render timeline is observable', async ({ page }) => {
 
 If this fails, the artifact sequence tells the agent whether content appeared in buffer before pixels, whether DOM appeared before pixels, or whether nothing appeared at all.
 
-## Tools/packages worth adding
+# Tools/packages worth adding
 
 For the web/xterm/Pandoc app:
 
-```text
+``` text
 @playwright/test
 Playwright trace viewer
 pngjs
@@ -648,7 +647,7 @@ axe-core/playwright only for accessibility checks, not visual proof
 
 For visual debugging:
 
-```text
+``` text
 Playwright screenshots and videos
 Playwright trace.zip
 pixelmatch diffs
@@ -658,7 +657,7 @@ optional multimodal/vision inspection step
 
 For terminal-specific debugging:
 
-```text
+``` text
 xterm buffer dump via term.buffer.active.getLine(i).translateToString(true)
 @xterm/addon-serialize for terminal text/HTML serialization
 xterm event logs: onWriteParsed, onRender, onResize, onData
@@ -667,7 +666,7 @@ PTY byte counters and resize logs
 
 For OS/process debugging:
 
-```text
+``` text
 pidtree / ps-tree
 lsof for socket/file ownership
 ss or netstat for socket existence
@@ -676,7 +675,7 @@ strace only when process launch or socket behavior is unclear
 
 For browser-level debugging:
 
-```text
+``` text
 Playwright trace viewer
 page.on('console')
 page.on('pageerror')
@@ -686,9 +685,9 @@ computed-style dumps
 DOM snapshots
 ```
 
-## What agents should not do
+# What agents should not do
 
-```text
+``` text
 Do not infer renderer failure from minified xterm internals alone.
 Do not add random setTimeout/focus/refresh calls without before/after evidence.
 Do not accept `.textContent` as proof of visual paint.
@@ -698,11 +697,11 @@ Do not summarize “it looks like a font issue” unless the trace shows font/me
 Do not mark an E2E test green if it bypasses the real terminal/PTY/nvim path.
 ```
 
-## The core discipline
+# The core discipline
 
 Every failure should be reduced to a table like this:
 
-```text
+``` text
 Layer                         Evidence                         Result
 process: nvim running          process-tree.txt                 pass
 socket: remote-expr            trace event nvim.ready.success   pass
@@ -723,9 +722,3 @@ Not:
 ```
 
 That is how an agent tests the GUI itself. It does not guess. It collects independent witnesses, reads them, classifies the failing layer, and only then changes code.
-
-[1]: https://playwright.dev/docs/trace-viewer "Trace viewer | Playwright"
-[2]: https://playwright.dev/docs/test-snapshots "Visual comparisons | Playwright"
-[3]: https://xtermjs.org/docs/api/terminal/interfaces/ibufferline/ "IBufferLine"
-[4]: https://github.com/xtermjs/xterm.js/blob/master/addons/addon-serialize/typings/addon-serialize.d.ts "xterm.js/addons/addon-serialize/typings/addon-serialize.d.ts at master · xtermjs/xterm.js · GitHub"
-[5]: https://github.com/mapbox/pixelmatch "GitHub - mapbox/pixelmatch: The smallest, simplest and fastest JavaScript pixel-level image comparison library · GitHub"
