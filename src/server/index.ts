@@ -434,11 +434,17 @@ export function createApp(config: ServerConfig) {
         try {
           const targetPath = resolveInside(workspaceRoot, trimmed);
           if (!existsSync(targetPath) || !statSync(targetPath).isFile()) {
-            res.json({ ok: false, error: `Selected path "${trimmed}" does not exist or is not a file.` });
+            res.json({
+              ok: false,
+              error: `Selected path "${trimmed}" does not exist or is not a file.`,
+            });
             return;
           }
           if (!isMarkdownFile(targetPath)) {
-            res.json({ ok: false, error: `Selected path "${trimmed}" is not a markdown file.` });
+            res.json({
+              ok: false,
+              error: `Selected path "${trimmed}" is not a markdown file.`,
+            });
             return;
           }
 
@@ -453,7 +459,8 @@ export function createApp(config: ServerConfig) {
             content,
           });
         } catch (innerErr) {
-          const message = innerErr instanceof Error ? innerErr.message : String(innerErr);
+          const message =
+            innerErr instanceof Error ? innerErr.message : String(innerErr);
           res.json({ ok: false, error: message });
         }
       });
@@ -593,7 +600,9 @@ export function createApp(config: ServerConfig) {
     }
 
     if (typeof renderCommand !== 'string' || renderCommand.trim() === '') {
-      res.status(400).json({ error: 'renderCommand must be a non-empty shell command' });
+      res
+        .status(400)
+        .json({ error: 'renderCommand must be a non-empty shell command' });
       return;
     }
 
@@ -702,7 +711,7 @@ export function createApp(config: ServerConfig) {
       }
 
       const parsed = parse(config.renderCommand).filter(
-        (entry): entry is string => typeof entry === 'string'
+        (entry): entry is string => typeof entry === 'string',
       );
 
       const activeFilters = new Set<string>();
@@ -744,7 +753,9 @@ export function createApp(config: ServerConfig) {
   app.post('/api/filters', (req, res) => {
     const { enabled } = req.body as { enabled?: unknown };
     if (!Array.isArray(enabled)) {
-      res.status(400).json({ error: 'enabled field must be an array of string paths/names' });
+      res
+        .status(400)
+        .json({ error: 'enabled field must be an array of string paths/names' });
       return;
     }
 
@@ -760,7 +771,7 @@ export function createApp(config: ServerConfig) {
       const absFiltersDir = resolve(filtersDir);
 
       const parsed = parse(config.renderCommand).filter(
-        (entry): entry is string => typeof entry === 'string'
+        (entry): entry is string => typeof entry === 'string',
       );
 
       const newArgs: string[] = [];
@@ -792,7 +803,9 @@ export function createApp(config: ServerConfig) {
 
       for (const filterItem of enabled) {
         if (typeof filterItem !== 'string') continue;
-        const filename = filterItem.endsWith('.lua') ? basename(filterItem) : `${basename(filterItem)}.lua`;
+        const filename = filterItem.endsWith('.lua')
+          ? basename(filterItem)
+          : `${basename(filterItem)}.lua`;
         const pathOption = join(config.filtersDir ?? '~/.pandoc/filters', filename);
         newArgs.push(`--lua-filter=${pathOption}`);
       }
@@ -830,12 +843,20 @@ export function createApp(config: ServerConfig) {
       documentPath?: unknown;
     };
 
-    if (typeof type !== 'string' || typeof filename !== 'string' || typeof documentPath !== 'string') {
+    if (
+      typeof type !== 'string' ||
+      typeof filename !== 'string' ||
+      typeof documentPath !== 'string'
+    ) {
       res.status(400).json({ error: 'type, filename, and documentPath are required' });
       return;
     }
 
-    if (config.isTempFile || !config.file || resolveUserPath(config, documentPath) !== config.file) {
+    if (
+      config.isTempFile ||
+      !config.file ||
+      resolveUserPath(config, documentPath) !== config.file
+    ) {
       res.status(409).json({ error: 'save the document before adding figures' });
       return;
     }
@@ -858,28 +879,31 @@ export function createApp(config: ServerConfig) {
 
       let template = '';
       if (type === 'qtikz' || type === 'tikzit') {
-        template = [
-          '\\begin{tikzpicture}',
-          '  \\draw (0,0) circle (1in);',
-          '\\end{tikzpicture}',
-        ].join('\n') + '\n';
+        template =
+          [
+            '\\begin{tikzpicture}',
+            '  \\draw (0,0) circle (1in);',
+            '\\end{tikzpicture}',
+          ].join('\n') + '\n';
       } else if (type === 'inkscape') {
-        template = [
-          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">',
-          '  <circle cx="50" cy="50" r="40" stroke="black" stroke-width="3" fill="red" />',
-          '</svg>',
-        ].join('\n') + '\n';
+        template =
+          [
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">',
+            '  <circle cx="50" cy="50" r="40" stroke="black" stroke-width="3" fill="red" />',
+            '</svg>',
+          ].join('\n') + '\n';
       } else if (type === 'xournal') {
-        template = [
-          '<?xml version="1.0" standalone="no"?>',
-          '<xournal version="0.4.8.2016">',
-          '<title>Xournal Document</title>',
-          '<page width="612.00000000" height="792.00000000">',
-          '<background type="solid" color="#ffffffff" style="plain"/>',
-          '<layer/>',
-          '</page>',
-          '</xournal>',
-        ].join('\n') + '\n';
+        template =
+          [
+            '<?xml version="1.0" standalone="no"?>',
+            '<xournal version="0.4.8.2016">',
+            '<title>Xournal Document</title>',
+            '<page width="612.00000000" height="792.00000000">',
+            '<background type="solid" color="#ffffffff" style="plain"/>',
+            '<layer/>',
+            '</page>',
+            '</xournal>',
+          ].join('\n') + '\n';
       }
 
       writeFileSync(figurePath, template, 'utf-8');
@@ -897,7 +921,10 @@ export function createApp(config: ServerConfig) {
 
   // POST /api/diagram/launch - launch desktop application pointing to the newly created asset
   app.post('/api/diagram/launch', (req, res) => {
-    const { absolutePath, type } = req.body as { absolutePath?: unknown; type?: unknown };
+    const { absolutePath, type } = req.body as {
+      absolutePath?: unknown;
+      type?: unknown;
+    };
     if (typeof absolutePath !== 'string' || typeof type !== 'string') {
       res.status(400).json({ error: 'absolutePath and type are required' });
       return;
@@ -964,20 +991,20 @@ export function createApp(config: ServerConfig) {
         '  #pandoc-preview-btn-export:active { transform: translateY(0); }',
         '</style>',
         '<script>',
-        '  document.getElementById(\'pandoc-preview-btn-export\').addEventListener(\'click\', () => {',
-        '    let code = \'\';',
-        '    const textAreas = Array.from(document.querySelectorAll(\'textarea\'));',
+        "  document.getElementById('pandoc-preview-btn-export').addEventListener('click', () => {",
+        "    let code = '';",
+        "    const textAreas = Array.from(document.querySelectorAll('textarea'));",
         '    for (const ta of textAreas) {',
-        '      if (ta.value.includes(\'\\\\begin{tikzcd}\') || ta.value.includes(\'\\\\begin{tikzpicture}\')) {',
+        "      if (ta.value.includes('\\\\begin{tikzcd}') || ta.value.includes('\\\\begin{tikzpicture}')) {",
         '        code = ta.value;',
         '        break;',
         '      }',
         '    }',
         '    if (!code) {',
-        '      const elements = Array.from(document.querySelectorAll(\'div, pre, code, p\'));',
+        "      const elements = Array.from(document.querySelectorAll('div, pre, code, p'));",
         '      for (const el of elements) {',
-        '        const text = el.textContent || \'\';',
-        '        if (text.includes(\'\\\\begin{tikzcd}\') || text.includes(\'\\\\begin{tikzpicture}\')) {',
+        "        const text = el.textContent || '';",
+        "        if (text.includes('\\\\begin{tikzcd}') || text.includes('\\\\begin{tikzpicture}')) {",
         '          code = text;',
         '          break;',
         '        }',
@@ -987,21 +1014,21 @@ export function createApp(config: ServerConfig) {
         '    const tikzMatch = code.match(/\\\\begin\\{tikzpicture\\}[\\s\\S]*?\\\\end\\{tikzpicture\\}/);',
         '    const extracted = tikzcdMatch ? tikzcdMatch[0] : (tikzMatch ? tikzMatch[0] : code.trim());',
         '    ',
-        '    if (extracted && (extracted.includes(\'\\\\begin{\') || extracted.includes(\'\\\\draw\'))) {',
+        "    if (extracted && (extracted.includes('\\\\begin{') || extracted.includes('\\\\draw'))) {",
         '      window.parent.postMessage({',
-        '        type: \'diagram-export\',',
+        "        type: 'diagram-export',",
         '        code: extracted',
-        '      }, \'*\');',
-        '      const statusEl = document.getElementById(\'pandoc-preview-status\');',
-        '      statusEl.innerText = \'Diagram exported successfully!\';',
-        '      statusEl.style.color = \'#a6e3a1\';',
+        "      }, '*');",
+        "      const statusEl = document.getElementById('pandoc-preview-status');",
+        "      statusEl.innerText = 'Diagram exported successfully!';",
+        "      statusEl.style.color = '#a6e3a1';",
         '    } else {',
-        '      const statusEl = document.getElementById(\'pandoc-preview-status\');',
-        '      statusEl.innerText = \'Could not find TikZ/LaTeX code in tool output. Please trigger export inside the tool first.\';',
-        '      statusEl.style.color = \'#f38ba8\';',
+        "      const statusEl = document.getElementById('pandoc-preview-status');",
+        "      statusEl.innerText = 'Could not find TikZ/LaTeX code in tool output. Please trigger export inside the tool first.';",
+        "      statusEl.style.color = '#f38ba8';",
         '    }',
         '  });',
-        '</script>'
+        '</script>',
       ].join('\n');
 
       if (html.includes('</body>')) {
@@ -1147,7 +1174,7 @@ export function createApp(config: ServerConfig) {
     }
 
     const targetPath = typeof path === 'string' ? path : config.file;
-    if (!targetPath || config.isTempFile) {
+    if (!targetPath || (typeof path !== 'string' && config.isTempFile)) {
       res
         .status(400)
         .json({ ok: false, error: 'no file path: save the document first' });
