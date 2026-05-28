@@ -47,8 +47,8 @@ type QuickOpenEntry = {
 };
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const SOURCE_CLIENT_DIR = resolve(__dirname, '..', 'client');
-const BUILT_CLIENT_DIR = resolve(process.cwd(), 'dist', 'client');
+const SOURCE_CLIENT_DIR = resolve(__dirname, '..', '..', 'src', 'client');
+const BUILT_CLIENT_DIR = resolve(__dirname, '..', '..', 'dist', 'client');
 const ZOTERO_CAYW_URL = 'http://127.0.0.1:23119/better-bibtex/cayw';
 
 function currentFileContent(config: ServerConfig): string {
@@ -163,24 +163,6 @@ export function createApp(config: ServerConfig) {
   });
 
   // Serve other static files from client directory
-  if (process.env.MOCK_MIME_FAIL === 'true') {
-    app.use((req, res, next) => {
-      const originalSetHeader = res.setHeader;
-      res.setHeader = function (name: string, value: any) {
-        if (name.toLowerCase() === 'content-type' && typeof value === 'string') {
-          if (
-            value.includes('javascript') ||
-            value.includes('wasm') ||
-            value.includes('css')
-          ) {
-            return originalSetHeader.call(this, name, 'application/octet-stream');
-          }
-        }
-        return originalSetHeader.apply(this, arguments as any);
-      };
-      next();
-    });
-  }
   app.use(express.static(clientDir));
 
   app.get('/api/preview-assets', (req, res) => {

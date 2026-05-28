@@ -43,8 +43,6 @@ test.describe('Production Static Asset Resolution MIME Safety', () => {
       cwd: tempCwd,
       env: {
         ...process.env,
-        // Make sure we do NOT use MOCK_MIME_FAIL
-        MOCK_MIME_FAIL: 'false',
       },
     });
 
