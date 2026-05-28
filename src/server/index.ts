@@ -1,5 +1,4 @@
-import express from 'express';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import {
   extractFilterPaths,
   removeFilterFlags,
@@ -95,6 +94,31 @@ export interface ServerConfig {
   filtersDir: string;
   debounceMs: number;
   launcherCommand?: string;
+}
+
+const fileFingerprints = new Map<string, { mtimeMs: number; hash: string }>();
+
+function getFileFingerprint(filePath: string): { mtimeMs: number; hash: string } | null {
+  try {
+    if (!existsSync(filePath)) return null;
+    const stat = statSync(filePath);
+    if (!stat.isFile()) return null;
+    const content = readFileSync(filePath, 'utf-8');
+    const hash = createHash('sha256').update(content).digest('hex');
+    return {
+      mtimeMs: stat.mtimeMs,
+      hash,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function registerFingerprint(filePath: string) {
+  const fp = getFileFingerprint(filePath);
+  if (fp) {
+    fileFingerprints.set(filePath, fp);
+  }
 }
 
 export function createApp(config: ServerConfig) {
