@@ -51,9 +51,47 @@ const SOURCE_CLIENT_DIR = resolve(__dirname, '..', '..', 'src', 'client');
 const BUILT_CLIENT_DIR = resolve(__dirname, '..', '..', 'dist', 'client');
 const ZOTERO_CAYW_URL = 'http://127.0.0.1:23119/better-bibtex/cayw';
 
+const xdgStateHome = process.env.XDG_STATE_HOME || join(homedir(), '.local', 'state');
+const xdgStateDir = join(xdgStateHome, 'pandoc-preview');
+const backupDir = join(xdgStateDir, 'backups');
+const stateFilePath = join(xdgStateDir, 'state.json');
+
+function getBackupPath(documentPath: string): string {
+  const hash = createHash('sha256').update(resolve(documentPath)).digest('hex');
+  return join(backupDir, `${hash}.md`);
+}
+
+const saveSessionState = (state: { last_file: string; is_temp_file: boolean }) => {
+  try {
+    mkdirSync(xdgStateDir, { recursive: true });
+    writeFileSync(stateFilePath, JSON.stringify(state, null, 2), 'utf-8');
+  } catch (err) {
+    console.error(`Failed to save session state: ${err}`);
+  }
+};
+
+function getBackupContent(filePath?: string): string | null {
+  if (!filePath) return null;
+  const backupPath = getBackupPath(filePath);
+  if (existsSync(backupPath)) {
+    try {
+      return readFileSync(backupPath, 'utf-8');
+    } catch (err) {
+      console.error(`Failed to read backup from ${backupPath}: ${err}`);
+    }
+  }
+  return null;
+}
+
 function currentFileContent(config: ServerConfig): string {
-  if (config.file && existsSync(config.file)) {
-    return readFileSync(config.file, 'utf-8');
+  if (config.file) {
+    const backupContent = getBackupContent(config.file);
+    if (backupContent !== null) {
+      return backupContent;
+    }
+    if (existsSync(config.file)) {
+      return readFileSync(config.file, 'utf-8');
+    }
   }
   return config.fileContent ?? '';
 }
@@ -95,6 +133,7 @@ export interface ServerConfig {
   filtersDir: string;
   debounceMs: number;
   launcherCommand?: string;
+  recoveredFromBackup?: boolean;
 }
 
 const fileFingerprints = new Map<string, { mtimeMs: number; hash: string }>();
@@ -150,12 +189,15 @@ export function createApp(config: ServerConfig) {
       registerFingerprint(config.file);
     }
 
+    const hasBackup = !!(config.recoveredFromBackup || (config.file ? existsSync(getBackupPath(config.file)) : false));
+
     const initialScript = [
       `window.__INITIAL_CONTENT = ${safeJson(currentFileContent(config))};`,
       `window.__INITIAL_FILE = ${safeJson(config.isTempFile ? null : (config.file ?? null))};`,
       `window.__TEMP_BACKUP_FILE = ${safeJson(config.isTempFile ? (config.file ?? null) : null)};`,
       `window.__WORKSPACE_ROOT = ${safeJson(currentWorkspaceRoot(config))};`,
       `window.__IS_TEMP_FILE = ${safeJson(config.isTempFile ?? false)};`,
+      `window.__RECOVERED_FROM_BACKUP = ${safeJson(hasBackup)};`,
     ].join(' ');
     html = html.replace('</head>', `<script>${initialScript}<\/script></head>`);
 
@@ -255,6 +297,8 @@ export function createApp(config: ServerConfig) {
         }
       }
 
+      const oldPath = config.file;
+
       writeFileSyncAtomic(targetPath, markdown);
       registerFingerprint(targetPath);
       trackRecent(targetPath);
@@ -266,7 +310,34 @@ export function createApp(config: ServerConfig) {
         config.workspaceRoot = pathIsInside(workspaceRoot, targetPath)
           ? workspaceRoot
           : dirname(targetPath);
+      } else if (config.file === targetPath) {
+        config.isTempFile = false;
       }
+
+      // Clean up backup files
+      try {
+        if (oldPath) {
+          const oldBackup = getBackupPath(oldPath);
+          if (existsSync(oldBackup)) {
+            const { rmSync } = await import('node:fs');
+            rmSync(oldBackup, { force: true });
+          }
+        }
+        const targetBackup = getBackupPath(targetPath);
+        if (existsSync(targetBackup)) {
+          const { rmSync } = await import('node:fs');
+          rmSync(targetBackup, { force: true });
+        }
+      } catch (backupErr) {
+        console.error(`Failed to clean up backup files: ${backupErr}`);
+      }
+
+      // Update session state
+      saveSessionState({
+        last_file: targetPath,
+        is_temp_file: !!config.isTempFile,
+      });
+
       res.json({
         ok: true,
         path: targetPath,
@@ -278,20 +349,37 @@ export function createApp(config: ServerConfig) {
     }
   });
 
-  app.post<{ markdown: string }>('/api/backup', async (req, res) => {
-    const { markdown } = req.body;
+  app.post<{ markdown: string; path?: string }>('/api/backup', async (req, res) => {
+    const { markdown, path } = req.body;
     if (typeof markdown !== 'string') {
       res.status(400).json({ error: 'markdown field is required' });
       return;
     }
-    if (!config.isTempFile || !config.file) {
-      res.status(409).json({ error: 'no temporary backup file is active' });
+
+    let docPath: string | undefined;
+    if (typeof path === 'string' && path.length > 0) {
+      docPath = resolveUserPath(config, path);
+    } else {
+      docPath = config.file;
+    }
+
+    if (!docPath) {
+      res.status(400).json({ error: 'No active file or path provided for backup' });
       return;
     }
 
     try {
-      writeFileSync(config.file, markdown, 'utf-8');
-      res.json({ ok: true, backupPath: config.file });
+      const backupPath = getBackupPath(docPath);
+      mkdirSync(dirname(backupPath), { recursive: true });
+      writeFileSync(backupPath, markdown, 'utf-8');
+
+      // Update session state
+      saveSessionState({
+        last_file: docPath,
+        is_temp_file: docPath === config.file ? !!config.isTempFile : false,
+      });
+
+      res.json({ ok: true, backupPath });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: message });
@@ -501,6 +589,14 @@ export function createApp(config: ServerConfig) {
           const content = readFileSync(targetPath, 'utf-8');
           registerFingerprint(targetPath);
 
+          // Update active config file & track session
+          config.file = targetPath;
+          config.isTempFile = false;
+          saveSessionState({
+            last_file: targetPath,
+            is_temp_file: false,
+          });
+
           res.json({
             ok: true,
             path: relativePath,
@@ -536,6 +632,14 @@ export function createApp(config: ServerConfig) {
       }
       trackRecent(targetPath);
       registerFingerprint(targetPath);
+
+      // Update active config file & track session
+      config.file = targetPath;
+      config.isTempFile = false;
+      saveSessionState({
+        last_file: targetPath,
+        is_temp_file: false,
+      });
 
       res.json({
         path: toClientPath(workspaceRoot, targetPath),
@@ -1014,6 +1118,12 @@ export function createApp(config: ServerConfig) {
       config.isTempFile = false;
       config.workspaceRoot = dirname(targetPath);
       trackRecent(targetPath);
+
+      saveSessionState({
+        last_file: targetPath,
+        is_temp_file: false,
+      });
+
       res.json({
         ok: true,
         path: targetPath,
