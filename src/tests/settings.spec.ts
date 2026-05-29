@@ -154,4 +154,85 @@ filters_dir = "${testDir}/filters"
       await killServer(server);
     }
   });
+
+  test('Preferences fullscreen overhaul, unified Lua filters, and plugins library', async ({
+    page,
+  }) => {
+    const testDir = mkdtempSync(join(tmpdir(), 'pandoc-fullscreen-settings-'));
+    const docPath = join(testDir, 'doc.md');
+    const tomlPath = join(testDir, 'pandoc-preview.toml');
+
+    writeFileSync(docPath, '# Document\n', 'utf-8');
+
+    // Create custom pandoc-preview.toml in the test directory
+    const initialToml = `
+[render]
+debounce_ms = 750
+timeout_ms = 30000
+
+[pandoc]
+render_command = "pandoc -f markdown -t html --standalone --template=\${testDir}/templates/custom.html"
+templates_dir = "\${testDir}/templates"
+filters_dir = "\${testDir}/filters"
+`;
+    writeFileSync(tomlPath, initialToml, 'utf-8');
+
+    const templatesDir = join(testDir, 'templates');
+    const filtersDir = join(testDir, 'filters');
+    mkdirSync(templatesDir, { recursive: true });
+    mkdirSync(filtersDir, { recursive: true });
+
+    writeFileSync(join(templatesDir, 'custom.html'), '<html>\$body\$</html>', 'utf-8');
+    writeFileSync(join(filtersDir, 'test-fullscreen-filter.lua'), '-- Lua filter', 'utf-8');
+
+    const server = await launchServer(undefined, docPath, tomlPath);
+
+    try {
+      await page.goto(server.url);
+      await expect(page.locator('#editor .cm-content')).toBeVisible({ timeout: 5000 });
+
+      // 1. Open the preferences dialog
+      await page.getByRole('menuitem', { name: 'File' }).click();
+      await page.getByRole('menuitem', { name: 'Preferences...' }).click();
+
+      const dialog = page.getByRole('dialog');
+      await expect(dialog).toBeVisible();
+
+      // 2. Assert high-viewport overlay dimensions (fullscreen/large settings)
+      const box = await dialog.boundingBox();
+      expect(box).not.toBeNull();
+      if (box) {
+        // Assert width and height are large: at least 80% viewport width and height
+        // Standard playwright viewport is 1280x720. Let's assert width >= 800 and height >= 500.
+        expect(box.width).toBeGreaterThanOrEqual(800);
+        expect(box.height).toBeGreaterThanOrEqual(500);
+      }
+
+      // 3. Verify tabs in the vertical sidebar
+      const tabs = ['General', 'Pandoc Configuration', 'Lua Filters', 'Asset Resolution', 'Plugins'];
+      for (const tab of tabs) {
+        await expect(dialog.getByRole('tab', { name: tab })).toBeVisible();
+      }
+
+      // 4. Test unified Lua Filters tab
+      await dialog.getByRole('tab', { name: 'Lua Filters' }).click();
+      // Should show the scanning header or directory setting
+      await expect(dialog.getByLabel('Filters Directory')).toHaveValue(filtersDir);
+      // Should display our custom filter inside the list
+      await expect(dialog.getByText('test-fullscreen-filter.lua')).toBeVisible();
+
+      // 5. Test Plugins tab
+      await dialog.getByRole('tab', { name: 'Plugins' }).click();
+      // Should list bundled plugins, e.g. "Export to PDF"
+      await expect(dialog.getByText('Export to PDF')).toBeVisible();
+      await expect(dialog.getByText('Convert the current markdown file to PDF with Pandoc')).toBeVisible();
+
+      // Close the settings via Cancel
+      await page.getByRole('button', { name: 'Cancel' }).click();
+      await expect(dialog).not.toBeVisible();
+    } finally {
+      await killServer(server);
+    }
+  });
 });
+
