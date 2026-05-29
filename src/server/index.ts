@@ -229,6 +229,32 @@ export function createApp(config: ServerConfig) {
   const recentFiles: string[] = [];
   let currentRenderController: AbortController | null = null;
 
+  function isCommandAvailable(cmd: string): boolean {
+    const pathEnv = process.env.PATH || '';
+    const delimiter = process.platform === 'win32' ? ';' : ':';
+    const dirs = pathEnv.split(delimiter);
+    const extensions = process.platform === 'win32' ? ['.exe', '.cmd', '.bat', ''] : [''];
+
+    for (const dir of dirs) {
+      for (const ext of extensions) {
+        const fullPath = join(dir, cmd + ext);
+        if (existsSync(fullPath)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  const installedTools = {
+    qtikz: isCommandAvailable('qtikz'),
+    tikzit: isCommandAvailable('tikzit'),
+    inkscape: isCommandAvailable('inkscape'),
+    xournal: isCommandAvailable('xournalpp') || isCommandAvailable('xournal'),
+  };
+
+  const xournalCmd = isCommandAvailable('xournalpp') ? 'xournalpp' : 'xournal';
+
   function trackRecent(absolutePath: string) {
     recentFiles.splice(
       0,
@@ -267,20 +293,56 @@ export function createApp(config: ServerConfig) {
   // Serve other static files from client directory
   app.use(express.static(clientDir));
 
-  app.get('/api/preview-assets', (req, res) => {
+  // Serve preview assets relative to the document root using standard Express static serving
+  app.use('/api/preview-assets', (req, res, next) => {
     try {
       const documentRoot = currentDocumentRoot(config);
-      const requestedPath = typeof req.query.path === 'string' ? req.query.path : '';
-      const targetPath = resolveInside(documentRoot, requestedPath);
-      const targetStat = statSync(targetPath);
-      if (!targetStat.isFile() || shouldIgnore(documentRoot, targetPath)) {
+      // Strip leading slash from req.path so path.resolve resolves it inside documentRoot
+      const cleanPath = req.path.startsWith('/') ? req.path.slice(1) : req.path;
+      const targetPath = resolveInside(documentRoot, cleanPath);
+      if (shouldIgnore(documentRoot, targetPath)) {
         res.status(404).json({ error: 'asset not found' });
         return;
       }
-      res.sendFile(targetPath);
+      express.static(documentRoot, {
+        dotfiles: 'ignore',
+        fallthrough: false,
+      })(req, res, next);
     } catch {
       res.status(404).json({ error: 'asset not found' });
     }
+  });
+
+  // Intercept absolute paths and serve them if they are allowed (within central figures directory or workspace)
+  app.use((req, res, next) => {
+    const rawPath = req.path;
+    const decodedPath = decodeURIComponent(rawPath);
+    
+    let targetPath = decodedPath;
+    if (process.platform === 'win32' && targetPath.startsWith('/')) {
+      targetPath = targetPath.slice(1);
+    }
+
+    if (isAbsolute(targetPath)) {
+      const centralDir = config.figuresCentralDirectory ?? resolve(homedir(), '.pandoc/figures');
+      const workspaceRoot = currentWorkspaceRoot(config);
+      
+      const inCentral = pathIsInside(centralDir, targetPath);
+      const inWorkspace = pathIsInside(workspaceRoot, targetPath);
+
+      if ((inCentral || inWorkspace) && existsSync(targetPath)) {
+        try {
+          const stat = statSync(targetPath);
+          if (stat.isFile() && !shouldIgnore(workspaceRoot, targetPath)) {
+            res.sendFile(targetPath);
+            return;
+          }
+        } catch {
+          // Ignore errors and proceed
+        }
+      }
+    }
+    next();
   });
 
   // Pandoc render endpoint
@@ -313,8 +375,11 @@ export function createApp(config: ServerConfig) {
     // If superseded, close the connection cleanly with 204 so the client does
     // not hang waiting on a response that will never arrive.
     if (currentRenderController === controller) {
+      const protocol = req.protocol;
+      const host = req.get('host') || `localhost:${config.port}`;
+      const baseUrl = `${protocol}://${host}/api/preview-assets/`;
       res.json({
-        html: withPreviewAssetUrls(result.html, config),
+        html: injectBaseTag(result.html, baseUrl),
         durationMs: result.durationMs,
         ok: result.ok,
         stderr: result.stderr,
@@ -1036,31 +1101,9 @@ export function createApp(config: ServerConfig) {
     }
   });
 
-  function isCommandAvailable(cmd: string): boolean {
-    const pathEnv = process.env.PATH || '';
-    const delimiter = process.platform === 'win32' ? ';' : ':';
-    const dirs = pathEnv.split(delimiter);
-    const extensions = process.platform === 'win32' ? ['.exe', '.cmd', '.bat', ''] : [''];
-
-    for (const dir of dirs) {
-      for (const ext of extensions) {
-        const fullPath = join(dir, cmd + ext);
-        if (existsSync(fullPath)) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
   // GET /api/diagram/tools - check which desktop applications are installed on the system
   app.get('/api/diagram/tools', (_req, res) => {
-    res.json({
-      qtikz: isCommandAvailable('qtikz'),
-      tikzit: isCommandAvailable('tikzit'),
-      inkscape: isCommandAvailable('inkscape'),
-      xournal: isCommandAvailable('xournalpp') || isCommandAvailable('xournal'),
-    });
+    res.json(installedTools);
   });
 
   // POST /api/diagram/launch - launch desktop application pointing to the newly created asset
@@ -1079,8 +1122,14 @@ export function createApp(config: ServerConfig) {
       const ext = extname(absolutePath).toLowerCase();
       if (ext === '.tikz') toolType = 'qtikz';
       else if (ext === '.svg') toolType = 'inkscape';
-      else if (ext === '.xopp' || ext === '.xopf') toolType = 'xournal';
+      else if (ext === '.xopp' || ext === '.xopps' || ext === '.xopp') toolType = 'xournal';
       else toolType = 'inkscape';
+    }
+
+    // Fail-fast assertion: if the requested tool is not installed, reject the request immediately!
+    if (!installedTools[toolType as keyof typeof installedTools]) {
+      res.status(400).json({ error: `Desktop application for ${toolType} is not installed on this system` });
+      return;
     }
 
     let resolvedPath = absolutePath;
@@ -1091,7 +1140,7 @@ export function createApp(config: ServerConfig) {
     try {
       let cmd = toolType;
       if (toolType === 'xournal') {
-        cmd = 'xournalpp';
+        cmd = xournalCmd;
       }
 
       const child = spawn(cmd, [resolvedPath], {
@@ -1515,36 +1564,12 @@ function imageExtension(mimeType: string) {
   }
 }
 
-function withPreviewAssetUrls(html: string, config: ServerConfig) {
-  return html.replace(
-    /<!--[\s\S]*?-->|<script\b[\s\S]*?<\/script>|\bsrc=(["'])(?![A-Za-z][A-Za-z\d+.-]*:|#)([^"']+)\1/g,
-    (match, quote?: string, url?: string) => {
-      if (match.startsWith('<!--') || match.startsWith('<script')) {
-        return match;
-      }
-
-      if (!url) return match;
-
-      const centralDir = config.figuresCentralDirectory ?? resolve(homedir(), '.pandoc/figures');
-      const isCentral = pathIsInside(centralDir, url) || (
-        url.startsWith(centralDir) ||
-        url.includes('/central-figures/') ||
-        url.includes('.pandoc/figures')
-      );
-
-      if (isCentral) {
-        return `src=${quote}/api/figures/serve?path=${encodeURIComponent(url)}${quote}`;
-      }
-
-      // If the URL starts with '/' (absolute/root-relative/protocol-relative) and is not central,
-      // preserve it as-is to match the original regex negative lookahead behavior (which ignored starting with '/')
-      if (url.startsWith('/')) {
-        return match;
-      }
-
-      return `src=${quote}/api/preview-assets?path=${encodeURIComponent(url)}${quote}`;
-    },
-  );
+function injectBaseTag(html: string, baseUrl: string): string {
+  const baseTag = `<base href="${baseUrl}">`;
+  if (html.includes('<head>')) {
+    return html.replace('<head>', `<head>${baseTag}`);
+  }
+  return `<html><head>${baseTag}</head><body>${html}</body></html>`;
 }
 
 function safeJson(value: unknown) {

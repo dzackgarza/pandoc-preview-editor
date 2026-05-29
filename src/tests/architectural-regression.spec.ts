@@ -20,7 +20,7 @@ function cleanup(dir: string) {
 }
 
 test.describe('Architectural Slop Regression Tests', () => {
-  test('withPreviewAssetUrls correctly leaves comments and scripts untouched', async () => {
+  test('injectBaseTag correctly leaves comments and scripts untouched and injects base tag', async () => {
     const { dir, file } = createWorkspace();
     let server: ServerInstance | undefined;
 
@@ -28,7 +28,7 @@ test.describe('Architectural Slop Regression Tests', () => {
       server = await launchServer(undefined, file);
 
       // Post markdown containing:
-      // 1. A normal image (should be rewritten)
+      // 1. A normal image
       // 2. An HTML comment containing a mock src attribute (should NOT be rewritten)
       // 3. A <script> block with a src variable string (should NOT be rewritten)
       const markdown = [
@@ -49,8 +49,12 @@ test.describe('Architectural Slop Regression Tests', () => {
       const data = (await res.json()) as { ok: boolean; html: string };
       expect(data.ok).toBe(true);
 
-      // Normal image SHOULD be rewritten
-      expect(data.html).toContain('src="/api/preview-assets?path=figure.png"');
+      // Base tag MUST be injected
+      expect(data.html).toContain('/api/preview-assets/');
+      expect(data.html).toContain('<base href="http');
+
+      // The image src attribute remains relative and untouched
+      expect(data.html).toContain('src="figure.png"');
 
       // HTML comments and scripts SHOULD NOT be rewritten
       expect(data.html).toContain('<!-- <img src="comment.png"> -->');
@@ -61,7 +65,7 @@ test.describe('Architectural Slop Regression Tests', () => {
     }
   });
 
-  test('withPreviewAssetUrls rewrites relative src, preserves protocol/root/anchor/comment/script src', async () => {
+  test('injectBaseTag injects base href and preserves all relative and absolute src paths', async () => {
     const { dir, file } = createWorkspace();
     let server: ServerInstance | undefined;
 
@@ -70,33 +74,33 @@ test.describe('Architectural Slop Regression Tests', () => {
 
       // Markdown containing raw HTML with various src patterns
       const markdown = [
-        // Relative path — SHOULD be rewritten
+        // Relative path
         '<img src="figure.png">',
-        // Subdirectory relative — SHOULD be rewritten
+        // Subdirectory relative
         '<img src="assets/img/diagram.svg">',
-        // Absolute URL — should NOT be rewritten
+        // Absolute URL
         '<img src="https://example.com/image.png">',
-        // Root-relative — should NOT be rewritten
+        // Root-relative
         '<img src="/static/image.png">',
-        // Anchor — should NOT be rewritten
+        // Anchor
         '<img src="#section">',
-        // Data URI — should NOT be rewritten
+        // Data URI
         '<img src="data:image/png;base64,iVBORw0KGgo=">',
-        // Protocol-relative URL — should NOT be rewritten
+        // Protocol-relative URL
         '<img src="//cdn.example.com/image.png">',
-        // Comment with src looking like an image — should NOT be rewritten
+        // Comment with src looking like an image
         '<!-- <img src="comment.png"> -->',
-        // Script tag with src assignment — should NOT be rewritten
+        // Script tag with src assignment
         '<script>const src="script.png";</script>',
-        // Multi-line src attribute — SHOULD be rewritten (e.g. pandoc inline math spans)
+        // Multi-line src attribute
         '<span\n  class="math inline"\n  src="multiline.png">x</span>',
-        // Image inside a figure with multiple attributes — SHOULD be rewritten
+        // Image inside a figure with multiple attributes
         '<figure><img src="photo.jpg" alt="A photo" width="400"/></figure>',
         // Multiple images
         '<img src="first.png"><img src="second.png">',
-        // src with single quotes — SHOULD be rewritten
+        // src with single quotes
         "<img src='local.png'>",
-        // Empty src — should NOT be rewritten (stays empty)
+        // Empty src
         '<img src="">',
       ].join('\n\n');
 
@@ -112,39 +116,27 @@ test.describe('Architectural Slop Regression Tests', () => {
 
       const html = data.html;
 
-      // Multi-line src attribute SHOULD be rewritten
-      expect(html).toContain('src="/api/preview-assets?path=multiline.png"');
+      // Base tag MUST be injected
+      expect(html).toContain('/api/preview-assets/');
+      expect(html).toContain('<base href="http');
 
-      // Relative paths SHOULD be rewritten to preview-assets
-      expect(html).toContain('src="/api/preview-assets?path=figure.png"');
-      expect(html).toContain(
-        'src="/api/preview-assets?path=assets%2Fimg%2Fdiagram.svg"',
-      );
-      expect(html).toContain('src="/api/preview-assets?path=photo.jpg"');
-      expect(html).toContain('src="/api/preview-assets?path=first.png"');
-      expect(html).toContain('src="/api/preview-assets?path=second.png"');
+      // All paths SHOULD remain completely unmodified and preserved exactly as original
+      expect(html).toContain('src="multiline.png"');
+      expect(html).toContain('src="figure.png"');
+      expect(html).toContain('src="assets/img/diagram.svg"');
+      expect(html).toContain('src="photo.jpg"');
+      expect(html).toContain('src="first.png"');
+      expect(html).toContain('src="second.png"');
+      expect(html).toContain("src='local.png'");
 
-      // Single-quoted relative src SHOULD be rewritten (preserving original quotes)
-      expect(html).toContain("src='/api/preview-assets?path=local.png'");
-
-      // Protocol URLs should NOT be rewritten
+      // Protocol URLs, anchor, data, comments, empty
       expect(html).toContain('src="https://example.com/image.png"');
       expect(html).toContain('src="//cdn.example.com/image.png"');
-
-      // Root-relative should NOT be rewritten
       expect(html).toContain('src="/static/image.png"');
-
-      // Anchor should NOT be rewritten
       expect(html).toContain('src="#section"');
-
-      // Data URI should NOT be rewritten
       expect(html).toContain('src="data:image/png;base64,iVBORw0KGgo="');
-
-      // Comments and scripts should NOT be rewritten
       expect(html).toContain('<!-- <img src="comment.png"> -->');
       expect(html).toContain('<script>const src="script.png";</script>');
-
-      // Empty src should remain empty
       expect(html).toContain('src=""');
     } finally {
       if (server) await killServer(server);

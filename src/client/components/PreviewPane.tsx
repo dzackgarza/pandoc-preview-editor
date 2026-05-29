@@ -115,17 +115,16 @@ export function PreviewPane({ html }: { html: string }) {
           let figurePath: string | null = null;
           try {
             const url = new URL(srcValue, window.location.origin);
-            if (url.pathname.includes('/api/preview-assets') || url.pathname.includes('/api/figures/serve')) {
+            if (url.pathname.startsWith('/api/preview-assets/')) {
+              figurePath = decodeURIComponent(url.pathname.replace('/api/preview-assets/', ''));
+            } else if (url.pathname.startsWith('/api/figures/serve')) {
               figurePath = url.searchParams.get('path');
+            } else {
+              // Direct absolute path or relative web path
+              figurePath = decodeURIComponent(url.pathname);
             }
           } catch (err) {
-            console.error('URL parsing error:', err);
-          }
-
-          if (!figurePath) {
-            if (srcValue.includes('/central-figures/') || srcValue.includes('.pandoc/figures')) {
-              figurePath = srcValue;
-            }
+            figurePath = srcValue;
           }
 
           if (!figurePath) return;
