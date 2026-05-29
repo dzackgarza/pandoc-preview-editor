@@ -46,6 +46,14 @@ export function StatusCluster({
         {saveView.icon}
         {saveView.label}
       </span>
+      {saveState === 'dirty' ? (
+        <span
+          id="auto-backup-state"
+          className="flex items-center gap-1.5 text-[#e5c76b]"
+        >
+          ephemeral auto-backup active
+        </span>
+      ) : null}
       <span
         id="plugin-state"
         className={cn('flex items-center gap-1.5', pluginView.className)}
