@@ -59,6 +59,7 @@ declare global {
     __TEMP_BACKUP_FILE?: string | null;
     __WORKSPACE_ROOT?: string;
     __IS_TEMP_FILE?: boolean;
+    __RECOVERED_FROM_BACKUP?: boolean;
     __PANDOC_PREVIEW_STATE__?: {
       markdown: string;
       currentFile: string | null;
@@ -83,7 +84,9 @@ export function App() {
   const [status, setStatus] = useState<RenderStatus>('ready');
   const [durationMs, setDurationMs] = useState<number | null>(null);
   const [diagnostics, setDiagnostics] = useState<{ summary: string; detail: string } | null>(null);
-  const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [saveState, setSaveState] = useState<SaveState>(
+    window.__RECOVERED_FROM_BACKUP ? 'dirty' : 'idle'
+  );
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [pluginState, setPluginState] = useState<PluginState>('idle');
   const [plugins, setPlugins] = useState<PluginMetadata[]>([]);
@@ -106,6 +109,16 @@ export function App() {
   useEffect(() => {
     window.__PANDOC_PREVIEW_STATE__ = { markdown: markdownText, currentFile };
   }, [currentFile, markdownText]);
+
+  useEffect(() => {
+    if (window.__RECOVERED_FROM_BACKUP) {
+      toast({
+        title: 'Unsaved Changes Recovered',
+        description: 'Your unsaved changes were recovered from backup.',
+        variant: 'default',
+      });
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -205,16 +218,19 @@ export function App() {
   }, [clearRenderTimer, markdownText, scheduleRender]);
 
   useEffect(() => {
-    if (!isTempFile || window.__TEMP_BACKUP_FILE == null) return;
+    if (saveState !== 'dirty') return;
     const handle = window.setTimeout(() => {
       void fetch('/api/backup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ markdown: markdownText }),
+        body: JSON.stringify({
+          markdown: markdownText,
+          path: currentFile,
+        }),
       });
     }, 500);
     return () => window.clearTimeout(handle);
-  }, [isTempFile, markdownText]);
+  }, [saveState, markdownText, currentFile]);
 
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
