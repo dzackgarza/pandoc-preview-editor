@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,6 +8,14 @@ import {
   setEditorMarkdown,
 } from './editor-helpers.js';
 import { killServer, launchServer } from './helpers.js';
+
+async function openMenu(page: Page, name: string) {
+  await page.getByRole('menuitem', { name }).click();
+}
+
+async function clickMenuItem(page: Page, name: string) {
+  await page.getByRole('menuitem', { name, exact: true }).click();
+}
 
 test.describe('Bug fixes TDD', () => {
   let pageErrors: Error[] = [];
