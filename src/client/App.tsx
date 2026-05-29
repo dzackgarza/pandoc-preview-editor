@@ -21,7 +21,7 @@ import { FilterSettingsModal } from './components/FilterSettingsModal.jsx';
 import { DiagramModal } from './components/DiagramModal.jsx';
 import { UnsavedChangesDialog } from './components/UnsavedChangesDialog.jsx';
 
-export type RenderStatus = 'ready' | 'rendering' | 'error' | 'saved';
+export type RenderStatus = 'idle' | 'rendering' | 'error';
 export type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
 export type PluginState = 'idle' | 'running' | 'complete' | 'error';
 
@@ -81,7 +81,7 @@ export function App() {
   );
   const [isTempFile, setIsTempFile] = useState(window.__IS_TEMP_FILE ?? false);
   const [previewHtml, setPreviewHtml] = useState('');
-  const [status, setStatus] = useState<RenderStatus>('ready');
+  const [status, setStatus] = useState<RenderStatus>('idle');
   const [durationMs, setDurationMs] = useState<number | null>(null);
   const [diagnostics, setDiagnostics] = useState<{ summary: string; detail: string } | null>(null);
   const [saveState, setSaveState] = useState<SaveState>(
@@ -171,7 +171,7 @@ export function App() {
 
       if (data.ok && typeof data.html === 'string') {
         setPreviewHtml(data.html);
-        setStatus('ready');
+        setStatus('idle');
         setDurationMs(data.durationMs ?? null);
         setDiagnostics(null);
       } else {
@@ -321,11 +321,9 @@ export function App() {
       setIsTempFile(false);
       setSaveState('saved');
       setSavedAt(new Date());
-      setStatus('saved');
       return savedPath;
     } catch (err) {
       setSaveState('error');
-      setStatus('error');
       const message = err instanceof Error ? err.message : String(err);
       toast({
         title: 'Save failed',
@@ -574,7 +572,6 @@ export function App() {
       } catch (err) {
         setSaveState('error');
         setPluginState('idle');
-        setStatus('error');
 
         const message = err instanceof Error ? err.message : String(err);
         toast({
@@ -618,10 +615,8 @@ export function App() {
       setIsTempFile(false);
       setSaveState('dirty');
       setSavedAt(null);
-      setStatus('ready');
     } catch (err) {
       setSaveState('error');
-      setStatus('error');
       const message = err instanceof Error ? err.message : String(err);
       toast({
         title: 'Create file failed',

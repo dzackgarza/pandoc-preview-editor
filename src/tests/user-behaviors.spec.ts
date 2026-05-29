@@ -166,7 +166,7 @@ test.describe('user workflows', () => {
       await openMenu(page, 'Plugin');
       await page.getByRole('menuitem', { name: 'Export' }).hover();
       await clickMenuItem(page, 'Export to HTML');
-      await expect(page.locator('#plugin-state')).toContainText('plugin complete', {
+      await expect(page.locator('#plugin-state')).toContainText('idle', {
         timeout: 10000,
       });
       await expect(page.locator('#save-state')).toContainText('saved', {

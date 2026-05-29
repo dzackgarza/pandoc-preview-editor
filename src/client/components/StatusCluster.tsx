@@ -1,7 +1,7 @@
 import { Clock3, CheckCircle2, XCircle, Save, Plug, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils.js';
 
-export type RenderStatus = 'ready' | 'rendering' | 'error' | 'saved';
+export type RenderStatus = 'idle' | 'rendering' | 'error';
 export type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
 export type PluginState = 'idle' | 'running' | 'complete' | 'error';
 
@@ -35,10 +35,12 @@ export function StatusCluster({
         {statusView.icon}
         {statusView.label}
       </span>
-      <span id="duration" className="flex items-center gap-1.5 tabular-nums">
-        <Clock3 className="h-3.5 w-3.5" />
-        {durationMs == null ? 'pending' : `${durationMs}ms`}
-      </span>
+      {durationMs != null ? (
+        <span id="duration" className="flex items-center gap-1.5 tabular-nums">
+          <Clock3 className="h-3.5 w-3.5" />
+          {durationMs}ms
+        </span>
+      ) : null}
       <span
         id="save-state"
         className={cn('flex items-center gap-1.5', saveView.className)}
@@ -89,12 +91,6 @@ function statusDisplay(status: RenderStatus) {
         label: 'error',
         className: 'text-[#ff9b8f]',
         icon: <XCircle className="h-3.5 w-3.5" />,
-      };
-    case 'saved':
-      return {
-        label: 'saved',
-        className: 'text-[#86d59f]',
-        icon: <CheckCircle2 className="h-3.5 w-3.5" />,
       };
     default:
       return {
