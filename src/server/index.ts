@@ -373,6 +373,10 @@ export function createApp(config: ServerConfig) {
       mkdirSync(dirname(backupPath), { recursive: true });
       writeFileSync(backupPath, markdown, 'utf-8');
 
+      if (docPath === config.file && config.isTempFile) {
+        writeFileSync(docPath, markdown, 'utf-8');
+      }
+
       // Update session state
       saveSessionState({
         last_file: docPath,
