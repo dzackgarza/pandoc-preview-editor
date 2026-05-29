@@ -57,7 +57,7 @@ export async function launchServer(
     env: {
       ...process.env,
       NODE_ENV: 'test',
-      HOME: tempHome,
+      XDG_CONFIG_HOME: join(tempHome, '.config'),
       XDG_STATE_HOME: join(tempHome, '.local', 'state'),
     },
   });
