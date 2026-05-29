@@ -134,6 +134,7 @@ export interface ServerConfig {
   debounceMs: number;
   launcherCommand?: string;
   recoveredFromBackup?: boolean;
+  restoreLastFile?: boolean;
 }
 
 const fileFingerprints = new Map<string, { mtimeMs: number; hash: string }>();
