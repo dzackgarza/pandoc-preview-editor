@@ -536,7 +536,7 @@ export function App() {
 
         setSaveState('saved');
         setSavedAt(new Date());
-        setPluginState('complete');
+        setPluginState('idle');
 
         const handleOpen = async (e: React.MouseEvent) => {
           e.preventDefault();
@@ -573,7 +573,7 @@ export function App() {
         });
       } catch (err) {
         setSaveState('error');
-        setPluginState('error');
+        setPluginState('idle');
         setStatus('error');
 
         const message = err instanceof Error ? err.message : String(err);
