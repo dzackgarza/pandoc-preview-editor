@@ -38,7 +38,6 @@ export function TopMenuBar({
   onSave,
   onToggleExplorer,
   onOpenSettings,
-  onOpenFilterSettings,
   onOpenDiagram,
   plugins,
 }: {
@@ -54,7 +53,6 @@ export function TopMenuBar({
   onSave: () => void;
   onToggleExplorer: () => void;
   onOpenSettings: () => void;
-  onOpenFilterSettings: () => void;
   onOpenDiagram: () => void;
   plugins: PluginMetadata[];
 }) {
@@ -84,10 +82,6 @@ export function TopMenuBar({
               <MenuItem onSelect={onOpenSettings}>
                 <Settings className="h-4 w-4" />
                 Preferences...
-              </MenuItem>
-              <MenuItem onSelect={onOpenFilterSettings}>
-                <Filter className="h-4 w-4" />
-                Lua Filters...
               </MenuItem>
               <Menubar.Separator className="my-1 h-px bg-[#343946]" />
               <MenuItem onSelect={onSave} shortcut="Ctrl+S">

@@ -723,18 +723,20 @@ export function createApp(config: ServerConfig) {
       debounceMs: config.debounceMs ?? 750,
       timeoutMs: config.timeoutMs ?? 30000,
       renderCommand: config.renderCommand,
+      restoreLastFile: config.restoreLastFile ?? true,
     });
   });
 
   // POST /api/config
   app.post('/api/config', (req, res) => {
-    const { templatesDir, filtersDir, debounceMs, timeoutMs, renderCommand } =
+    const { templatesDir, filtersDir, debounceMs, timeoutMs, renderCommand, restoreLastFile } =
       req.body as {
         templatesDir: string;
         filtersDir: string;
         debounceMs: number;
         timeoutMs: number;
         renderCommand: string;
+        restoreLastFile?: boolean;
       };
 
     if (
@@ -768,6 +770,7 @@ export function createApp(config: ServerConfig) {
       config.debounceMs = debounceMs;
       config.timeoutMs = timeoutMs;
       config.renderCommand = renderCommand;
+      config.restoreLastFile = restoreLastFile ?? true;
 
       // Persist to TOML file
       if (config.configPath) {
@@ -775,6 +778,7 @@ export function createApp(config: ServerConfig) {
           render: {
             debounce_ms: debounceMs,
             timeout_ms: timeoutMs,
+            restore_last_file: restoreLastFile ?? true,
           },
           pandoc: {
             render_command: renderCommand,

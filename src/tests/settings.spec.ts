@@ -81,8 +81,8 @@ filters_dir = "${testDir}/filters"
       await expect(dialog).toBeVisible();
 
       // 2. Verify initial states from the TOML config
-      // Navigate to the Pandoc Flags tab
-      await dialog.getByRole('tab', { name: 'Pandoc Flags' }).click();
+      // Navigate to the Pandoc Configuration tab
+      await dialog.getByRole('tab', { name: 'Pandoc Configuration' }).click();
       const standaloneCheckbox = dialog.locator('input[aria-label="Standalone"]');
       await expect(standaloneCheckbox).toBeChecked();
 
@@ -110,8 +110,8 @@ filters_dir = "${testDir}/filters"
       const updatedValue = initialArgs.replace('--standalone', '').trim();
       await argsTextarea.fill(updatedValue);
 
-      // Go back to Pandoc Flags tab to verify the checkbox un-checked
-      await dialog.getByRole('tab', { name: 'Pandoc Flags' }).click();
+      // Go back to Pandoc Configuration tab to verify the checkbox un-checked
+      await dialog.getByRole('tab', { name: 'Pandoc Configuration' }).click();
       await expect(standaloneCheckbox).not.toBeChecked();
 
       // 5. Check persistence by saving
@@ -171,9 +171,9 @@ debounce_ms = 750
 timeout_ms = 30000
 
 [pandoc]
-render_command = "pandoc -f markdown -t html --standalone --template=\${testDir}/templates/custom.html"
-templates_dir = "\${testDir}/templates"
-filters_dir = "\${testDir}/filters"
+render_command = "pandoc -f markdown -t html --standalone --template=${testDir}/templates/custom.html"
+templates_dir = "${testDir}/templates"
+filters_dir = "${testDir}/filters"
 `;
     writeFileSync(tomlPath, initialToml, 'utf-8');
 
@@ -219,7 +219,7 @@ filters_dir = "\${testDir}/filters"
       // Should show the scanning header or directory setting
       await expect(dialog.getByLabel('Filters Directory')).toHaveValue(filtersDir);
       // Should display our custom filter inside the list
-      await expect(dialog.getByText('test-fullscreen-filter.lua')).toBeVisible();
+      await expect(dialog.getByText('test-fullscreen-filter.lua', { exact: true })).toBeVisible();
 
       // 5. Test Plugins tab
       await dialog.getByRole('tab', { name: 'Plugins' }).click();

@@ -17,7 +17,6 @@ import { StatusCluster } from './components/StatusCluster.jsx';
 import { FileSelectorDialog } from './components/FileSelectorDialog.jsx';
 import { Toaster } from './components/Toaster.jsx';
 import { SettingsDialog } from './components/SettingsDialog.jsx';
-import { FilterSettingsModal } from './components/FilterSettingsModal.jsx';
 import { DiagramModal } from './components/DiagramModal.jsx';
 import { UnsavedChangesDialog } from './components/UnsavedChangesDialog.jsx';
 
@@ -97,7 +96,6 @@ export function App() {
   const [saveAsDialogDescription, setSaveAsDialogDescription] = useState<string | undefined>(undefined);
   const [workspaceRoot, setWorkspaceRoot] = useState(window.__WORKSPACE_ROOT ?? '');
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [filterSettingsOpen, setFilterSettingsOpen] = useState(false);
   const [diagramOpen, setDiagramOpen] = useState(false);
   const renderVersion = useRef(0);
   const debounceTimer = useRef<number | null>(null);
@@ -753,7 +751,6 @@ export function App() {
           onSave={saveCurrent}
           onToggleExplorer={() => setExplorerOpen((open) => !open)}
           onOpenSettings={() => setSettingsOpen(true)}
-          onOpenFilterSettings={() => setFilterSettingsOpen(true)}
           onOpenDiagram={() => setDiagramOpen(true)}
           plugins={plugins}
         />
@@ -848,11 +845,6 @@ export function App() {
         <SettingsDialog
           open={settingsOpen}
           onClose={() => setSettingsOpen(false)}
-          onSave={() => renderImmediate(markdownText)}
-        />
-        <FilterSettingsModal
-          open={filterSettingsOpen}
-          onClose={() => setFilterSettingsOpen(false)}
           onSave={() => renderImmediate(markdownText)}
         />
         <DiagramModal
