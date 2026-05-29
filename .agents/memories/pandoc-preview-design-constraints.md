@@ -78,3 +78,14 @@ Therefore:
 - **Dependency Aversion & OS Integration:** Do NOT attempt to reinvent complex interface modals (such as file-finding, workspace scanning, fuzzy matching, or graphic drawing) inside the browser client or server-side Javascript code. Spawning pre-existing, native OS tools keeps the codebase extremely lightweight and integrates seamlessly with the user's existing desktop workflows.
 - **Headless Assumptions Do Not Apply:** Flagging host GUI/X11 process spawning as an "error" or a "boundary violation" is a fundamental misunderstanding of the application's local companion architecture. The application is, by design, a companion to your local terminal and desktop environment.
 
+## Local Filesystem Autosave & Recovery Philosophy (The Anti-Sandbox Rule)
+
+For a plain text editor, losing ephemeral editing state (unsaved buffers, draft text) is catastrophic. The application must treat the host filesystem as the Single Source of Truth (OSOT) for all backup, autosave, and recovery mechanisms.
+
+Therefore:
+- **No Browser Sandbox Traps (`localStorage`):** Do NOT store unsaved backups or editor drafts in browser-native storage (`localStorage`, `sessionStorage`, `IndexedDB`). Browser storage is sandboxed, volatile (cleared on incognito, profile resets, cache wipes), and completely invisible to host processes (like Firenvim, Neovim, CLI tools, or server recovery scripts).
+- **Host-Bound Backup Files:** The client must continuously synchronize its unsaved buffers to the local host filesystem via the companion server (e.g. debounced loopback `/api/backup` HTTP POSTs writing to `/tmp` or `.local/state`). This is the only way to ensure backups are durable, portable, and accessible across multiple editing clients (browser, Firenvim, Neovim, terminal).
+- **Loopback & Page Cache Efficiency:** Do NOT mistake frequent localhost backup requests for "network overhead" or "disk thrashing". Loopback packets (`127.0.0.1`) are handled entirely in memory by the OS kernel with near-zero CPU cost. Furthermore, small debounced writes to `/tmp` are optimized by the OS page cache (or RAM-backed `tmpfs`), ensuring physical disk wear and event-loop blocks are completely negligible.
+- **Durable Swap Recovery:** The local backup system is functionally equivalent to native Neovim swap (`.swp`) files. Upon server startup, the backend must be able to scan the host disk backup folder to automatically restore the last active unsaved session.
+
+
