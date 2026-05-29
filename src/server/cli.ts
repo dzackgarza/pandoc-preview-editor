@@ -239,7 +239,7 @@ program
       ...cfg,
       file: absPath,
       fileContent,
-      workspaceRoot: absPath ? dirname(absPath) : cwd,
+      workspaceRoot: (absPath && !isTempFile) ? dirname(absPath) : cwd,
       isTempFile,
       recoveredFromBackup,
     };
