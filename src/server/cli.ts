@@ -177,27 +177,35 @@ program
     let recoveredFromBackup = false;
 
     let sessionRestored = false;
+    console.error(`[DEBUG SESSION] stateFilePath: ${stateFilePath}, exists: ${existsSync(stateFilePath)}`);
     if (!file && cfg.restoreLastFile) {
       try {
         if (existsSync(stateFilePath)) {
           const session = JSON.parse(readFileSync(stateFilePath, 'utf-8'));
+          console.error(`[DEBUG SESSION] session loaded: ${JSON.stringify(session)}`);
           if (session && typeof session.last_file === 'string') {
             const lastFile = session.last_file;
             const isTemp = !!session.is_temp_file;
             const backupPath = getBackupPath(lastFile);
+            console.error(`[DEBUG SESSION] lastFile: ${lastFile}, exists: ${existsSync(lastFile)}`);
+            console.error(`[DEBUG SESSION] isTemp: ${isTemp}`);
+            console.error(`[DEBUG SESSION] backupPath: ${backupPath}, exists: ${existsSync(backupPath)}`);
 
             if ((isTemp && existsSync(backupPath)) || (!isTemp && (existsSync(lastFile) || existsSync(backupPath)))) {
               absPath = lastFile;
               isTempFile = isTemp;
               sessionRestored = true;
-              
+
               if (existsSync(backupPath)) {
                 fileContent = readFileSync(backupPath, 'utf-8');
                 recoveredFromBackup = true;
-                console.log(`Restored unsaved session from backup: ${backupPath}`);
+                console.error(`[DEBUG SESSION] Restored unsaved session from backup: ${backupPath}`);
               } else if (existsSync(lastFile)) {
                 fileContent = readFileSync(lastFile, 'utf-8');
+                console.error(`[DEBUG SESSION] Restored session from file: ${lastFile}`);
               }
+            } else {
+              console.error(`[DEBUG SESSION] Conditions for session restore not met.`);
             }
           }
         }
