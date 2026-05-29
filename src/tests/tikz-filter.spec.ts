@@ -73,4 +73,50 @@ test.describe('Server-side TikZ Lua Filter E2E', () => {
     await expect(tikzjaxScript).not.toBeAttached();
     await expect(tikzjaxFonts).not.toBeAttached();
   });
+
+  test('recursively resolves \\input{...} inside tikz environment', async ({ page }) => {
+    const { writeFileSync, mkdtempSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const { tmpdir } = await import('node:os');
+
+    const testDir = mkdtempSync(join(tmpdir(), 'pandoc-tikz-input-'));
+    const docPath = join(testDir, 'doc.md');
+    const subTikzPath = join(testDir, 'my-sub-diagram.tikz');
+
+    // Create the referenced tikz file
+    writeFileSync(subTikzPath, 'A \\arrow[r] & B', 'utf-8');
+
+    // Create the main document using \input{}
+    writeFileSync(
+      docPath,
+      [
+        '# TikZcd Input Test',
+        '',
+        '\\begin{tikzcd}',
+        '\\input{my-sub-diagram.tikz}',
+        '\\end{tikzcd}',
+      ].join('\n'),
+      'utf-8'
+    );
+
+    // Launch an isolated server instance for this document
+    const isolatedServer = await launchServer(undefined, docPath);
+
+    try {
+      await page.goto(isolatedServer.url);
+      await expect(page.locator('#editor')).toBeVisible({ timeout: 5000 });
+      await expect(page.locator('#editor .cm-content')).toBeVisible({ timeout: 5000 });
+      await expect(page.locator('#preview')).toBeAttached();
+
+      const frame = previewFrame(page);
+      await expect(frame.locator('h1')).toHaveText('TikZcd Input Test');
+
+      // The SVG should be successfully compiled because the filter resolved the \input
+      const svg = frame.locator('svg');
+      await expect(svg).toBeAttached({ timeout: 15000 });
+      await expect(frame.locator('svg path').first()).toBeAttached({ timeout: 5000 });
+    } finally {
+      await killServer(isolatedServer);
+    }
+  });
 });
