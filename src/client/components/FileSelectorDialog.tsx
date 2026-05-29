@@ -39,12 +39,16 @@ export function FileSelectorDialog({
   onSubmit,
   open,
   workspaceRoot,
+  titleOverride,
+  description,
 }: {
   mode: 'save' | 'new';
   onCancel: () => void;
   onSubmit: (absolutePath: string) => void;
   open: boolean;
   workspaceRoot: string;
+  titleOverride?: string;
+  description?: string;
 }) {
   const [currentDir, setCurrentDir] = useState(workspaceRoot);
   const [browse, setBrowse] = useState<BrowseResult | null>(null);
@@ -53,7 +57,7 @@ export function FileSelectorDialog({
   const [filename, setFilename] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const title = mode === 'new' ? 'New File' : 'Save As';
+  const title = titleOverride || (mode === 'new' ? 'New File' : 'Save As');
   const submitLabel = mode === 'new' ? 'Create' : 'Save';
 
   // ── Reset on open ──────────────────────────────────────────────────────────
@@ -164,15 +168,22 @@ export function FileSelectorDialog({
         style={{ maxHeight: '80vh' }}
       >
         {/* ── Header ── */}
-        <div className="flex items-center justify-between border-b border-[#2f3440] px-4 py-3">
-          <h2 className="text-sm font-semibold text-[#d6d9df]">{title}</h2>
-          <button
-            className="rounded p-0.5 text-[#788190] hover:bg-[#2b2f38] hover:text-[#d6d9df]"
-            type="button"
-            onClick={onCancel}
-          >
-            <X className="h-4 w-4" />
-          </button>
+        <div className="flex flex-col border-b border-[#2f3440] px-4 py-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-[#d6d9df]">{title}</h2>
+            <button
+              className="rounded p-0.5 text-[#788190] hover:bg-[#2b2f38] hover:text-[#d6d9df]"
+              type="button"
+              onClick={onCancel}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          {description && (
+            <p className="mt-2 text-xs text-[#b9c0cc] bg-[#23262f] border border-[#2b3345] px-2.5 py-2 rounded leading-relaxed font-medium" data-testid="file-selector-description">
+              {description}
+            </p>
+          )}
         </div>
 
         {/* ── Breadcrumb ── */}

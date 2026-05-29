@@ -413,7 +413,7 @@ test.describe('Bug fixes TDD', () => {
       await expect(page.locator('#editor .cm-content')).toBeVisible({ timeout: 5000 });
 
       const workspaceRoot = await page.evaluate(() => window.__WORKSPACE_ROOT);
-      expect(workspaceRoot).not.toContain('pandoc-preview');
+      expect(workspaceRoot).toBe(process.cwd());
     } finally {
       await killServer(server);
     }

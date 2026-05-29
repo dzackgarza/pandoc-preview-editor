@@ -93,6 +93,8 @@ export function App() {
   const [explorerOpen, setExplorerOpen] = useState(false);
   const [saveAsDialogOpen, setSaveAsDialogOpen] = useState(false);
   const [saveAsDialogMode, setSaveAsDialogMode] = useState<'save' | 'new'>('save');
+  const [saveAsDialogTitleOverride, setSaveAsDialogTitleOverride] = useState<string | undefined>(undefined);
+  const [saveAsDialogDescription, setSaveAsDialogDescription] = useState<string | undefined>(undefined);
   const [workspaceRoot, setWorkspaceRoot] = useState(window.__WORKSPACE_ROOT ?? '');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [filterSettingsOpen, setFilterSettingsOpen] = useState(false);
@@ -246,10 +248,12 @@ export function App() {
   }, [saveState]);
 
   const promptForSavePath = useCallback(
-    (mode: 'save' | 'new'): Promise<string | null> => {
+    (mode: 'save' | 'new', titleOverride?: string, description?: string): Promise<string | null> => {
       return new Promise((resolve) => {
         saveAsResolveRef.current = resolve;
         setSaveAsDialogMode(mode);
+        setSaveAsDialogTitleOverride(titleOverride);
+        setSaveAsDialogDescription(description);
         setSaveAsDialogOpen(true);
       });
     },
@@ -258,11 +262,15 @@ export function App() {
 
   const handleSaveAsSubmit = useCallback((path: string) => {
     setSaveAsDialogOpen(false);
+    setSaveAsDialogTitleOverride(undefined);
+    setSaveAsDialogDescription(undefined);
     saveAsResolveRef.current?.(path);
   }, []);
 
   const handleSaveAsCancel = useCallback(() => {
     setSaveAsDialogOpen(false);
+    setSaveAsDialogTitleOverride(undefined);
+    setSaveAsDialogDescription(undefined);
     saveAsResolveRef.current?.(null);
   }, []);
 
@@ -329,12 +337,12 @@ export function App() {
   }, [workspaceRoot]);
 
   const ensureRealFile = useCallback(
-    async (options: { promptForEmpty: boolean }) => {
+    async (options: { promptForEmpty: boolean; title?: string; description?: string }) => {
       if (isTempFile || !currentFile) {
         if (!options.promptForEmpty && markdownText.length === 0 && saveState !== 'dirty') {
           return null;
         }
-        const savePath = await promptForSavePath('save');
+        const savePath = await promptForSavePath('save', options.title, options.description);
         if (savePath === null) return null;
         return persistMarkdown(savePath, markdownText);
       }
@@ -462,7 +470,11 @@ export function App() {
 
   const insertClipboardFigure = useCallback(async () => {
     try {
-      const filePath = await ensureRealFile({ promptForEmpty: true });
+      const filePath = await ensureRealFile({
+        promptForEmpty: true,
+        title: 'Save Markdown Document',
+        description: 'Save your active document to disk first. Adding figure/diagram assets requires a saved file context to resolve relative asset paths correctly.',
+      });
       if (filePath == null) return;
       if (!navigator.clipboard?.read) {
         throw new Error('clipboard image read is not available');
@@ -493,10 +505,14 @@ export function App() {
 
   const runPluginAction = useCallback(
     async (pluginId: string) => {
-      const filePath = await ensureRealFile({ promptForEmpty: true });
-      if (filePath == null) return;
-
       const pluginMeta = plugins.find((p) => p.id === pluginId);
+      const pluginName = pluginMeta?.name ?? pluginId;
+      const filePath = await ensureRealFile({
+        promptForEmpty: true,
+        title: 'Save Original Markdown Document',
+        description: `Please choose a location to save your original Markdown document first. The plugin "${pluginName}" requires a saved file context on disk to run.`,
+      });
+      if (filePath == null) return;
       setPluginState('running');
       setSaveState('saving');
 
@@ -702,7 +718,11 @@ export function App() {
       event.preventDefault();
       event.stopPropagation();
       const blob = imageFile;
-      void ensureRealFile({ promptForEmpty: true }).then((filePath) => {
+      void ensureRealFile({
+        promptForEmpty: true,
+        title: 'Save Markdown Document',
+        description: 'Save your active document to disk first. Adding figure/diagram assets requires a saved file context to resolve relative asset paths correctly.',
+      }).then((filePath) => {
         if (filePath == null) return;
         return uploadImageAndInsert(blob, filePath);
       }).catch((err: unknown) => {
@@ -815,13 +835,15 @@ export function App() {
           saveState={saveState}
           status={status}
         />
-         <FileSelectorDialog
-           mode={saveAsDialogMode}
-           open={saveAsDialogOpen}
-           workspaceRoot={workspaceRoot}
-           onCancel={handleSaveAsCancel}
-           onSubmit={handleSaveAsSubmit}
-         />
+          <FileSelectorDialog
+            mode={saveAsDialogMode}
+            open={saveAsDialogOpen}
+            workspaceRoot={workspaceRoot}
+            titleOverride={saveAsDialogTitleOverride}
+            description={saveAsDialogDescription}
+            onCancel={handleSaveAsCancel}
+            onSubmit={handleSaveAsSubmit}
+          />
          <UnsavedChangesDialog
            open={unsavedChangesDialogOpen}
            onCancel={handleUnsavedChangesCancel}
@@ -841,7 +863,11 @@ export function App() {
         <DiagramModal
           open={diagramOpen}
           onClose={() => setDiagramOpen(false)}
-          ensureRealFile={() => ensureRealFile({ promptForEmpty: true })}
+          ensureRealFile={() => ensureRealFile({
+            promptForEmpty: true,
+            title: 'Save Markdown Document',
+            description: 'Save your active document to disk first. Adding figure/diagram assets requires a saved file context to resolve relative asset paths correctly.',
+          })}
           insertTextAtCursor={insertTextAtCursor}
         />
         <Toaster />
