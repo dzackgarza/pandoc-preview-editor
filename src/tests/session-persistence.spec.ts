@@ -169,7 +169,7 @@ test.describe('Session Persistence and Ephemeral Buffer Recovery', () => {
       expect(editorText).toContain('# Unsaved buffer content!');
       
       // Verify that the toast alert is displayed
-      await expect(page.getByText('Unsaved Changes Recovered')).toBeVisible({ timeout: 5000 });
+      await expect(page.getByText('Unsaved Changes Recovered').first()).toBeVisible({ timeout: 5000 });
     } finally {
       proc.kill();
     }
