@@ -185,7 +185,7 @@ test.describe('Diagram Toolbar & Filter Modal E2E', () => {
 
     writeFileSync(
       docPath,
-      '# My Document\n\nHere is an inlined diagram:\n\n![](' + centralFiguresDir + '/my-tikz-diag.tikz)\n',
+      '# My Document\n\nNo figures yet.\n',
       'utf-8'
     );
 
@@ -228,6 +228,10 @@ central_directory = "${centralFiguresDir}"
 
       expect(resFile.ok).toBe(true);
       expect(resFile.body.absolutePath).toBe(join(centralFiguresDir, 'my-tikz-diag.tikz'));
+
+      // Update the editor text with the image reference so it renders in the preview pane
+      const figPath = join(centralFiguresDir, 'my-tikz-diag.tikz');
+      await setEditorMarkdown(page, `# My Document\n\nHere is an inlined diagram:\n\n![](${figPath})\n`);
 
       // 2. Fetch the central registry via /api/figures/registry and check entries
       const registryData = await page.evaluate(async () => {
