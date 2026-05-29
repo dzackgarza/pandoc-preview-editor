@@ -51,6 +51,8 @@ test.describe('Session Persistence and Ephemeral Buffer Recovery', () => {
         XDG_STATE_HOME: join(tempHome, '.local', 'state'),
       },
     });
+    proc1.stderr?.pipe(process.stderr);
+    proc1.stdout?.pipe(process.stdout);
 
     const out1: string[] = [];
     proc1.stdout?.on('data', (d) => out1.push(d.toString()));
@@ -95,6 +97,8 @@ test.describe('Session Persistence and Ephemeral Buffer Recovery', () => {
         XDG_STATE_HOME: join(tempHome, '.local', 'state'),
       },
     });
+    proc2.stderr?.pipe(process.stderr);
+    proc2.stdout?.pipe(process.stdout);
 
     const out2: string[] = [];
     proc2.stdout?.on('data', (d) => out2.push(d.toString()));
