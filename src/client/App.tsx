@@ -1,7 +1,7 @@
 import { AnimatePresence } from 'motion/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Group, Panel, Separator, useGroupRef } from 'react-resizable-panels';
-import { GripVertical } from 'lucide-react';
+import { GripVertical, FolderOpen, Image as ImageIcon, Settings } from 'lucide-react';
 import { EditorView } from '@codemirror/view';
 import * as Tooltip from '@radix-ui/react-tooltip';
 
@@ -97,6 +97,7 @@ export function App() {
   const [workspaceRoot, setWorkspaceRoot] = useState(window.__WORKSPACE_ROOT ?? '');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [diagramOpen, setDiagramOpen] = useState(false);
+  const [sidebarTab, setSidebarTab] = useState<'explorer' | 'figures'>('explorer');
   const renderVersion = useRef(0);
   const debounceTimer = useRef<number | null>(null);
   const groupRef = useGroupRef();
@@ -755,12 +756,71 @@ export function App() {
           plugins={plugins}
         />
         <div className="flex min-h-0 flex-1 overflow-hidden">
+          {/* Vertical Activity Bar */}
+          <div className="w-12 border-r border-[#2b2f38] bg-[#14171f] flex flex-col items-center py-4 gap-4 shrink-0 justify-between select-none">
+            <div className="flex flex-col gap-4 w-full items-center">
+              {/* File Explorer tab trigger */}
+              <button
+                aria-label="File Explorer"
+                onClick={() => {
+                  if (explorerOpen && sidebarTab === 'explorer') {
+                    setExplorerOpen(false);
+                  } else {
+                    setExplorerOpen(true);
+                    setSidebarTab('explorer');
+                  }
+                }}
+                className={cn(
+                  "h-8 w-8 rounded-lg flex items-center justify-center transition-all cursor-pointer",
+                  explorerOpen && sidebarTab === 'explorer'
+                    ? "bg-[#303541] text-white"
+                    : "text-[#788190] hover:text-[#e6e8eb]"
+                )}
+              >
+                <FolderOpen className="h-5 w-5" />
+              </button>
+
+              {/* Figures Library tab trigger */}
+              <button
+                aria-label="Figures Library"
+                onClick={() => {
+                  if (explorerOpen && sidebarTab === 'figures') {
+                    setExplorerOpen(false);
+                  } else {
+                    setExplorerOpen(true);
+                    setSidebarTab('figures');
+                  }
+                }}
+                className={cn(
+                  "h-8 w-8 rounded-lg flex items-center justify-center transition-all cursor-pointer",
+                  explorerOpen && sidebarTab === 'figures'
+                    ? "bg-[#303541] text-white"
+                    : "text-[#788190] hover:text-[#e6e8eb]"
+                )}
+              >
+                <ImageIcon className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="w-full flex justify-center">
+              {/* Preferences Settings dialog trigger */}
+              <button
+                aria-label="Preferences"
+                onClick={() => setSettingsOpen(true)}
+                className="h-8 w-8 rounded-lg flex items-center justify-center text-[#788190] hover:text-[#e6e8eb] cursor-pointer transition-all"
+              >
+                <Settings className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+
           <AnimatePresence initial={false}>
             {explorerOpen ? (
               <ExplorerDrawer
                 currentFile={currentFile}
                 onOpenFile={openFile}
                 root={workspaceRoot}
+                view={sidebarTab}
               />
             ) : null}
           </AnimatePresence>

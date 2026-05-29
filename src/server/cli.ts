@@ -28,6 +28,7 @@ function parseConfig(found: string): ServerConfig | null {
     const pandoc = (raw.pandoc ?? {}) as Record<string, unknown>;
     const render = (raw.render ?? {}) as Record<string, unknown>;
     const quickOpen = (raw.quick_open ?? {}) as Record<string, unknown>;
+    const figures = (raw.figures ?? {}) as Record<string, unknown>;
 
     if (
       typeof pandoc.render_command !== 'string' ||
@@ -38,6 +39,21 @@ function parseConfig(found: string): ServerConfig | null {
       );
       return null;
     }
+
+    const storageStrategy =
+      figures.storage_strategy === 'central' || figures.storage_strategy === 'relative'
+        ? figures.storage_strategy
+        : 'relative';
+
+    const centralDirectory =
+      typeof figures.central_directory === 'string'
+        ? resolve(expandTilde(figures.central_directory))
+        : resolve(expandTilde('~/.pandoc/figures'));
+
+    const inkscapeExportLatex =
+      typeof figures.inkscape_export_latex === 'boolean'
+        ? figures.inkscape_export_latex
+        : true;
 
     return {
       renderCommand: pandoc.render_command as string,
@@ -65,6 +81,9 @@ function parseConfig(found: string): ServerConfig | null {
           ? quickOpen.launcher_command
           : undefined,
       restoreLastFile: typeof render.restore_last_file === 'boolean' ? render.restore_last_file : true,
+      figuresStorageStrategy: storageStrategy,
+      figuresCentralDirectory: centralDirectory,
+      inkscapeExportLatex,
     };
   } catch (err) {
     console.error(`Error reading or parsing config file at ${found}: ${err}`);

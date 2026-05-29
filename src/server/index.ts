@@ -13,7 +13,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, isAbsolute, relative, resolve, basename, join } from 'node:path';
+import { dirname, isAbsolute, relative, resolve, basename, join, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readdir } from 'node:fs/promises';
 import { spawn, exec } from 'node:child_process';
@@ -135,6 +135,9 @@ export interface ServerConfig {
   launcherCommand?: string;
   recoveredFromBackup?: boolean;
   restoreLastFile?: boolean;
+  figuresStorageStrategy?: 'central' | 'relative';
+  figuresCentralDirectory?: string;
+  inkscapeExportLatex?: boolean;
 }
 
 const fileFingerprints = new Map<string, { mtimeMs: number; hash: string }>();
@@ -153,6 +156,62 @@ function getFileFingerprint(filePath: string): { mtimeMs: number; hash: string }
   } catch {
     return null;
   }
+}
+
+interface FigureEntry {
+  id: string;
+  name: string;
+  path: string;
+  type: string;
+  createdAt: string;
+  documents: string[];
+}
+
+interface FiguresRegistry {
+  figures: FigureEntry[];
+}
+
+function loadFiguresRegistry(dir: string): FiguresRegistry {
+  const registryPath = join(dir, 'registry.json');
+  if (existsSync(registryPath)) {
+    try {
+      return JSON.parse(readFileSync(registryPath, 'utf-8'));
+    } catch {
+      return { figures: [] };
+    }
+  }
+  return { figures: [] };
+}
+
+function saveFiguresRegistry(dir: string, registry: FiguresRegistry) {
+  mkdirSync(dir, { recursive: true });
+  const registryPath = join(dir, 'registry.json');
+  writeFileSync(registryPath, JSON.stringify(registry, null, 2), 'utf-8');
+}
+
+function registerFigure(config: ServerConfig, name: string, absolutePath: string, type: string) {
+  const centralDir = config.figuresCentralDirectory ?? resolve(homedir(), '.pandoc/figures');
+  const registry = loadFiguresRegistry(centralDir);
+
+  const existingIndex = registry.figures.findIndex((f) => f.path === absolutePath);
+  const docPath = config.file ? resolve(config.file) : '';
+
+  if (existingIndex >= 0) {
+    const existing = registry.figures[existingIndex];
+    if (docPath && !existing.documents.includes(docPath)) {
+      existing.documents.push(docPath);
+    }
+  } else {
+    registry.figures.push({
+      id: `fig-${randomUUID()}`,
+      name,
+      path: absolutePath,
+      type,
+      createdAt: new Date().toISOString(),
+      documents: docPath ? [docPath] : [],
+    });
+  }
+  saveFiguresRegistry(centralDir, registry);
 }
 
 function registerFingerprint(filePath: string) {
@@ -254,7 +313,7 @@ export function createApp(config: ServerConfig) {
     // not hang waiting on a response that will never arrive.
     if (currentRenderController === controller) {
       res.json({
-        html: withPreviewAssetUrls(result.html),
+        html: withPreviewAssetUrls(result.html, config),
         durationMs: result.durationMs,
         ok: result.ok,
         stderr: result.stderr,
@@ -910,7 +969,11 @@ export function createApp(config: ServerConfig) {
       return;
     }
 
-    const figuresDir = resolve(dirname(config.file), 'figures');
+    const isCentral = config.figuresStorageStrategy === 'central';
+    const figuresDir = isCentral
+      ? (config.figuresCentralDirectory ?? resolve(homedir(), '.pandoc/figures'))
+      : resolve(dirname(config.file), 'figures');
+
     const figurePath = resolve(figuresDir, filename);
 
     if (!pathIsInside(figuresDir, figurePath)) {
@@ -957,10 +1020,14 @@ export function createApp(config: ServerConfig) {
 
       writeFileSync(figurePath, template, 'utf-8');
 
+      if (isCentral) {
+        registerFigure(config, filename, figurePath, type);
+      }
+
       res.json({
         ok: true,
         absolutePath: figurePath,
-        relativePath: `figures/${filename}`,
+        relativePath: isCentral ? figurePath : `figures/${filename}`,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -974,18 +1041,32 @@ export function createApp(config: ServerConfig) {
       absolutePath?: unknown;
       type?: unknown;
     };
-    if (typeof absolutePath !== 'string' || typeof type !== 'string') {
-      res.status(400).json({ error: 'absolutePath and type are required' });
+    if (typeof absolutePath !== 'string') {
+      res.status(400).json({ error: 'absolutePath is required' });
       return;
     }
 
+    let toolType = type;
+    if (typeof toolType !== 'string' || !toolType) {
+      const ext = extname(absolutePath).toLowerCase();
+      if (ext === '.tikz') toolType = 'qtikz';
+      else if (ext === '.svg') toolType = 'inkscape';
+      else if (ext === '.xopp' || ext === '.xopf') toolType = 'xournal';
+      else toolType = 'inkscape';
+    }
+
+    let resolvedPath = absolutePath;
+    if (!isAbsolute(resolvedPath) && config.file) {
+      resolvedPath = resolve(dirname(config.file), resolvedPath);
+    }
+
     try {
-      let cmd = type;
-      if (type === 'xournal') {
+      let cmd = toolType;
+      if (toolType === 'xournal') {
         cmd = 'xournalpp';
       }
 
-      const child = spawn(cmd, [absolutePath], {
+      const child = spawn(cmd, [resolvedPath], {
         detached: true,
         stdio: 'ignore',
       });
@@ -1202,7 +1283,11 @@ export function createApp(config: ServerConfig) {
       return;
     }
 
-    const figuresDir = resolve(dirname(targetDocument), 'figures');
+    const isCentral = config.figuresStorageStrategy === 'central';
+    const figuresDir = isCentral
+      ? (config.figuresCentralDirectory ?? resolve(homedir(), '.pandoc/figures'))
+      : resolve(dirname(targetDocument), 'figures');
+
     const figureName =
       typeof filename === 'string' && filename.length > 0
         ? sanitizeFigureFilename(filename, mimeType)
@@ -1220,16 +1305,57 @@ export function createApp(config: ServerConfig) {
     try {
       mkdirSync(figuresDir, { recursive: true });
       writeFileSync(figurePath, Buffer.from(contentBase64, 'base64'));
-      const relativePath = `figures/${figureName}`;
+
+      if (isCentral) {
+        registerFigure(config, figureName, figurePath, 'clipboard');
+      }
+
+      const relativePath = isCentral ? figurePath : `figures/${figureName}`;
       res.json({
         ok: true,
         path: figurePath,
         relativePath,
-        markdown: `![](./${relativePath})`,
+        markdown: isCentral ? `![](${relativePath})` : `![](./${relativePath})`,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: message });
+    }
+  });
+
+  // GET /api/figures/registry - list all managed figures in the registry
+  app.get('/api/figures/registry', (_req, res) => {
+    try {
+      const centralDir = config.figuresCentralDirectory ?? resolve(homedir(), '.pandoc/figures');
+      const registry = loadFiguresRegistry(centralDir);
+      res.json(registry);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // GET /api/figures/serve - securely serve a managed figure from the central repository
+  app.get('/api/figures/serve', (req, res) => {
+    try {
+      const centralDir = config.figuresCentralDirectory ?? resolve(homedir(), '.pandoc/figures');
+      const requestedPath = typeof req.query.path === 'string' ? req.query.path : '';
+      
+      const targetPath = isAbsolute(requestedPath)
+        ? resolve(requestedPath)
+        : resolve(centralDir, requestedPath);
+
+      if (!pathIsInside(centralDir, targetPath)) {
+        res.status(403).json({ error: 'forbidden central figures access' });
+        return;
+      }
+      if (!existsSync(targetPath)) {
+        res.status(404).json({ error: 'figure not found' });
+        return;
+      }
+      res.sendFile(targetPath);
+    } catch {
+      res.status(404).json({ error: 'figure not found' });
     }
   });
 
@@ -1361,14 +1487,49 @@ function imageExtension(mimeType: string) {
   }
 }
 
-function withPreviewAssetUrls(html: string) {
+function withPreviewAssetUrls(html: string, config: ServerConfig) {
   return html.replace(
-    /<!--[\s\S]*?-->|<script\b[\s\S]*?<\/script>|\bsrc=(["'])(?![A-Za-z][A-Za-z\d+.-]*:|\/|#)([^"']+)\1/g,
+    /<!--[\s\S]*?-->|<script\b[\s\S]*?<\/script>|\bsrc=(["'])(?![A-Za-z][A-Za-z\d+.-]*:|#)([^"']+)\1/g,
     (match, quote?: string, url?: string) => {
       if (match.startsWith('<!--') || match.startsWith('<script')) {
         return match;
       }
-      return `src=${quote}/api/preview-assets?path=${encodeURIComponent(url!)}${quote}`;
+
+      if (!url) return match;
+
+      // Ignore standard client web asset paths and absolute API paths so they don't get rewritten
+      if (
+        url.startsWith('/api/') ||
+        url.startsWith('/socket.io/') ||
+        url.startsWith('/style.css') ||
+        url.startsWith('/main.js') ||
+        url.startsWith('/main.tsx') ||
+        url.startsWith('/@vite/') ||
+        url.startsWith('/@react-refresh') ||
+        url.startsWith('/node_modules/') ||
+        url.startsWith('/src/')
+      ) {
+        return match;
+      }
+
+      const centralDir = config.figuresCentralDirectory ?? resolve(homedir(), '.pandoc/figures');
+      const isCentral = pathIsInside(centralDir, url) || (
+        url.startsWith(centralDir) ||
+        url.includes('/central-figures/') ||
+        url.includes('.pandoc/figures')
+      );
+
+      if (isCentral) {
+        return `src=${quote}/api/figures/serve?path=${encodeURIComponent(url)}${quote}`;
+      }
+
+      // If the URL starts with '/' (absolute/root-relative/protocol-relative) and is not central,
+      // preserve it as-is to match the original regex negative lookahead behavior (which ignored starting with '/')
+      if (url.startsWith('/')) {
+        return match;
+      }
+
+      return `src=${quote}/api/preview-assets?path=${encodeURIComponent(url)}${quote}`;
     },
   );
 }
