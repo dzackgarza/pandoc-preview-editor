@@ -69,3 +69,12 @@ Therefore:
 - Running the renderer via a standard shell using `shell: true` is correct and necessary to allow the user to use native shell features (pipes, environment variable interpolation, system-level paths).
 - The focus of safety is strictly on **local file integrity** (preventing corruption via atomic writes and avoiding silent overwrites through external modification conflict checking), not sandboxing user-configured commands.
 
+## Local Companion Desktop Server Philosophy (Spawning dmenu/rofi, Drawing Tools)
+
+The application runs locally as a companion process on the user's desktop machine, not as a remote, headless cloud server. The helper server is a local process that has full, intentional access to the user's active graphical session (X11/Wayland), display servers, and system-native CLI utilities.
+
+Therefore:
+- **No Boundary Violations for OS Tools:** Spawning system-native CLI or desktop GUI utilities (`rofi`, `dmenu`, `fzf`, or drawing tools like `inkscape` or `xournalpp`) directly from the server is the **correct, expected, and first-class design choice** for deep system integration.
+- **Dependency Aversion & OS Integration:** Do NOT attempt to reinvent complex interface modals (such as file-finding, workspace scanning, fuzzy matching, or graphic drawing) inside the browser client or server-side Javascript code. Spawning pre-existing, native OS tools keeps the codebase extremely lightweight and integrates seamlessly with the user's existing desktop workflows.
+- **Headless Assumptions Do Not Apply:** Flagging host GUI/X11 process spawning as an "error" or a "boundary violation" is a fundamental misunderstanding of the application's local companion architecture. The application is, by design, a companion to your local terminal and desktop environment.
+
