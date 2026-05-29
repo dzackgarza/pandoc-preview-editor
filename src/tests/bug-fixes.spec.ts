@@ -467,4 +467,78 @@ test.describe('Bug fixes TDD', () => {
       await killServer(server);
     }
   });
+
+  test('Phase 1 QOL: visual shortcuts, stable FreeTikZ URL, and iframe key-capturing forwarding', async ({ page }) => {
+    const server = await launchServer();
+    try {
+      await page.goto(server.url);
+      await expect(page.locator('#editor .cm-content')).toBeVisible({ timeout: 5000 });
+
+      // 1. Check visual keyboard shortcuts in Menubar File dropdown
+      await page.getByRole('menuitem', { name: 'File' }).click();
+      const quickOpenMenu = page.getByRole('menuitem', { name: /Quick Open/ });
+      await expect(quickOpenMenu).toBeVisible();
+      // Ensure it contains the visual kbd indicator for the shortcut
+      const quickOpenKbd = quickOpenMenu.locator('kbd');
+      await expect(quickOpenKbd).toBeVisible();
+      await expect(quickOpenKbd).toHaveText('Ctrl+P');
+
+      // Dismiss menu
+      await page.keyboard.press('Escape');
+
+      // 2. Check stable FreeTikZ URL inside Diagram Modal
+      await page.getByRole('menuitem', { name: 'Insert' }).click();
+      await page.getByRole('menuitem', { name: 'Diagram...' }).click();
+      await expect(page.getByRole('heading', { name: 'Insert Diagram / Figure' })).toBeVisible();
+
+      // Click on the Web TikZ Tools tab
+      await page.getByRole('button', { name: 'Web TikZ Tools' }).click();
+
+      // Click on FreeTikZ subtab
+      await page.getByRole('button', { name: /FreeTikZ/ }).click();
+
+      // Retrieve the iframe element src
+      const iframe = page.locator('iframe[title="Web TikZ Tool"]');
+      await expect(iframe).toBeVisible();
+      const iframeSrc = await iframe.getAttribute('src');
+      expect(iframeSrc).toContain(encodeURIComponent('https://homepages.inf.ed.ac.uk/cheunen/freetikz/freetikz.html'));
+
+      // Close the diagram modal
+      await page.getByLabel('Close').click();
+
+      // 3. Iframe uniform key capturing forwarding
+      // Mock the quick open spawn endpoint so we can assert it was called
+      let quickOpenSpawnCalled = false;
+      await page.route('**/api/files/quick-open-spawn', async (route) => {
+        quickOpenSpawnCalled = true;
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ ok: false, cancelled: true }),
+        });
+      });
+
+      // Get the preview frame element and focus it
+      const previewIframe = page.locator('#preview');
+      await expect(previewIframe).toBeAttached();
+
+      // Trigger the iframe uniform keydown forwarding by calling dispatchEvent inside the iframe context
+      await previewIframe.evaluate((iframeEl) => {
+        const doc = (iframeEl as HTMLIFrameElement).contentDocument;
+        if (!doc) throw new Error('iframe contentDocument is null');
+        doc.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'p',
+          code: 'KeyP',
+          ctrlKey: true,
+          bubbles: true,
+        }));
+      });
+
+      // Assert that parent caught it and triggered Quick Open (quick-open-spawn)
+      await expect.poll(() => quickOpenSpawnCalled, { timeout: 3000 }).toBe(true);
+
+    } finally {
+      await killServer(server);
+    }
+  });
 });
