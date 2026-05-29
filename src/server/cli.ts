@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir, tmpdir } from 'node:os';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { load } from 'js-toml';
 import { startServer, type ServerConfig } from './index.js';
 
@@ -157,7 +157,6 @@ program
     const stateFilePath = join(xdgStateDir, 'state.json');
 
     function getBackupPath(documentPath: string): string {
-      const { createHash } = require('node:crypto');
       const hash = createHash('sha256').update(resolve(documentPath)).digest('hex');
       return join(backupDir, `${hash}.md`);
     }
@@ -177,19 +176,14 @@ program
     let recoveredFromBackup = false;
 
     let sessionRestored = false;
-    console.error(`[DEBUG SESSION] stateFilePath: ${stateFilePath}, exists: ${existsSync(stateFilePath)}`);
     if (!file && cfg.restoreLastFile) {
       try {
         if (existsSync(stateFilePath)) {
           const session = JSON.parse(readFileSync(stateFilePath, 'utf-8'));
-          console.error(`[DEBUG SESSION] session loaded: ${JSON.stringify(session)}`);
           if (session && typeof session.last_file === 'string') {
             const lastFile = session.last_file;
             const isTemp = !!session.is_temp_file;
             const backupPath = getBackupPath(lastFile);
-            console.error(`[DEBUG SESSION] lastFile: ${lastFile}, exists: ${existsSync(lastFile)}`);
-            console.error(`[DEBUG SESSION] isTemp: ${isTemp}`);
-            console.error(`[DEBUG SESSION] backupPath: ${backupPath}, exists: ${existsSync(backupPath)}`);
 
             if ((isTemp && existsSync(backupPath)) || (!isTemp && (existsSync(lastFile) || existsSync(backupPath)))) {
               absPath = lastFile;
@@ -199,13 +193,10 @@ program
               if (existsSync(backupPath)) {
                 fileContent = readFileSync(backupPath, 'utf-8');
                 recoveredFromBackup = true;
-                console.error(`[DEBUG SESSION] Restored unsaved session from backup: ${backupPath}`);
+                console.log(`Restored unsaved session from backup: ${backupPath}`);
               } else if (existsSync(lastFile)) {
                 fileContent = readFileSync(lastFile, 'utf-8');
-                console.error(`[DEBUG SESSION] Restored session from file: ${lastFile}`);
               }
-            } else {
-              console.error(`[DEBUG SESSION] Conditions for session restore not met.`);
             }
           }
         }
