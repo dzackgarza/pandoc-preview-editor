@@ -12,6 +12,28 @@ export function PreviewPane({ html }: { html: string }) {
       const doc = iframe.contentDocument;
       if (!doc) return;
 
+      // Forward keydown events from the iframe to the parent window so keyboard shortcuts work uniformly.
+      const win = doc.defaultView;
+      if (win && !(win as any).__KEY_FORWARDING_ATTACHED__) {
+        (win as any).__KEY_FORWARDING_ATTACHED__ = true;
+        win.addEventListener('keydown', (e: KeyboardEvent) => {
+          if (window.parent) {
+            window.parent.dispatchEvent(
+              new KeyboardEvent('keydown', {
+                key: e.key,
+                code: e.code,
+                ctrlKey: e.ctrlKey,
+                metaKey: e.metaKey,
+                shiftKey: e.shiftKey,
+                altKey: e.altKey,
+                bubbles: true,
+                cancelable: true,
+              })
+            );
+          }
+        }, { capture: true });
+      }
+
       // Find all potential TikZ elements rendered by Pandoc
       const tikzElements = doc.querySelectorAll(
         'pre.tikz, pre.sourceCode.tikz, code.tikz, code.language-tikz'

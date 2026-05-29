@@ -196,7 +196,7 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
     }
   };
 
-  const webToolUrl = webTool === 'quiver' ? 'https://q.uiver.app/' : 'https://freetikz.app/';
+  const webToolUrl = webTool === 'quiver' ? 'https://q.uiver.app/' : 'https://homepages.inf.ed.ac.uk/cheunen/freetikz/freetikz.html';
   const proxiedUrl = `/api/diagram/proxy?url=${encodeURIComponent(webToolUrl)}`;
 
   return (

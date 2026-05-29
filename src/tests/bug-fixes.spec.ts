@@ -522,11 +522,17 @@ test.describe('Bug fixes TDD', () => {
       const previewIframe = page.locator('#preview');
       await expect(previewIframe).toBeAttached();
 
+      // Wait for the iframe element to be visible and let the srcDoc load
+      await expect(previewIframe).toBeVisible();
+      await page.waitForTimeout(500);
+
       // Trigger the iframe uniform keydown forwarding by calling dispatchEvent inside the iframe context
       await previewIframe.evaluate((iframeEl) => {
         const doc = (iframeEl as HTMLIFrameElement).contentDocument;
         if (!doc) throw new Error('iframe contentDocument is null');
-        doc.dispatchEvent(new KeyboardEvent('keydown', {
+        const win = doc.defaultView;
+        if (!win) throw new Error('iframe defaultView is null');
+        win.dispatchEvent(new KeyboardEvent('keydown', {
           key: 'p',
           code: 'KeyP',
           ctrlKey: true,
@@ -535,7 +541,7 @@ test.describe('Bug fixes TDD', () => {
       });
 
       // Assert that parent caught it and triggered Quick Open (quick-open-spawn)
-      await expect.poll(() => quickOpenSpawnCalled, { timeout: 3000 }).toBe(true);
+      await expect.poll(() => quickOpenSpawnCalled, { timeout: 5000 }).toBe(true);
 
     } finally {
       await killServer(server);

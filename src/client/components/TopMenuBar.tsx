@@ -77,7 +77,7 @@ export function TopMenuBar({
                 <FolderOpen className="h-4 w-4" />
                 Open
               </MenuItem>
-              <MenuItem onSelect={onOpenQuickOpen}>
+              <MenuItem onSelect={onOpenQuickOpen} shortcut="Ctrl+P">
                 <Search className="h-4 w-4" />
                 Quick Open
               </MenuItem>
@@ -90,7 +90,7 @@ export function TopMenuBar({
                 Lua Filters...
               </MenuItem>
               <Menubar.Separator className="my-1 h-px bg-[#343946]" />
-              <MenuItem onSelect={onSave}>
+              <MenuItem onSelect={onSave} shortcut="Ctrl+S">
                 <Save className="h-4 w-4" />
                 Save
               </MenuItem>
@@ -125,7 +125,7 @@ export function TopMenuBar({
           </Menubar.Trigger>
           <Menubar.Portal>
             <Menubar.Content className="z-50 min-w-44 rounded border border-[#343946] bg-[#22262f] p-1 text-sm text-[#e7eaf0] shadow-xl">
-              <MenuItem onSelect={onInsertCitation}>
+              <MenuItem onSelect={onInsertCitation} shortcut="Ctrl+Shift+C">
                 <BookOpen className="h-4 w-4" />
                 Citation
               </MenuItem>
@@ -205,17 +205,24 @@ export function TopMenuBar({
 
 function MenuItem({
   children,
+  shortcut,
   onSelect,
 }: {
   children: React.ReactNode;
+  shortcut?: string;
   onSelect: () => void;
 }) {
   return (
     <Menubar.Item
-      className="flex cursor-default select-none items-center gap-2 rounded px-2 py-1.5 outline-none hover:bg-[#344154] focus:bg-[#344154]"
+      className="flex cursor-default select-none items-center gap-2 rounded px-2 py-1.5 outline-none hover:bg-[#344154] focus:bg-[#344154] justify-between"
       onSelect={onSelect}
     >
-      {children}
+      <div className="flex items-center gap-2">{children}</div>
+      {shortcut && (
+        <kbd aria-hidden="true" className="ml-auto text-[10px] bg-[#303541]/75 px-1.5 py-0.5 rounded text-[#788190] font-mono select-none">
+          {shortcut}
+        </kbd>
+      )}
     </Menubar.Item>
   );
 }

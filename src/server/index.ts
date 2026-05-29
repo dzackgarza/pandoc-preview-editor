@@ -1014,7 +1014,7 @@ export function createApp(config: ServerConfig) {
       return;
     }
 
-    const allowedHosts = new Set(['q.uiver.app', 'freetikz.app']);
+    const allowedHosts = new Set(['q.uiver.app', 'freetikz.app', 'homepages.inf.ed.ac.uk']);
     const isTest = process.env.NODE_ENV === 'test';
     const isAllowedHost = allowedHosts.has(parsed.hostname) && parsed.protocol === 'https:';
     const isAllowedTest = isTest && (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') && parsed.protocol === 'http:';
