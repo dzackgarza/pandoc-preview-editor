@@ -1036,6 +1036,33 @@ export function createApp(config: ServerConfig) {
     }
   });
 
+  function isCommandAvailable(cmd: string): boolean {
+    const pathEnv = process.env.PATH || '';
+    const delimiter = process.platform === 'win32' ? ';' : ':';
+    const dirs = pathEnv.split(delimiter);
+    const extensions = process.platform === 'win32' ? ['.exe', '.cmd', '.bat', ''] : [''];
+
+    for (const dir of dirs) {
+      for (const ext of extensions) {
+        const fullPath = join(dir, cmd + ext);
+        if (existsSync(fullPath)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  // GET /api/diagram/tools - check which desktop applications are installed on the system
+  app.get('/api/diagram/tools', (_req, res) => {
+    res.json({
+      qtikz: isCommandAvailable('qtikz'),
+      tikzit: isCommandAvailable('tikzit'),
+      inkscape: isCommandAvailable('inkscape'),
+      xournal: isCommandAvailable('xournalpp') || isCommandAvailable('xournal'),
+    });
+  });
+
   // POST /api/diagram/launch - launch desktop application pointing to the newly created asset
   app.post('/api/diagram/launch', (req, res) => {
     const { absolutePath, type } = req.body as {
@@ -1497,21 +1524,6 @@ function withPreviewAssetUrls(html: string, config: ServerConfig) {
       }
 
       if (!url) return match;
-
-      // Ignore standard client web asset paths and absolute API paths so they don't get rewritten
-      if (
-        url.startsWith('/api/') ||
-        url.startsWith('/socket.io/') ||
-        url.startsWith('/style.css') ||
-        url.startsWith('/main.js') ||
-        url.startsWith('/main.tsx') ||
-        url.startsWith('/@vite/') ||
-        url.startsWith('/@react-refresh') ||
-        url.startsWith('/node_modules/') ||
-        url.startsWith('/src/')
-      ) {
-        return match;
-      }
 
       const centralDir = config.figuresCentralDirectory ?? resolve(homedir(), '.pandoc/figures');
       const isCentral = pathIsInside(centralDir, url) || (

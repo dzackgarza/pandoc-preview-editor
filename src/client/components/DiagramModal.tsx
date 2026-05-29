@@ -19,6 +19,32 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
   // Desktop form states
   const [desktopTool, setDesktopTool] = useState<'qtikz' | 'tikzit' | 'inkscape' | 'xournal'>('qtikz');
   const [filename, setFilename] = useState('');
+  const [availableTools, setAvailableTools] = useState<Record<string, boolean>>({
+    qtikz: true,
+    tikzit: true,
+    inkscape: true,
+    xournal: true,
+  });
+
+  useEffect(() => {
+    if (open) {
+      fetch('/api/diagram/tools')
+        .then((res) => res.json())
+        .then((data) => {
+          if (data) {
+            setAvailableTools(data);
+            const toolsOrder: ('qtikz' | 'tikzit' | 'inkscape' | 'xournal')[] = ['qtikz', 'tikzit', 'inkscape', 'xournal'];
+            if (!data[desktopTool]) {
+              const firstAvailable = toolsOrder.find((t) => data[t]);
+              if (firstAvailable) {
+                setDesktopTool(firstAvailable);
+              }
+            }
+          }
+        })
+        .catch(console.error);
+    }
+  }, [open]);
 
   // Web tools states
   const [webTool, setWebTool] = useState<'quiver' | 'freetikz'>('quiver');
@@ -354,20 +380,29 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
                       { id: 'tikzit', name: 'Tikzit (Node/TikZ)', desc: 'Writes .tikz files' },
                       { id: 'inkscape', name: 'Inkscape (Vector)', desc: 'Writes .svg drawings' },
                       { id: 'xournal', name: 'Xournal++ (Sketch)', desc: 'Writes .xopp notes' },
-                    ].map((tool) => (
-                      <button
-                        key={tool.id}
-                        onClick={() => { setDesktopTool(tool.id as any); setError(null); }}
-                        className={`rounded-md border p-3 text-left transition-all cursor-pointer ${
-                          desktopTool === tool.id
-                            ? 'border-[#89b4fa] bg-[#89b4fa]/5 text-white'
-                            : 'border-[#2b2f38] bg-[#171a21]/50 text-[#788190] hover:bg-[#20242e] hover:text-[#e6e8eb]'
-                        }`}
-                      >
-                        <div className="text-sm font-semibold">{tool.name}</div>
-                        <div className="text-xs text-[#5c6370] mt-0.5">{tool.desc}</div>
-                      </button>
-                    ))}
+                    ].map((tool) => {
+                      const isAvailable = availableTools[tool.id];
+                      return (
+                        <button
+                          key={tool.id}
+                          disabled={!isAvailable}
+                          onClick={() => { setDesktopTool(tool.id as any); setError(null); }}
+                          className={`rounded-md border p-3 text-left transition-all ${
+                            !isAvailable
+                              ? 'border-[#22252a] bg-[#121419]/30 text-[#404550] cursor-not-allowed opacity-50'
+                              : desktopTool === tool.id
+                              ? 'border-[#89b4fa] bg-[#89b4fa]/5 text-white cursor-pointer'
+                              : 'border-[#2b2f38] bg-[#171a21]/50 text-[#788190] hover:bg-[#20242e] hover:text-[#e6e8eb] cursor-pointer'
+                          }`}
+                        >
+                          <div className="text-sm font-semibold flex items-center gap-1.5 justify-between">
+                            <span>{tool.name}</span>
+                            {!isAvailable && <span className="text-[9px] font-normal px-1.5 py-0.5 rounded bg-[#2b2121] text-[#f38ba8] border border-[#f38ba8]/10 whitespace-nowrap">Not Installed</span>}
+                          </div>
+                          <div className="text-xs text-[#5c6370] mt-0.5">{tool.desc}</div>
+                        </button>
+                      );
+                    })}
                   </div>
 
                   <div className="flex flex-col gap-1.5 mt-2">
