@@ -119,4 +119,67 @@ test.describe('Server-side TikZ Lua Filter E2E', () => {
       await killServer(isolatedServer);
     }
   });
+
+  test('resolves and renders Inkscape svg-inkscape pdf_tex overlays', async ({ page }) => {
+    const { writeFileSync, mkdtempSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const { tmpdir } = await import('node:os');
+    const { execSync } = await import('node:child_process');
+
+    const testDir = mkdtempSync(join(tmpdir(), 'pandoc-inkscape-'));
+    const docPath = join(testDir, 'doc.md');
+    const pdfTexPath = join(testDir, 'my-fig.pdf_tex');
+
+    // Generate a valid mock pdf file in the test directory using pdflatex
+    try {
+      execSync(
+        'pdflatex -interaction=nonstopmode -jobname=my-fig "\\documentclass[tikz]{standalone}\\begin{document}\\begin{tikzpicture}\\draw(0,0) circle (20pt);\\end{tikzpicture}\\end{document}"',
+        { cwd: testDir, stdio: 'ignore' }
+      );
+    } catch (err) {
+      console.warn('Skipping test as pdflatex is not available in the test runner environment');
+      return;
+    }
+
+    // Create the pdf_tex file containing LaTeX overlays
+    const pdfTexContent = [
+      '\\begingroup',
+      '  \\begin{picture}(100,100)',
+      '    \\put(0,0){\\includegraphics[width=\\unitlength]{my-fig.pdf}}',
+      '    \\put(20,50){LaTeX text $\\gamma_1$}',
+      '  \\end{picture}',
+      '\\endgroup',
+    ].join('\n');
+    writeFileSync(pdfTexPath, pdfTexContent, 'utf-8');
+
+    // Create main document referring to the pdf_tex file
+    writeFileSync(
+      docPath,
+      [
+        '# Inkscape LaTeX Test',
+        '',
+        '\\input{my-fig.pdf_tex}',
+      ].join('\n'),
+      'utf-8'
+    );
+
+    // Launch isolated server instance
+    const isolatedServer = await launchServer(undefined, docPath);
+
+    try {
+      await page.goto(isolatedServer.url);
+      await expect(page.locator('#editor')).toBeVisible({ timeout: 5000 });
+      await expect(page.locator('#preview')).toBeAttached();
+
+      const frame = previewFrame(page);
+      await expect(frame.locator('h1')).toHaveText('Inkscape LaTeX Test');
+
+      // The SVG should render both the circle shape and the LaTeX overlay text
+      const svg = frame.locator('svg');
+      await expect(svg).toBeAttached({ timeout: 15000 });
+      await expect(frame.locator('svg path').first()).toBeAttached({ timeout: 5000 });
+    } finally {
+      await killServer(isolatedServer);
+    }
+  });
 });

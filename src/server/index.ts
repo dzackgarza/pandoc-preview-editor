@@ -306,6 +306,7 @@ export function createApp(config: ServerConfig) {
       config.renderCommand,
       config.timeoutMs,
       controller.signal,
+      config.file,
     );
 
     // Only send response if this is still the current render.

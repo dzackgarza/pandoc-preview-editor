@@ -12,6 +12,7 @@ export function renderMarkdown(
   command: string,
   timeoutMs: number,
   signal?: AbortSignal,
+  documentPath?: string,
 ): Promise<RenderResult> {
   const startedAt = performance.now();
 
@@ -24,7 +25,15 @@ export function renderMarkdown(
     // POSIX sh does not expand `~` after `=` (e.g. --lua-filter=~/.pandoc/...).
     // Normalize `~/` → `$HOME/` so the shell handles expansion in all positions.
     const shellCommand = command.replace(/(^|\s|=)~\//g, '$1$HOME/');
-    const child = spawn(shellCommand, [], { shell: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    const env = { ...process.env };
+    if (documentPath) {
+      env.PANDOC_DOC_PATH = documentPath;
+    }
+    const child = spawn(shellCommand, [], {
+      shell: true,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env,
+    });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let settled = false;
