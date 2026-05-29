@@ -64,6 +64,7 @@ function parseConfig(found: string): ServerConfig | null {
         typeof quickOpen.launcher_command === 'string'
           ? quickOpen.launcher_command
           : undefined,
+      restoreLastFile: typeof render.restore_last_file === 'boolean' ? render.restore_last_file : true,
     };
   } catch (err) {
     console.error(`Error reading or parsing config file at ${found}: ${err}`);
@@ -150,30 +151,98 @@ program
     cfg.port = parseInt(options.port ?? '3000', 10);
     cfg.host = options.host ?? '127.0.0.1';
 
+    const xdgStateHome = process.env.XDG_STATE_HOME || join(homedir(), '.local', 'state');
+    const xdgStateDir = join(xdgStateHome, 'pandoc-preview');
+    const backupDir = join(xdgStateDir, 'backups');
+    const stateFilePath = join(xdgStateDir, 'state.json');
+
+    function getBackupPath(documentPath: string): string {
+      const { createHash } = require('node:crypto');
+      const hash = createHash('sha256').update(resolve(documentPath)).digest('hex');
+      return join(backupDir, `${hash}.md`);
+    }
+
+    const saveSessionState = (state: { last_file: string; is_temp_file: boolean }) => {
+      try {
+        mkdirSync(xdgStateDir, { recursive: true });
+        writeFileSync(stateFilePath, JSON.stringify(state, null, 2), 'utf-8');
+      } catch (err) {
+        console.error(`Failed to save session state: ${err}`);
+      }
+    };
+
     let fileContent: string | undefined;
     let absPath: string | undefined;
     let isTempFile = false;
-    if (file) {
-      absPath = resolve(cwd, file);
+    let recoveredFromBackup = false;
+
+    let sessionRestored = false;
+    if (!file && cfg.restoreLastFile) {
       try {
-        fileContent = readFileSync(absPath, 'utf-8');
+        if (existsSync(stateFilePath)) {
+          const session = JSON.parse(readFileSync(stateFilePath, 'utf-8'));
+          if (session && typeof session.last_file === 'string') {
+            const lastFile = session.last_file;
+            const isTemp = !!session.is_temp_file;
+            const backupPath = getBackupPath(lastFile);
+
+            if ((isTemp && existsSync(backupPath)) || (!isTemp && (existsSync(lastFile) || existsSync(backupPath)))) {
+              absPath = lastFile;
+              isTempFile = isTemp;
+              sessionRestored = true;
+              
+              if (existsSync(backupPath)) {
+                fileContent = readFileSync(backupPath, 'utf-8');
+                recoveredFromBackup = true;
+                console.log(`Restored unsaved session from backup: ${backupPath}`);
+              } else if (existsSync(lastFile)) {
+                fileContent = readFileSync(lastFile, 'utf-8');
+              }
+            }
+          }
+        }
       } catch (err) {
-        console.error(`Warning: could not read file ${absPath}: ${err}`);
+        console.error(`Failed to restore last session: ${err}`);
       }
-    } else {
-      const tmpDir = join(tmpdir(), 'pandoc-preview');
-      mkdirSync(tmpDir, { recursive: true });
-      absPath = join(tmpDir, `untitled-${randomUUID()}.md`);
-      fileContent = '';
-      isTempFile = true;
+    }
+
+    if (!sessionRestored) {
+      if (file) {
+        absPath = resolve(cwd, file);
+        try {
+          fileContent = readFileSync(absPath, 'utf-8');
+          const backupPath = getBackupPath(absPath);
+          if (existsSync(backupPath)) {
+            fileContent = readFileSync(backupPath, 'utf-8');
+            recoveredFromBackup = true;
+            console.log(`Recovered unsaved edits from backup for: ${absPath}`);
+          }
+        } catch (err) {
+          console.error(`Warning: could not read file ${absPath}: ${err}`);
+        }
+      } else {
+        const tmpDir = join(tmpdir(), 'pandoc-preview');
+        mkdirSync(tmpDir, { recursive: true });
+        absPath = join(tmpDir, `untitled-${randomUUID()}.md`);
+        fileContent = '';
+        isTempFile = true;
+      }
+    }
+
+    if (absPath) {
+      saveSessionState({
+        last_file: absPath,
+        is_temp_file: isTempFile,
+      });
     }
 
     const config: ServerConfig = {
       ...cfg,
       file: absPath,
       fileContent,
-      workspaceRoot: file && absPath ? dirname(absPath) : cwd,
+      workspaceRoot: absPath ? dirname(absPath) : cwd,
       isTempFile,
+      recoveredFromBackup,
     };
 
     startServer(config);
