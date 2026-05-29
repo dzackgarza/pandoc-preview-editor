@@ -403,4 +403,42 @@ test.describe('Bug fixes TDD', () => {
       await killServer(server);
     }
   });
+
+  test('workspace root defaults to launcher CWD when starting in temp mode', async ({
+    page,
+  }) => {
+    const server = await launchServer();
+    try {
+      await page.goto(server.url);
+      await expect(page.locator('#editor .cm-content')).toBeVisible({ timeout: 5000 });
+
+      const workspaceRoot = await page.evaluate(() => window.__WORKSPACE_ROOT);
+      expect(workspaceRoot).not.toContain('pandoc-preview');
+    } finally {
+      await killServer(server);
+    }
+  });
+
+  test('explanatory prompt message when launching plugin with unsaved buffer', async ({
+    page,
+  }) => {
+    const server = await launchServer();
+    try {
+      await page.goto(server.url);
+      await expect(page.locator('#editor .cm-content')).toBeVisible({ timeout: 5000 });
+
+      await openMenu(page, 'Plugin');
+      await page.getByRole('menuitem', { name: 'Export' }).hover();
+      await clickMenuItem(page, 'Export to PDF');
+
+      const dialog = page.getByTestId('file-selector-dialog');
+      await expect(dialog).toBeVisible({ timeout: 5000 });
+
+      const description = page.getByTestId('file-selector-description');
+      await expect(description).toBeVisible();
+      await expect(description).toContainText('Please choose a location to save your original Markdown document first');
+    } finally {
+      await killServer(server);
+    }
+  });
 });
