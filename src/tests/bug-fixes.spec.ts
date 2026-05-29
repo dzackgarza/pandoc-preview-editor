@@ -441,4 +441,30 @@ test.describe('Bug fixes TDD', () => {
       await killServer(server);
     }
   });
+
+  test('plugin-state returns to idle after a successful plugin run', async ({ page }) => {
+    const saveDir = mkdtempSync(join(tmpdir(), 'pandoc-plugin-idle-'));
+    const savePath = join(saveDir, 'doc.md');
+    writeFileSync(savePath, '# Document\n', 'utf-8');
+    const server = await launchServer(undefined, savePath);
+
+    try {
+      await page.goto(server.url);
+      await expect(page.locator('#editor .cm-content')).toBeVisible({ timeout: 5000 });
+
+      // Run Export to PDF plugin
+      await openMenu(page, 'Plugin');
+      await page.getByRole('menuitem', { name: 'Export' }).hover();
+      await clickMenuItem(page, 'Export to PDF');
+
+      // Wait for the success toast to confirm the plugin completed
+      await expect(page.locator('ol[tabindex="-1"]')).toContainText('Export to PDF', { timeout: 10000 });
+
+      // After completion, plugin-state must be idle — not 'plugin complete'.
+      // This proves the bug: the state is sticky and never resets.
+      await expect(page.locator('#plugin-state')).toContainText('idle', { timeout: 3000 });
+    } finally {
+      await killServer(server);
+    }
+  });
 });
