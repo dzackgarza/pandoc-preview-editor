@@ -88,4 +88,38 @@ Therefore:
 - **Loopback & Page Cache Efficiency:** Do NOT mistake frequent localhost backup requests for "network overhead" or "disk thrashing". Loopback packets (`127.0.0.1`) are handled entirely in memory by the OS kernel with near-zero CPU cost. Furthermore, small debounced writes to `/tmp` are optimized by the OS page cache (or RAM-backed `tmpfs`), ensuring physical disk wear and event-loop blocks are completely negligible.
 - **Durable Swap Recovery:** The local backup system is functionally equivalent to native Neovim swap (`.swp`) files. Upon server startup, the backend must be able to scan the host disk backup folder to automatically restore the last active unsaved session.
 
+## Fixed TeX & Diagram Compiling Philosophy (No Dynamic Lua Template Hacking)
 
+For the compilation of drawings or standalone TeX/TikZ blocks into graphic assets (SVG, PNG), the compiler wrapper must compile content against a static, fixed literal template file on disk.
+
+Therefore:
+- **No Dynamic Template Construction:** Do NOT construct dynamic LaTeX templates as strings inside Lua filters or dynamically manipulate template strings in Javascript/Lua. Do not generate ad-hoc templates in the filter.
+- **Fixed Literal Files:** Keep a static template file (e.g., `templates/tikz-template.tex` or globally in `~/.pandoc/templates`) containing all required macros, packages, and custom page definitions.
+- **One Job for the Filter/Runner:** The Lua filter or drawing runner has exactly one job: extract the LaTeX/TikZ code block, write it into a designated slot in a copy of the fixed template, compile it using standard CLI tools (e.g., `pdflatex`, `lualatex`, `pdf2svg`), and return the generated graphic asset. This keeps the filter simple (merely managing a clean compilation pipeline) rather than reinventing a static-site generator or templating engine.
+
+## Standard Pandoc AST Link Resolution (No Brittle Regex String Rewriting)
+
+When parsing and rendering custom links (such as Obsidian-style wikilinks `[[Link]]` or `[[Link|Label]]`), the app must utilize Pandoc's native AST parser representation instead of custom regex string accumulators.
+
+Therefore:
+- **No Fragile String Rewriters:** Avoid hand-rolling multi-hundred-line regex search-and-replace blocks inside Lua filters to parse nested brackets, markdown text, or HTML links.
+- **Native AST Processing:** Pandoc natively parses wikilink constructs when the standard extension is enabled. Process these cleanly via direct AST node manipulation in a standard Lua filter of less than 10 lines. By operating directly on `Link` and `Str` AST nodes, we guarantee syntax-safe updates that never break or mangle surrounding document elements.
+
+## Startup-Time Tool Discovery & Fail-Fast Architecture
+
+The helper server must determine available CLI/GUI tools once during startup rather than scanning host environments on every incoming user action.
+
+Therefore:
+- **Discover Once at Startup:** Probe system executable paths (`qtikz`, `tikzit`, `inkscape`, `xournalpp`, `dmenu`, `rofi`, etc.) exactly once during server startup (e.g., in `createApp`).
+- **Cache and Expose via API:** Cache this availability state and expose it via a clean endpoint (`GET /api/diagram/tools`).
+- **Gray Out Unavailable Options:** The frontend client must use this cached state to disable, gray out, or remove buttons for tools not installed on the user's host system, providing immediate visual feedback.
+- **Fail-Fast Endpoint Validation:** The server's launch endpoint (`POST /api/diagram/launch`) must assert tool availability and fail-fast with a 400 Bad Request error if a missing tool is requested, completely avoiding defensive shell/process spawning error recovery during runtime.
+
+## Standard Preview Asset Resolution via `<base href>`
+
+To resolve document-relative and absolute asset URLs (e.g. images, figures) inside the preview iframe, use the standard browser-native `<base href>` element combined with Express static asset directories.
+
+Therefore:
+- **Delete Brittle HTML Rewriters:** Do NOT use hand-rolled regex engines to parse HTML strings, extract tags, and rewrite source URLs before returning them to the iframe.
+- **Absolute Host Base Injection:** Because sandboxed `srcdoc` iframes default their base URL to `about:srcdoc` (rendering relative base hrefs non-functional), the server must dynamically inject a fully qualified absolute URL (e.g. `http://localhost:port/api/preview-assets/`) based on the incoming request's host header.
+- **Secure Static Serving:** Mount the `/api/preview-assets/` endpoint to the document root (`express.static(currentDocumentRoot(config))`). To prevent relative path resolution failures, strip any leading slashes cleanly from the request path before matching absolute paths securely within the workspace.
