@@ -123,3 +123,27 @@ Therefore:
 - **Delete Brittle HTML Rewriters:** Do NOT use hand-rolled regex engines to parse HTML strings, extract tags, and rewrite source URLs before returning them to the iframe.
 - **Absolute Host Base Injection:** Because sandboxed `srcdoc` iframes default their base URL to `about:srcdoc` (rendering relative base hrefs non-functional), the server must dynamically inject a fully qualified absolute URL (e.g. `http://localhost:port/api/preview-assets/`) based on the incoming request's host header.
 - **Secure Static Serving:** Mount the `/api/preview-assets/` endpoint to the document root (`express.static(currentDocumentRoot(config))`). To prevent relative path resolution failures, strip any leading slashes cleanly from the request path before matching absolute paths securely within the workspace.
+
+## One-Off Variables as Schema Scars
+
+When you encounter a one-off local variable that hedges between two values (e.g.
+`xournalCmd = isCommandAvailable('xournalpp') ? 'xournalpp' : 'xournal'`), the
+variable is not the bug — it is the scar from a patch that addressed a symptom
+while leaving the underlying schema broken.
+
+The correct reading of such a variable:
+
+- The schema does not model this property ("a tool may have multiple possible binary names")
+- A previous author encountered the gap and encoded the hedge inline rather than extending the data model
+- The fix is not to delete the variable or clean up its surrounding logic — it is to update the schema so the property is expressed structurally
+
+In this codebase, the dual-binary-name problem for xournal/xournalpp was correctly
+fixed by adding `executables: string[]` to the `DiagramTool` record and resolving
+to the first available binary in a shared probing loop. No tool is special-cased.
+The one-off variable no longer exists because the schema now expresses the general case.
+
+**Trigger**: Any one-off variable that hedges between two names, paths, or behaviors for a specific entity.
+
+**Correct action**: Extend the entity's data schema to represent the property explicitly. Update the processing code to handle the general case. The one-off variable disappears as a consequence, not as a target.
+
+**Wrong action**: Deleting the variable, inlining it, or renaming it without touching the schema.
