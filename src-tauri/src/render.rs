@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
+use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 
 use crate::fs_utils::{normalize_path, path_is_inside};
 
@@ -64,9 +64,7 @@ pub fn remove_filter_flags(command: &str, filters_dir: &Path) -> Vec<String> {
             let resolved = if resolved.is_absolute() {
                 resolved
             } else {
-                std::env::current_dir()
-                    .unwrap_or_default()
-                    .join(&resolved)
+                std::env::current_dir().unwrap_or_default().join(&resolved)
             };
             // Only drop it if it's inside filtersDir
             if !path_is_inside(filters_dir, &resolved) {
@@ -129,11 +127,16 @@ pub fn inline_preview_assets(html: &str, document_dir: &Path, workspace_root: &P
             if (path_is_inside(document_dir, &abs) || path_is_inside(workspace_root, &abs))
                 && abs.is_file()
             {
-                if let Ok(bytes) = fs::read(&abs) {
-                    let mime = mime_for_extension(abs.extension().unwrap_or_default().to_str().unwrap_or(""));
-                    let encoded = B64.encode(&bytes);
-                    result.push_str(&format!("data:{};base64,{}", mime, encoded));
-                    continue;
+                match fs::read(&abs) {
+                    Ok(bytes) => {
+                        let mime = mime_for_extension(
+                            abs.extension().unwrap_or_default().to_str().unwrap_or(""),
+                        );
+                        let encoded = B64.encode(&bytes);
+                        result.push_str(&format!("data:{};base64,{}", mime, encoded));
+                        continue;
+                    }
+                    Err(e) => log::warn!("Failed to inline preview asset {}: {}", abs.display(), e),
                 }
             }
             result.push_str(src);
@@ -155,7 +158,6 @@ pub fn mime_for_extension(ext: &str) -> &'static str {
         _ => "application/octet-stream",
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -191,7 +193,8 @@ mod tests {
         fs::write(&f2, "").unwrap();
         let cmd = format!(
             "pandoc --lua-filter={} --standalone --lua-filter={}",
-            f1.display(), f2.display()
+            f1.display(),
+            f2.display()
         );
         let remaining = remove_filter_flags(&cmd, dir.path());
         assert_eq!(remaining, vec!["--standalone"]);
@@ -202,6 +205,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cmd = "pandoc --lua-filter=/outside/f.lua --standalone";
         let remaining = remove_filter_flags(cmd, dir.path());
-        assert_eq!(remaining, vec!["--lua-filter=/outside/f.lua", "--standalone"]);
+        assert_eq!(
+            remaining,
+            vec!["--lua-filter=/outside/f.lua", "--standalone"]
+        );
     }
 }
