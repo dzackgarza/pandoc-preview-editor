@@ -35,32 +35,20 @@ build-client:
 
 # Run the app in development mode
 run:
-    cargo tauri dev
+    npx tauri dev
 
 # Build the Tauri desktop application (.deb / AppImage)
 build-tauri:
-    cargo tauri build
+    npx tauri build
 
 # Type-check the project
 typecheck:
     npx tsc --noEmit
 
-# Run all tests (Playwright E2E + API tests)
-test: build-client
-    npx playwright test
+# Run all Rust unit tests
+test:
+    cargo test --manifest-path src-tauri/Cargo.toml
 
-# Run tests in headed mode (visible browser)
-test-headed: build-client
-    npx playwright test --headed
-
-# Run tests with HTML reporter
-test-report: build-client
-    npx playwright test --reporter=html
-
-# Run focused preview rendering workflow tests
-test-render:
-    npx playwright test src/tests/e2e.spec.ts --grep "complex document"
-
-# Run only browser E2E tests
-test-e2e: build-client
-    npx playwright test src/tests/e2e.spec.ts
+# Run Rust tests with output
+test-verbose:
+    cargo test --manifest-path src-tauri/Cargo.toml -- --show-output
