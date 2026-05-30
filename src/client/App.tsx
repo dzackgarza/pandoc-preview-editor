@@ -61,15 +61,6 @@ type InitialState = {
   recoveredFromBackup: boolean;
 };
 
-declare global {
-  interface Window {
-    __PANDOC_PREVIEW_STATE__?: {
-      markdown: string;
-      currentFile: string | null;
-    };
-  }
-}
-
 const DEBOUNCE_MS = 400;
 const RESET_LAYOUT = {
   'editor-pane-panel': 56,
@@ -132,11 +123,9 @@ export function App() {
         }
       })
       .catch((err) => {
-        toast({
-          title: 'Startup Error',
-          description: err instanceof Error ? err.message : String(err),
-          variant: 'destructive',
-        });
+        throw new Error(
+          `Failed to load initial state: ${err instanceof Error ? err.message : String(err)}`,
+        );
       });
   }, []);
 
