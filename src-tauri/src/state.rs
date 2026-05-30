@@ -116,70 +116,31 @@ impl AppState {
     }
 }
 
+#[derive(Debug, Clone, serde::Deserialize)]
 struct DiagramToolDef {
-    id: &'static str,
-    executables: &'static [&'static str],
-    ext: &'static str,
-    starter_template: &'static str,
+    id: String,
+    executables: Vec<String>,
+    ext: String,
+    starter_template: String,
 }
 
-static DIAGRAM_TOOLS: &[DiagramToolDef] = &[
-    DiagramToolDef {
-        id: "qtikz",
-        executables: &["qtikz"],
-        ext: ".tikz",
-        starter_template:
-            "\\begin{tikzpicture}\n  \\draw (0,0) circle (1in);\n\\end{tikzpicture}\n",
-    },
-    DiagramToolDef {
-        id: "tikzit",
-        executables: &["tikzit"],
-        ext: ".tikz",
-        starter_template:
-            "\\begin{tikzpicture}\n  \\draw (0,0) circle (1in);\n\\end{tikzpicture}\n",
-    },
-    DiagramToolDef {
-        id: "inkscape",
-        executables: &["inkscape"],
-        ext: ".svg",
-        starter_template: "",
-    },
-    DiagramToolDef {
-        id: "drawio",
-        executables: &["drawio", "draw.io"],
-        ext: ".drawio",
-        starter_template: "",
-    },
-    DiagramToolDef {
-        id: "xournal",
-        executables: &["xournal"],
-        ext: ".xoj",
-        starter_template: "",
-    },
-    DiagramToolDef {
-        id: "xournalpp",
-        executables: &["xournalpp"],
-        ext: ".xopp",
-        starter_template: "",
-    },
-    DiagramToolDef {
-        id: "ipe",
-        executables: &["ipe"],
-        ext: ".ipe",
-        starter_template: "",
-    },
-];
+fn load_diagram_tools() -> Vec<DiagramToolDef> {
+    let json = include_str!("../../src/shared/diagram-tools.json");
+    serde_json::from_str(json).expect("diagram-tools.json must be valid JSON")
+}
+
+use std::sync::LazyLock;
+static DIAGRAM_TOOLS: LazyLock<Vec<DiagramToolDef>> = LazyLock::new(load_diagram_tools);
 
 pub fn probe_tool_state() -> HashMap<String, ToolEntry> {
     let mut map = HashMap::new();
-    for tool in DIAGRAM_TOOLS {
+    for tool in &*DIAGRAM_TOOLS {
         let found = tool.executables.iter().find(|e| is_command_available(e));
         let cmd = found
             .cloned()
-            .unwrap_or(tool.executables[0])
-            .to_string();
+            .unwrap_or_else(|| tool.executables[0].clone());
         map.insert(
-            tool.id.to_string(),
+            tool.id.clone(),
             ToolEntry {
                 installed: found.is_some(),
                 cmd,
@@ -189,27 +150,27 @@ pub fn probe_tool_state() -> HashMap<String, ToolEntry> {
     map
 }
 
-fn tool_ext(tool_id: &str) -> &'static str {
+fn tool_ext(tool_id: &str) -> &str {
     DIAGRAM_TOOLS
         .iter()
         .find(|t| t.id == tool_id)
-        .map(|t| t.ext)
+        .map(|t| t.ext.as_str())
         .unwrap_or(".svg")
 }
 
-pub fn tool_id_for_ext(ext: &str) -> &'static str {
+pub fn tool_id_for_ext(ext: &str) -> &str {
     DIAGRAM_TOOLS
         .iter()
         .find(|t| t.ext == ext)
-        .map(|t| t.id)
+        .map(|t| t.id.as_str())
         .unwrap_or("inkscape")
 }
 
-pub fn starter_template_for_tool(tool_id: &str) -> &'static str {
+pub fn starter_template_for_tool(tool_id: &str) -> &str {
     DIAGRAM_TOOLS
         .iter()
         .find(|t| t.id == tool_id)
-        .map(|t| t.starter_template)
+        .map(|t| t.starter_template.as_str())
         .unwrap_or("")
 }
 
