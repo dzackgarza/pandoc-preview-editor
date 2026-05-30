@@ -37,6 +37,7 @@ import {
   writeFileSyncAtomic,
   type FileTreeEntry,
 } from './workspace.js';
+import { DIAGRAM_TOOLS, getDiagramTool, getDiagramToolByExt } from '../shared/diagram-tools.js';
 
 type QuickOpenEntry = {
   path: string;
@@ -246,15 +247,15 @@ export function createApp(config: ServerConfig) {
     return false;
   }
 
-  const installedTools = {
-    qtikz: isCommandAvailable('qtikz'),
-    tikzit: isCommandAvailable('tikzit'),
-    inkscape: isCommandAvailable('inkscape'),
-    xournal: isCommandAvailable('xournalpp') || isCommandAvailable('xournal'),
-    ipe: isCommandAvailable('ipe'),
-  };
-
-  const xournalCmd = isCommandAvailable('xournalpp') ? 'xournalpp' : 'xournal';
+  // Probe tool availability once at startup. toolState[id].cmd is the actual
+  // executable to spawn (first entry in tool.executables that exists on PATH).
+  const toolState: Record<string, { installed: boolean; cmd: string }> =
+    Object.fromEntries(
+      DIAGRAM_TOOLS.map((tool) => {
+        const cmd = tool.executables.find((e) => isCommandAvailable(e)) ?? null;
+        return [tool.id, { installed: cmd !== null, cmd: cmd ?? tool.executables[0] }];
+      })
+    );
 
   function trackRecent(absolutePath: string) {
     recentFiles.splice(
@@ -1056,46 +1057,7 @@ export function createApp(config: ServerConfig) {
     try {
       mkdirSync(figuresDir, { recursive: true });
 
-      let template = '';
-      if (type === 'qtikz' || type === 'tikzit') {
-        template =
-          [
-            '\\begin{tikzpicture}',
-            '  \\draw (0,0) circle (1in);',
-            '\\end{tikzpicture}',
-          ].join('\n') + '\n';
-      } else if (type === 'inkscape') {
-        template =
-          [
-            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">',
-            '  <circle cx="50" cy="50" r="40" stroke="black" stroke-width="3" fill="red" />',
-            '</svg>',
-          ].join('\n') + '\n';
-      } else if (type === 'xournal') {
-        template =
-          [
-            '<?xml version="1.0" standalone="no"?>',
-            '<xournal version="0.4.8.2016">',
-            '<title>Xournal Document</title>',
-            '<page width="612.00000000" height="792.00000000">',
-            '<background type="solid" color="#ffffffff" style="plain"/>',
-            '<layer/>',
-            '</page>',
-            '</xournal>',
-          ].join('\n') + '\n';
-      } else if (type === 'ipe') {
-        template =
-          [
-            '<?xml version="1.0"?>',
-            '<!DOCTYPE ipe SYSTEM "ipe.dtd">',
-            '<ipe version="70218" creator="Ipe 7.2">',
-            '<page>',
-            '<layer name="alpha"/>',
-            '<view layers="alpha" active="alpha"/>',
-            '</page>',
-            '</ipe>',
-          ].join('\n') + '\n';
-      }
+      const template = getDiagramTool(type).starterTemplate;
 
       writeFileSync(figurePath, template, 'utf-8');
 
@@ -1114,9 +1076,9 @@ export function createApp(config: ServerConfig) {
     }
   });
 
-  // GET /api/diagram/tools - check which desktop applications are installed on the system
+  // GET /api/diagram/tools - returns { [id]: boolean } for each known tool
   app.get('/api/diagram/tools', (_req, res) => {
-    res.json(installedTools);
+    res.json(Object.fromEntries(Object.entries(toolState).map(([id, s]) => [id, s.installed])));
   });
 
   // POST /api/diagram/launch - launch desktop application pointing to the newly created asset
@@ -1132,15 +1094,12 @@ export function createApp(config: ServerConfig) {
     let toolType = typeof type === 'string' ? type : '';
     if (!toolType) {
       const ext = extname(absolutePath).toLowerCase();
-      if (ext === '.tikz') toolType = 'qtikz';
-      else if (ext === '.svg') toolType = 'inkscape';
-      else if (ext === '.xopp' || ext === '.xopps' || ext === '.xopp') toolType = 'xournal';
-      else if (ext === '.ipe') toolType = 'ipe';
-      else toolType = 'inkscape';
+      toolType = getDiagramToolByExt(ext)?.id ?? 'inkscape';
     }
 
-    // Fail-fast assertion: if the requested tool is not installed, reject the request immediately!
-    if (!installedTools[toolType as keyof typeof installedTools]) {
+    // Fail-fast: if the tool is unknown or not installed, reject immediately.
+    const toolEntry = toolState[toolType];
+    if (!toolEntry?.installed) {
       res.status(400).json({ error: `Desktop application for ${toolType} is not installed on this system` });
       return;
     }
@@ -1151,10 +1110,7 @@ export function createApp(config: ServerConfig) {
     }
 
     try {
-      let cmd = toolType;
-      if (toolType === 'xournal') {
-        cmd = xournalCmd;
-      }
+      const cmd = toolEntry.cmd;
 
       const child = spawn(cmd, [resolvedPath], {
         detached: true,

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X, Image, Globe, Monitor, Loader, Clipboard, Plus, Check } from 'lucide-react';
+import { DIAGRAM_TOOLS, type DiagramTool } from '../../shared/diagram-tools.js';
 
 interface DiagramModalProps {
   open: boolean;
@@ -16,16 +17,14 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  // Desktop form states
-  const [desktopTool, setDesktopTool] = useState<'qtikz' | 'tikzit' | 'inkscape' | 'xournal' | 'ipe'>('qtikz');
+  // Desktop form states — tool id is a plain string; the DIAGRAM_TOOLS registry
+  // is the source of truth for which ids exist and what they mean.
+  const [desktopTool, setDesktopTool] = useState<string>(DIAGRAM_TOOLS[0].id);
   const [filename, setFilename] = useState('');
-  const [availableTools, setAvailableTools] = useState<Record<string, boolean>>({
-    qtikz: true,
-    tikzit: true,
-    inkscape: true,
-    xournal: true,
-    ipe: true,
-  });
+  // Optimistic defaults: treat every tool as available until the server says otherwise.
+  const [availableTools, setAvailableTools] = useState<Record<string, boolean>>(
+    Object.fromEntries(DIAGRAM_TOOLS.map((t: DiagramTool) => [t.id, true]))
+  );
 
   useEffect(() => {
     if (open) {
@@ -34,12 +33,9 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
         .then((data) => {
           if (data) {
             setAvailableTools(data);
-            const toolsOrder: ('qtikz' | 'tikzit' | 'inkscape' | 'xournal' | 'ipe')[] = ['qtikz', 'tikzit', 'inkscape', 'xournal', 'ipe'];
             if (!data[desktopTool]) {
-              const firstAvailable = toolsOrder.find((t) => data[t]);
-              if (firstAvailable) {
-                setDesktopTool(firstAvailable);
-              }
+              const firstAvailable = DIAGRAM_TOOLS.find((t: DiagramTool) => data[t.id]);
+              if (firstAvailable) setDesktopTool(firstAvailable.id);
             }
           }
         })
@@ -160,10 +156,8 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
     setLoading(true);
     setError(null);
 
-    let ext = '.tikz';
-    if (desktopTool === 'inkscape') ext = '.svg';
-    if (desktopTool === 'xournal') ext = '.xopp';
-    if (desktopTool === 'ipe') ext = '.ipe';
+    const activeTool = DIAGRAM_TOOLS.find((t: DiagramTool) => t.id === desktopTool) ?? DIAGRAM_TOOLS[0];
+    const ext = activeTool.ext;
 
     let finalName = filename.trim();
     if (!finalName.endsWith(ext)) {
@@ -208,12 +202,8 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
         throw new Error(errData.error || 'Failed to launch desktop application');
       }
 
-      let markdownRef = '';
-      if (desktopTool === 'qtikz' || desktopTool === 'tikzit') {
-        markdownRef = `\\input{./figures/${finalName}}`;
-      } else {
-        markdownRef = `![](./figures/${finalName})`;
-      }
+      const activeTool = DIAGRAM_TOOLS.find((t: DiagramTool) => t.id === desktopTool) ?? DIAGRAM_TOOLS[0];
+      const markdownRef = activeTool.markdownRef(finalName);
 
       insertTextAtCursor(`\n${markdownRef}\n`);
       onClose();
@@ -377,13 +367,7 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 mt-2">
-                    {[
-                      { id: 'qtikz', name: 'Qtikz (TikZ editor)', desc: 'Writes .tikz files', url: 'https://github.com/nlohmann/qtikz' },
-                      { id: 'tikzit', name: 'Tikzit (Node/TikZ)', desc: 'Writes .tikz files', url: 'https://tikzit.github.io/' },
-                      { id: 'inkscape', name: 'Inkscape (Vector)', desc: 'Writes .svg drawings', url: 'https://inkscape.org/' },
-                      { id: 'xournal', name: 'Xournal++ (Sketch)', desc: 'Writes .xopp notes', url: 'https://github.com/xournalpp/xournalpp' },
-                      { id: 'ipe', name: 'Ipe (Extensible Editor)', desc: 'Writes .ipe drawings', url: 'https://ipe.otfried.org/' },
-                    ].map((tool) => {
+                    {DIAGRAM_TOOLS.map((tool: DiagramTool) => {
                       const isAvailable = availableTools[tool.id];
                       if (!isAvailable) {
                         return (
@@ -395,11 +379,11 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
                             className="rounded-md border p-3 text-left transition-all border-[#e06c75]/25 bg-[#e06c75]/5 text-[#e06c75] hover:bg-[#e06c75]/10 cursor-pointer block hover:no-underline"
                           >
                             <div className="text-sm font-semibold flex items-center gap-1.5 justify-between">
-                              <span>{tool.name}</span>
+                              <span>{tool.label}</span>
                               <span className="text-[9px] font-normal px-1.5 py-0.5 rounded bg-[#2b1c1e] text-[#f38ba8] border border-[#f38ba8]/20 whitespace-nowrap">Install (Link)</span>
                             </div>
                             <div className="text-xs text-[#aab2c8] mt-0.5">{tool.desc}</div>
-                            <div className="text-[10px] text-[#e06c75] underline mt-1.5 flex items-center gap-1">
+                            <div className="text-[10px] text-[#e06c75] underline mt-1.5">
                               Visit homepage to install &rarr;
                             </div>
                           </a>
@@ -408,16 +392,14 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
                       return (
                         <button
                           key={tool.id}
-                          onClick={() => { setDesktopTool(tool.id as any); setError(null); }}
+                          onClick={() => { setDesktopTool(tool.id); setError(null); }}
                           className={`rounded-md border p-3 text-left transition-all ${
                             desktopTool === tool.id
                               ? 'border-[#89b4fa] bg-[#89b4fa]/5 text-white cursor-pointer'
                               : 'border-[#2b2f38] bg-[#171a21]/50 text-[#788190] hover:bg-[#20242e] hover:text-[#e6e8eb] cursor-pointer'
                           }`}
                         >
-                          <div className="text-sm font-semibold flex items-center gap-1.5 justify-between">
-                            <span>{tool.name}</span>
-                          </div>
+                          <div className="text-sm font-semibold">{tool.label}</div>
                           <div className="text-xs text-[#5c6370] mt-0.5">{tool.desc}</div>
                         </button>
                       );
@@ -435,7 +417,7 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
                     />
                     <div className="text-xs text-[#5c6370] font-mono">
                       Will create: <span className="text-[#aab2c0]">figures/{filename || 'filename'}{
-                        desktopTool === 'qtikz' || desktopTool === 'tikzit' ? '.tikz' : desktopTool === 'inkscape' ? '.svg' : desktopTool === 'xournal' ? '.xopp' : '.ipe'
+                        (DIAGRAM_TOOLS.find((t: DiagramTool) => t.id === desktopTool) ?? DIAGRAM_TOOLS[0]).ext
                       }</span>
                     </div>
                   </div>
