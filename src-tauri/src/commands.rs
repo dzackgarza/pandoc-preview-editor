@@ -788,6 +788,13 @@ pub fn toggle_filters(
             )
         };
         let path_opt = filters_dir.join(&filename);
+        if !path_opt.is_file() {
+            return Err(format!(
+                "filter \"{}\" does not exist in {}",
+                filename,
+                filters_dir.display()
+            ));
+        }
         remaining.push(format!("--lua-filter={}", path_opt.to_string_lossy()));
     }
 

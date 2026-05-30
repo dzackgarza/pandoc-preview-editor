@@ -45,14 +45,17 @@ export function parseCommand(command: string): ParsedFlags {
 
   const rawTemplate = pickLast(parsed.template);
   const selectedTemplate = rawTemplate
-    ? rawTemplate.split('/').at(-1) || rawTemplate
+    ? rawTemplate.startsWith('/') || rawTemplate.startsWith('~/')
+      ? rawTemplate
+      : rawTemplate.split('/').at(-1) || rawTemplate
     : '';
 
   const rawLuaFilters = toArray(parsed['lua-filter']);
   const rawFilters = toArray(parsed.filter);
-  const selectedFilters = [...rawLuaFilters, ...rawFilters].map(
-    (f) => f.split('/').at(-1) || f,
-  );
+  const selectedFilters = [...rawLuaFilters, ...rawFilters].map((f) => {
+    if (f.startsWith('/') || f.startsWith('~/')) return f;
+    return f.split('/').at(-1) || f;
+  });
 
   let math: ParsedFlags['math'] = 'none';
   if (parsed.webtex) math = 'webtex';
@@ -117,13 +120,24 @@ export function buildCommand(
   if (flags.math === 'katex') args.push('--katex');
   if (flags.math === 'webtex') args.push('--webtex');
   if (flags.selectedTemplate) {
-    args.push(
-      `--template=${templatesDir.replace(/\/$/, '')}/${flags.selectedTemplate}`,
-    );
+    if (
+      flags.selectedTemplate.startsWith('/') ||
+      flags.selectedTemplate.startsWith('~/')
+    ) {
+      args.push(`--template=${flags.selectedTemplate}`);
+    } else {
+      args.push(
+        `--template=${templatesDir.replace(/\/$/, '')}/${flags.selectedTemplate}`,
+      );
+    }
   }
   for (const filter of flags.selectedFilters) {
     const ext = filter.endsWith('.lua') ? '--lua-filter' : '--filter';
-    args.push(`${ext}=${filtersDir.replace(/\/$/, '')}/${filter}`);
+    if (filter.startsWith('/') || filter.startsWith('~/')) {
+      args.push(`${ext}=${filter}`);
+    } else {
+      args.push(`${ext}=${filtersDir.replace(/\/$/, '')}/${filter}`);
+    }
   }
   args.push(...flags.otherFlags);
   return quote([flags.commandName, ...args]);
