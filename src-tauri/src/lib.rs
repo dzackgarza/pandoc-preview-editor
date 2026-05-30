@@ -185,19 +185,8 @@ fn resolve_inside(root: &Path, path_from_client: &str) -> Result<PathBuf, String
     Ok(target)
 }
 
-/// Lexically normalize a path (resolve `.` and `..`) without touching the filesystem.
 fn normalize_path(path: &Path) -> PathBuf {
-    let mut components = Vec::new();
-    for component in path.components() {
-        match component {
-            std::path::Component::CurDir => {}
-            std::path::Component::ParentDir => {
-                components.pop();
-            }
-            c => components.push(c),
-        }
-    }
-    components.iter().collect()
+    path_clean::clean(path)
 }
 
 fn to_client_path(root: &Path, absolute: &Path) -> String {
@@ -434,74 +423,103 @@ fn is_command_available(cmd: &str) -> bool {
     false
 }
 
-// Diagram tool IDs and their executables (mirrors DIAGRAM_TOOLS in TS)
-fn diagram_tool_executables() -> Vec<(String, Vec<String>)> {
-    vec![
-        ("qtikz".into(), vec!["qtikz".into()]),
-        ("tikzit".into(), vec!["tikzit".into()]),
-        ("inkscape".into(), vec!["inkscape".into()]),
-        ("drawio".into(), vec!["drawio".into(), "draw.io".into()]),
-        ("xournal".into(), vec!["xournal".into()]),
-        ("xournalpp".into(), vec!["xournalpp".into()]),
-        ("ipe".into(), vec!["ipe".into()]),
-    ]
+// ─── diagram tool definitions ─────────────────────────────────────────────────
+
+struct DiagramToolDef {
+    id: &'static str,
+    executables: &'static [&'static str],
+    ext: &'static str,
+    starter_template: &'static str,
 }
+
+static DIAGRAM_TOOLS: &[DiagramToolDef] = &[
+    DiagramToolDef {
+        id: "qtikz",
+        executables: &["qtikz"],
+        ext: ".tikz",
+        starter_template:
+            "\\begin{tikzpicture}\n  \\draw (0,0) circle (1in);\n\\end{tikzpicture}\n",
+    },
+    DiagramToolDef {
+        id: "tikzit",
+        executables: &["tikzit"],
+        ext: ".tikz",
+        starter_template:
+            "\\begin{tikzpicture}\n  \\draw (0,0) circle (1in);\n\\end{tikzpicture}\n",
+    },
+    DiagramToolDef {
+        id: "inkscape",
+        executables: &["inkscape"],
+        ext: ".svg",
+        starter_template: "",
+    },
+    DiagramToolDef {
+        id: "drawio",
+        executables: &["drawio", "draw.io"],
+        ext: ".drawio",
+        starter_template: "",
+    },
+    DiagramToolDef {
+        id: "xournal",
+        executables: &["xournal"],
+        ext: ".xoj",
+        starter_template: "",
+    },
+    DiagramToolDef {
+        id: "xournalpp",
+        executables: &["xournalpp"],
+        ext: ".xopp",
+        starter_template: "",
+    },
+    DiagramToolDef {
+        id: "ipe",
+        executables: &["ipe"],
+        ext: ".ipe",
+        starter_template: "",
+    },
+];
 
 fn probe_tool_state() -> HashMap<String, ToolEntry> {
     let mut map = HashMap::new();
-    for (id, executables) in diagram_tool_executables() {
-        let found = executables.iter().find(|e| is_command_available(e));
-        let installed = found.is_some();
+    for tool in DIAGRAM_TOOLS {
+        let found = tool.executables.iter().find(|e| is_command_available(e));
         let cmd = found
             .cloned()
-            .unwrap_or_else(|| executables.first().cloned().unwrap_or_default());
-        map.insert(id, ToolEntry { installed, cmd });
+            .unwrap_or(tool.executables[0])
+            .to_string();
+        map.insert(
+            tool.id.to_string(),
+            ToolEntry {
+                installed: found.is_some(),
+                cmd,
+            },
+        );
     }
     map
 }
 
-// ─── diagram tool extension mapping ──────────────────────────────────────────
-
-fn ext_for_tool(tool_id: &str) -> &'static str {
-    match tool_id {
-        "qtikz" | "tikzit" => ".tikz",
-        "inkscape" => ".svg",
-        "drawio" => ".drawio",
-        "xournal" => ".xoj",
-        "xournalpp" => ".xopp",
-        "ipe" => ".ipe",
-        _ => ".svg",
-    }
+fn tool_ext(tool_id: &str) -> &'static str {
+    DIAGRAM_TOOLS
+        .iter()
+        .find(|t| t.id == tool_id)
+        .map(|t| t.ext)
+        .unwrap_or(".svg")
 }
 
 fn tool_id_for_ext(ext: &str) -> &'static str {
-    match ext {
-        ".tikz" => "qtikz",
-        ".svg" => "inkscape",
-        ".drawio" => "drawio",
-        ".xoj" => "xournal",
-        ".xopp" => "xournalpp",
-        ".ipe" => "ipe",
-        _ => "inkscape",
-    }
+    DIAGRAM_TOOLS
+        .iter()
+        .find(|t| t.ext == ext)
+        .map(|t| t.id)
+        .unwrap_or("inkscape")
 }
 
 fn starter_template_for_tool(tool_id: &str) -> &'static str {
-    match tool_id {
-        "qtikz" | "tikzit" => {
-            "\\begin{tikzpicture}\n  \\draw (0,0) circle (1in);\n\\end{tikzpicture}\n"
-        }
-        _ => "",
-    }
-}
-
-// ─── tilde expansion ──────────────────────────────────────────────────────────
-
-fn expand_tilde_in_command(command: &str) -> String {
-    // POSIX sh does not expand `~` after `=` (e.g. --lua-filter=~/.pandoc/...)
-    // Normalize `~/` → `$HOME/` so the shell handles expansion in all positions.
-    let re = regex_lite::Regex::new(r"(^|\s|=)~/").unwrap();
-    re.replace_all(command, "$1$HOME/").into_owned()
+    DIAGRAM_TOOLS
+        .iter()
+        .find(|t| t.id == tool_id)
+        .map(|t| t.starter_template)
+        .unwrap_or("")
 }
 
 // ─── atomic write ─────────────────────────────────────────────────────────────
@@ -698,7 +716,26 @@ fn mime_for_extension(ext: &str) -> &'static str {
     }
 }
 
-// ─── TOML config loading ──────────────────────────────────────────────────────
+// ─── TOML config writing ──────────────────────────────────────────────────────
+
+fn write_config_toml(
+    path: &Path,
+    debounce_ms: u64,
+    timeout_ms: u64,
+    restore_last_file: bool,
+    render_command: &str,
+    templates_dir: &str,
+    filters_dir: &str,
+) -> Result<(), String> {
+    let mut doc = toml_edit::DocumentMut::new();
+    doc["render"]["debounce_ms"] = toml_edit::value(debounce_ms as i64);
+    doc["render"]["timeout_ms"] = toml_edit::value(timeout_ms as i64);
+    doc["render"]["restore_last_file"] = toml_edit::value(restore_last_file);
+    doc["pandoc"]["render_command"] = toml_edit::value(render_command);
+    doc["pandoc"]["templates_dir"] = toml_edit::value(templates_dir);
+    doc["pandoc"]["filters_dir"] = toml_edit::value(filters_dir);
+    fs::write(path, doc.to_string()).map_err(|e| e.to_string())
+}
 
 #[derive(Debug, serde::Deserialize, Default)]
 struct TomlConfig {
@@ -765,11 +802,10 @@ async fn render(
             )
     };
 
-    let shell_command = expand_tilde_in_command(&command);
     let started = std::time::Instant::now();
 
-    let mut cmd = tokio::process::Command::new("sh");
-    cmd.arg("-c").arg(&shell_command);
+    let mut cmd = tokio::process::Command::new("zsh");
+    cmd.arg("-c").arg(&command);
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -1380,16 +1416,15 @@ fn set_config(
     s.restore_last_file = restore_last_file.unwrap_or(true);
 
     if let Some(ref config_path) = s.config_path {
-        let toml_content = format!(
-            "[render]\ndebounce_ms = {}\ntimeout_ms = {}\nrestore_last_file = {}\n\n[pandoc]\nrender_command = {:?}\ntemplates_dir = {:?}\nfilters_dir = {:?}\n",
+        write_config_toml(
+            config_path,
             debounce_ms,
             timeout_ms,
             restore_last_file.unwrap_or(true),
-            render_command,
-            templates_dir,
-            filters_dir,
-        );
-        fs::write(config_path, toml_content).map_err(|e| e.to_string())?;
+            &render_command,
+            &templates_dir,
+            &filters_dir,
+        )?;
     }
 
     Ok(serde_json::json!({ "ok": true }))
@@ -1483,15 +1518,15 @@ fn toggle_filters(
     s.render_command = new_cmd.clone();
 
     if let Some(ref config_path) = s.config_path.clone() {
-        let toml_content = format!(
-            "[render]\ndebounce_ms = {}\ntimeout_ms = {}\n\n[pandoc]\nrender_command = {:?}\ntemplates_dir = {:?}\nfilters_dir = {:?}\n",
+        write_config_toml(
+            config_path,
             s.debounce_ms,
             s.timeout_ms,
-            new_cmd,
-            s.templates_dir.to_string_lossy(),
-            s.filters_dir.to_string_lossy(),
-        );
-        fs::write(config_path, toml_content).map_err(|e| e.to_string())?;
+            true,
+            &new_cmd,
+            &s.templates_dir.to_string_lossy(),
+            &s.filters_dir.to_string_lossy(),
+        )?;
     }
 
     Ok(serde_json::json!({ "ok": true, "renderCommand": new_cmd }))
