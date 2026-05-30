@@ -2167,3 +2167,299 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
+// ─── tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    // ── normalize_path ────────────────────────────────────────────────────────
+
+    #[test]
+    fn normalize_path_strips_dots() {
+        assert_eq!(
+            normalize_path(Path::new("/foo/./bar/./baz")),
+            PathBuf::from("/foo/bar/baz")
+        );
+    }
+
+    #[test]
+    fn normalize_path_resolves_parent_dirs() {
+        assert_eq!(
+            normalize_path(Path::new("/foo/bar/../baz")),
+            PathBuf::from("/foo/baz")
+        );
+    }
+
+    #[test]
+    fn normalize_path_noop_clean_path() {
+        assert_eq!(
+            normalize_path(Path::new("/foo/bar/baz")),
+            PathBuf::from("/foo/bar/baz")
+        );
+    }
+
+    // ── path_is_inside ────────────────────────────────────────────────────────
+
+    #[test]
+    fn path_is_inside_direct_child() {
+        assert!(path_is_inside(Path::new("/ws"), Path::new("/ws/file.md")));
+    }
+
+    #[test]
+    fn path_is_inside_deep_child() {
+        assert!(path_is_inside(
+            Path::new("/ws"),
+            Path::new("/ws/a/b/c/file.md")
+        ));
+    }
+
+    #[test]
+    fn path_is_inside_self() {
+        assert!(path_is_inside(Path::new("/ws"), Path::new("/ws")));
+    }
+
+    #[test]
+    fn path_is_outside_rejected() {
+        assert!(!path_is_inside(
+            Path::new("/ws"),
+            Path::new("/etc/passwd")
+        ));
+    }
+
+    #[test]
+    fn path_is_outside_parent_dir_escape_rejected() {
+        assert!(!path_is_inside(
+            Path::new("/ws/sub"),
+            Path::new("/ws/../outside")
+        ));
+    }
+
+    // ── resolve_inside ────────────────────────────────────────────────────────
+
+    #[test]
+    fn resolve_inside_relative_path() {
+        let root = Path::new("/ws");
+        assert_eq!(
+            resolve_inside(root, "sub/file.md").unwrap(),
+            PathBuf::from("/ws/sub/file.md")
+        );
+    }
+
+    #[test]
+    fn resolve_inside_empty_path_returns_root() {
+        assert_eq!(
+            resolve_inside(Path::new("/ws"), "").unwrap(),
+            PathBuf::from("/ws")
+        );
+    }
+
+    #[test]
+    fn resolve_inside_rejects_parent_dir_escape() {
+        assert!(resolve_inside(Path::new("/ws/sub"), "../outside").is_err());
+    }
+
+    // ── write_file_atomic ─────────────────────────────────────────────────────
+
+    #[test]
+    fn write_file_atomic_creates_and_overwrites() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("doc.md");
+
+        write_file_atomic(&path, "hello").unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "hello");
+
+        write_file_atomic(&path, "world").unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "world");
+    }
+
+    #[test]
+    fn write_file_atomic_leaves_no_tmp_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("doc.md");
+        write_file_atomic(&path, "data").unwrap();
+
+        let tmp_count = fs::read_dir(dir.path())
+            .unwrap()
+            .filter(|e| {
+                e.as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".tmp-")
+            })
+            .count();
+        assert_eq!(tmp_count, 0);
+    }
+
+    // ── config TOML round-trip ────────────────────────────────────────────────
+
+    #[test]
+    fn config_toml_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+
+        write_config_toml(
+            &path, 500, 20000, true,
+            "pandoc --standalone -t html5",
+            "/home/user/.pandoc/templates",
+            "/home/user/.pandoc/filters",
+        )
+        .unwrap();
+
+        let loaded = load_config_from_toml(&path);
+        let render = loaded.render.unwrap();
+        let pandoc = loaded.pandoc.unwrap();
+
+        assert_eq!(render.debounce_ms, Some(500));
+        assert_eq!(render.timeout_ms, Some(20000));
+        assert_eq!(render.restore_last_file, Some(true));
+        assert_eq!(
+            pandoc.render_command.unwrap(),
+            "pandoc --standalone -t html5"
+        );
+        assert_eq!(
+            pandoc.templates_dir.unwrap(),
+            "/home/user/.pandoc/templates"
+        );
+        assert_eq!(
+            pandoc.filters_dir.unwrap(),
+            "/home/user/.pandoc/filters"
+        );
+    }
+
+    // ── extract_filter_paths ──────────────────────────────────────────────────
+
+    #[test]
+    fn extract_filter_paths_finds_lua_filter_flags() {
+        let paths = extract_filter_paths(
+            "pandoc --lua-filter=/a/f.lua --filter /b/f.py --lua-filter=/c/g.lua",
+        );
+        assert_eq!(paths, vec!["/a/f.lua", "/b/f.py", "/c/g.lua"]);
+    }
+
+    #[test]
+    fn extract_filter_paths_finds_equals_form() {
+        let paths = extract_filter_paths("pandoc --lua-filter=~/.pandoc/f.lua");
+        assert_eq!(paths, vec!["~/.pandoc/f.lua"]);
+    }
+
+    #[test]
+    fn extract_filter_paths_empty_when_no_filters() {
+        let paths = extract_filter_paths("pandoc --standalone -t html5");
+        assert!(paths.is_empty());
+    }
+
+    // ── remove_filter_flags ───────────────────────────────────────────────────
+
+    #[test]
+    fn remove_filter_flags_drops_filters_inside_filters_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let f1 = dir.path().join("a.lua");
+        let f2 = dir.path().join("b.lua");
+        fs::write(&f1, "").unwrap();
+        fs::write(&f2, "").unwrap();
+
+        let cmd = format!(
+            "pandoc --lua-filter={} --standalone --lua-filter={}",
+            f1.display(),
+            f2.display()
+        );
+        let remaining = remove_filter_flags(&cmd, dir.path());
+        // Only --standalone should remain (plus implicit pandoc)
+        assert_eq!(remaining, vec!["--standalone"]);
+    }
+
+    #[test]
+    fn remove_filter_flags_preserves_filters_outside_filters_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let cmd = "pandoc --lua-filter=/outside/f.lua --standalone";
+        let remaining = remove_filter_flags(cmd, dir.path());
+        assert_eq!(
+            remaining,
+            vec!["--lua-filter=/outside/f.lua", "--standalone"]
+        );
+    }
+
+    // ── is_text_like_file / is_markdown_file ──────────────────────────────────
+
+    #[test]
+    fn is_markdown_file_detects_extensions() {
+        assert!(is_markdown_file(Path::new("doc.md")));
+        assert!(is_markdown_file(Path::new("doc.mdown")));
+        assert!(is_markdown_file(Path::new("doc.markdown")));
+        assert!(!is_markdown_file(Path::new("doc.txt")));
+        assert!(!is_markdown_file(Path::new("doc.tex")));
+    }
+
+    #[test]
+    fn is_text_like_file_detects_known_text_types() {
+        assert!(is_text_like_file(Path::new("doc.md")));
+        assert!(is_text_like_file(Path::new("doc.tex")));
+        assert!(is_text_like_file(Path::new("doc.toml")));
+        assert!(is_text_like_file(Path::new("justfile")));
+    }
+
+    #[test]
+    fn is_text_like_file_rejects_binaries() {
+        assert!(!is_text_like_file(Path::new("photo.png")));
+        assert!(!is_text_like_file(Path::new("doc.pdf")));
+        assert!(!is_text_like_file(Path::new("archive.zip")));
+    }
+
+    #[test]
+    fn is_text_like_file_sniffs_null_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("unknown.bin");
+        fs::write(&path, b"\x00\x00hello").unwrap();
+        assert!(!is_text_like_file(&path));
+
+        let path2 = dir.path().join("unknown.txt");
+        fs::write(&path2, b"hello world").unwrap();
+        assert!(is_text_like_file(&path2));
+    }
+
+    // ── sanitize_figure_filename ──────────────────────────────────────────────
+
+    #[test]
+    fn sanitize_figure_filename_cleans_special_chars() {
+        let result = sanitize_figure_filename("my diagram (1).png", "image/png");
+        assert!(result.starts_with("my-diagram--1-"));
+        assert!(result.ends_with(".png"));
+    }
+
+    #[test]
+    fn sanitize_figure_filename_handles_empty_input() {
+        let result = sanitize_figure_filename("", "image/png");
+        assert!(result.starts_with("figure-"));
+        assert!(result.ends_with(".png"));
+    }
+
+    #[test]
+    fn sanitize_figure_filename_preserves_valid_name() {
+        let result = sanitize_figure_filename("my-diagram.tikz", "image/png");
+        assert_eq!(result, "my-diagram.tikz");
+    }
+
+    // ── interpolate_plugin_arg ────────────────────────────────────────────────
+
+    #[test]
+    fn interpolate_plugin_arg_substitutes_file() {
+        let result = interpolate_plugin_arg("${FILE}", Path::new("/ws/doc.md"));
+        assert_eq!(result, "/ws/doc.md");
+    }
+
+    #[test]
+    fn interpolate_plugin_arg_substitutes_stem() {
+        let result = interpolate_plugin_arg("${FILE_STEM}", Path::new("/ws/doc.md"));
+        assert_eq!(result, "doc");
+    }
+
+    #[test]
+    fn interpolate_plugin_arg_substitutes_dir() {
+        let result = interpolate_plugin_arg("${FILE_DIR}", Path::new("/ws/doc.md"));
+        assert_eq!(result, "/ws");
+    }
+}
