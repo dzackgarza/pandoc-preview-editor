@@ -9,10 +9,6 @@ use crate::state::FileFingerprint;
 
 // ─── path utilities ──────────────────────────────────────────────────────────
 
-
-
-
-
 pub fn path_is_inside(root: &Path, target: &Path) -> bool {
     match target.strip_prefix(root) {
         Ok(_) => true,
@@ -47,30 +43,43 @@ pub fn to_client_path(root: &Path, absolute: &Path) -> String {
 
 // ─── ignore / text detection ─────────────────────────────────────────────────
 
-pub const IGNORE_NAMES: &[&str] = &[
-    ".git", "node_modules", "dist", "build", "coverage",
-];
+pub const IGNORE_NAMES: &[&str] = &[".git", "node_modules", "dist", "build", "coverage"];
 
 const TEXT_EXTENSIONS: &[&str] = &[
-    ".bib", ".css", ".csv", ".htm", ".html", ".js", ".json", ".jsx", ".log",
-    ".lua", ".md", ".mdown", ".markdown", ".mjs", ".rst", ".sh", ".tex",
-    ".toml", ".ts", ".tsx", ".txt", ".yaml", ".yml",
+    ".bib",
+    ".css",
+    ".csv",
+    ".htm",
+    ".html",
+    ".js",
+    ".json",
+    ".jsx",
+    ".log",
+    ".lua",
+    ".md",
+    ".mdown",
+    ".markdown",
+    ".mjs",
+    ".rst",
+    ".sh",
+    ".tex",
+    ".toml",
+    ".ts",
+    ".tsx",
+    ".txt",
+    ".yaml",
+    ".yml",
 ];
 
 const BINARY_EXTENSIONS: &[&str] = &[
-    ".7z", ".avif", ".bin", ".exe", ".gif", ".gz", ".ico", ".jpeg", ".jpg",
-    ".pdf", ".png", ".tar", ".tgz", ".webp", ".zip", ".zst",
+    ".7z", ".avif", ".bin", ".exe", ".gif", ".gz", ".ico", ".jpeg", ".jpg", ".pdf", ".png", ".tar",
+    ".tgz", ".webp", ".zip", ".zst",
 ];
 
 const MARKDOWN_EXTENSIONS: &[&str] = &[".md", ".mdown", ".markdown"];
 
 pub fn should_ignore(workspace_root: &Path, absolute_path: &Path) -> bool {
     let client_path = to_client_path(workspace_root, absolute_path);
-    if client_path == "archive/test-results"
-        || client_path.starts_with("archive/test-results/")
-    {
-        return true;
-    }
     client_path
         .split('/')
         .any(|part| IGNORE_NAMES.contains(&part))
@@ -180,17 +189,26 @@ mod tests {
 
     #[test]
     fn normalize_path_strips_dots() {
-        assert_eq!(normalize_path(Path::new("/foo/./bar/./baz")), PathBuf::from("/foo/bar/baz"));
+        assert_eq!(
+            normalize_path(Path::new("/foo/./bar/./baz")),
+            PathBuf::from("/foo/bar/baz")
+        );
     }
 
     #[test]
     fn normalize_path_resolves_parent_dirs() {
-        assert_eq!(normalize_path(Path::new("/foo/bar/../baz")), PathBuf::from("/foo/baz"));
+        assert_eq!(
+            normalize_path(Path::new("/foo/bar/../baz")),
+            PathBuf::from("/foo/baz")
+        );
     }
 
     #[test]
     fn normalize_path_noop_clean_path() {
-        assert_eq!(normalize_path(Path::new("/foo/bar/baz")), PathBuf::from("/foo/bar/baz"));
+        assert_eq!(
+            normalize_path(Path::new("/foo/bar/baz")),
+            PathBuf::from("/foo/bar/baz")
+        );
     }
 
     #[test]
@@ -200,7 +218,10 @@ mod tests {
 
     #[test]
     fn path_is_inside_deep_child() {
-        assert!(path_is_inside(Path::new("/ws"), Path::new("/ws/a/b/c/file.md")));
+        assert!(path_is_inside(
+            Path::new("/ws"),
+            Path::new("/ws/a/b/c/file.md")
+        ));
     }
 
     #[test]
@@ -215,18 +236,27 @@ mod tests {
 
     #[test]
     fn path_is_outside_parent_dir_escape_rejected() {
-        assert!(!path_is_inside(Path::new("/ws/sub"), Path::new("/ws/../outside")));
+        assert!(!path_is_inside(
+            Path::new("/ws/sub"),
+            Path::new("/ws/../outside")
+        ));
     }
 
     #[test]
     fn resolve_inside_relative_path() {
         let root = Path::new("/ws");
-        assert_eq!(resolve_inside(root, "sub/file.md").unwrap(), PathBuf::from("/ws/sub/file.md"));
+        assert_eq!(
+            resolve_inside(root, "sub/file.md").unwrap(),
+            PathBuf::from("/ws/sub/file.md")
+        );
     }
 
     #[test]
     fn resolve_inside_empty_path_returns_root() {
-        assert_eq!(resolve_inside(Path::new("/ws"), "").unwrap(), PathBuf::from("/ws"));
+        assert_eq!(
+            resolve_inside(Path::new("/ws"), "").unwrap(),
+            PathBuf::from("/ws")
+        );
     }
 
     #[test]
@@ -249,9 +279,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("doc.md");
         write_file_atomic(&path, "data").unwrap();
-        let tmp_count = fs::read_dir(dir.path()).unwrap().filter(|e| {
-            e.as_ref().unwrap().file_name().to_string_lossy().starts_with(".tmp-")
-        }).count();
+        let tmp_count = fs::read_dir(dir.path())
+            .unwrap()
+            .filter(|e| {
+                e.as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".tmp-")
+            })
+            .count();
         assert_eq!(tmp_count, 0);
     }
 

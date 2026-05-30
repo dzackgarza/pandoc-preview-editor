@@ -863,8 +863,8 @@ pub async fn diagram_proxy(url: String) -> Result<serde_json::Value, String> {
         html = format!("{}{}", base_tag, html);
     }
 
-    // Premium TikZ overlay (ported verbatim from Express)
-    let overlay = TIKZ_OVERLAY;
+    // Premium TikZ overlay injected into proxied diagram tool pages
+    let overlay = include_str!("../assets/tikz-overlay.html");
     if html.contains("</body>") {
         html = html.replacen("</body>", &format!("{}</body>", overlay), 1);
     } else {
@@ -873,40 +873,6 @@ pub async fn diagram_proxy(url: String) -> Result<serde_json::Value, String> {
 
     Ok(serde_json::json!({ "html": html }))
 }
-
-const TIKZ_OVERLAY: &str = r#"<div id="pandoc-preview-export-overlay" style="position: fixed; top: 12px; right: 12px; z-index: 2147483647; background: linear-gradient(135deg, #1e1e2e 0%, #181825 100%); color: #cdd6f4; padding: 16px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); font-family: 'Outfit', 'Inter', sans-serif; display: flex; flex-direction: column; gap: 10px; border: 1px solid rgba(137, 180, 250, 0.2); width: 280px; backdrop-filter: blur(10px);">
-  <div style="display: flex; align-items: center; gap: 8px;">
-    <span style="background: #89b4fa; color: #11111b; font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 999px; text-transform: uppercase;">Preview</span>
-    <div style="font-size: 13px; font-weight: 700; color: #f5c2e7;">TikZ Integrator</div>
-  </div>
-  <button id="pandoc-preview-btn-export" style="background: linear-gradient(90deg, #89b4fa 0%, #b4befe 100%); color: #11111b; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 700; cursor: pointer; font-size: 13px;">Insert into Document</button>
-  <div id="pandoc-preview-status" style="font-size: 11px; color: #a6adc8;">Draw your diagram, click the export/LaTeX button inside this tool, then click "Insert" above.</div>
-</div>
-<script>
-  document.getElementById('pandoc-preview-btn-export').addEventListener('click', () => {
-    let code = '';
-    for (const ta of Array.from(document.querySelectorAll('textarea'))) {
-      if (ta.value.includes('\\begin{tikzcd}') || ta.value.includes('\\begin{tikzpicture}')) { code = ta.value; break; }
-    }
-    if (!code) {
-      for (const el of Array.from(document.querySelectorAll('div, pre, code, p'))) {
-        const text = el.textContent || '';
-        if (text.includes('\\begin{tikzcd}') || text.includes('\\begin{tikzpicture}')) { code = text; break; }
-      }
-    }
-    const tikzcdMatch = code.match(/\\begin\{tikzcd\}[\s\S]*?\\end\{tikzcd\}/);
-    const tikzMatch = code.match(/\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/);
-    const extracted = tikzcdMatch ? tikzcdMatch[0] : (tikzMatch ? tikzMatch[0] : code.trim());
-    if (extracted && (extracted.includes('\\begin{') || extracted.includes('\\draw'))) {
-      window.parent.postMessage({ type: 'diagram-export', code: extracted }, '*');
-      document.getElementById('pandoc-preview-status').innerText = 'Diagram exported successfully!';
-      document.getElementById('pandoc-preview-status').style.color = '#a6e3a1';
-    } else {
-      document.getElementById('pandoc-preview-status').innerText = 'Could not find TikZ/LaTeX code. Please trigger export inside the tool first.';
-      document.getElementById('pandoc-preview-status').style.color = '#f38ba8';
-    }
-  });
-</script>"#;
 
 // ─── diagram tools ────────────────────────────────────────────────────────────
 
