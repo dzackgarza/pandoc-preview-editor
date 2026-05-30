@@ -1,51 +1,23 @@
-use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Mutex;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
-use sha2::{Digest, Sha256};
+
 use tauri::State;
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
-use crate::config::{self, build_initial_state, get_backup_path, write_config_toml, save_session_state, figures_central_dir, register_figure, load_figures_registry};
-use crate::fs_utils::{self, get_file_fingerprint, IGNORE_NAMES, is_markdown_file, is_text_like_file,
+use crate::config::{get_backup_path, write_config_toml, save_session_state, figures_central_dir, register_figure, load_figures_registry};
+use crate::fs_utils::{get_file_fingerprint, IGNORE_NAMES, is_markdown_file, is_text_like_file,
     normalize_path, path_is_inside, resolve_inside, should_ignore, to_client_path,
     write_file_atomic, image_extension, sanitize_figure_filename};
 use crate::render::{extract_filter_paths, remove_filter_flags, inline_preview_assets};
-use crate::state::{AppState, FiguresStorageStrategy, PluginManifest, ToolEntry, starter_template_for_tool, tool_id_for_ext};
+use crate::state::{AppState, FiguresStorageStrategy, starter_template_for_tool, tool_id_for_ext};
 
 // ─── plugins ──────────────────────────────────────────────────────────────────
 
-fn load_bundled_plugins(plugin_dir: &Path) -> Vec<PluginManifest> {
-    if !plugin_dir.exists() {
-        return vec![];
-    }
-    let mut manifests = vec![];
-    if let Ok(entries) = fs::read_dir(plugin_dir) {
-        let mut names: Vec<_> = entries
-            .flatten()
-            .filter(|e| {
-                e.path()
-                    .extension()
-                    .map(|x| x == "toml")
-                    .unwrap_or(false)
-            })
-            .map(|e| e.path())
-            .collect();
-        names.sort();
-        for path in names {
-            if let Ok(content) = fs::read_to_string(&path) {
-                if let Ok(manifest) = toml_edit::de::from_str::<PluginManifest>(&content) {
-                    manifests.push(manifest);
-                }
-            }
-        }
-    }
-    manifests
-}
 
 pub fn interpolate_plugin_arg(arg: &str, file_path: &Path) -> String {
     let file_str = file_path.to_string_lossy();
@@ -85,7 +57,7 @@ pub fn get_initial_state(state: State<'_, Mutex<AppState>>) -> serde_json::Value
 // ─── render ───────────────────────────────────────────────────────────────────
 
 #[derive(serde::Serialize)]
-struct RenderResult {
+pub struct RenderResult {
     html: String,
     #[serde(rename = "durationMs")]
     duration_ms: u64,
@@ -163,7 +135,7 @@ pub async fn render(
 // ─── save ─────────────────────────────────────────────────────────────────────
 
 #[derive(serde::Serialize)]
-struct SaveResult {
+pub struct SaveResult {
     ok: bool,
     path: String,
     #[serde(rename = "workspaceRoot")]

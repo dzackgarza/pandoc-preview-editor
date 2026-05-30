@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::state::{AppState, FigureEntry, FiguresRegistry, FiguresStorageStrategy, ToolEntry};
+use crate::state::{AppState, FigureEntry, FiguresRegistry, FiguresStorageStrategy};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
