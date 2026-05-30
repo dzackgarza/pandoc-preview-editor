@@ -1,6 +1,17 @@
-import { Folder, FolderOpen, ChevronRight, ChevronDown, FileText, Loader2, Search, Image as ImageIcon, Edit2 } from 'lucide-react';
+import {
+  Folder,
+  FolderOpen,
+  ChevronRight,
+  ChevronDown,
+  FileText,
+  Loader2,
+  Search,
+  Image as ImageIcon,
+  Edit2,
+} from 'lucide-react';
 import { motion } from 'motion/react';
 import { useCallback, useEffect, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { cn } from '../lib/utils.js';
 
 export type FileEntry = {
@@ -51,9 +62,9 @@ export function ExplorerDrawer({
       setLoadingDir((state) => ({ ...state, [dir]: true }));
       setExplorerError(null);
       try {
-        const res = await fetch(`/api/files?dir=${encodeURIComponent(dir)}`);
-        if (!res.ok) throw new Error(`server returned ${res.status}`);
-        const data = (await res.json()) as { entries: FileEntry[] };
+        const data = await invoke<{ entries: FileEntry[] }>('list_files', {
+          dir,
+        });
         setEntriesByDir((state) => ({ ...state, [dir]: data.entries }));
       } catch (err) {
         setExplorerError(err instanceof Error ? err.message : String(err));
@@ -69,9 +80,8 @@ export function ExplorerDrawer({
       void loadDirectory('');
     } else if (view === 'figures') {
       setFiguresLoading(true);
-      fetch('/api/figures/registry')
-        .then((res) => res.json())
-        .then((data: { figures?: FigureEntry[] }) => {
+      invoke<{ figures: FigureEntry[] }>('figures_registry')
+        .then((data) => {
           setFigures(data.figures || []);
         })
         .catch(console.error)
@@ -89,26 +99,22 @@ export function ExplorerDrawer({
 
   const openFile = useCallback(
     async (path: string) => {
-      const res = await fetch(`/api/files/content?path=${encodeURIComponent(path)}`);
-      if (!res.ok) {
-        setExplorerError(`server returned ${res.status}`);
-        return;
+      try {
+        const data = await invoke<OpenFileResult>('file_content', { path });
+        await onOpenFile(data);
+      } catch (err) {
+        setExplorerError(err instanceof Error ? err.message : String(err));
       }
-      await onOpenFile((await res.json()) as OpenFileResult);
     },
     [onOpenFile],
   );
 
   const handleEditFigure = (path: string, type: string) => {
-    fetch('/api/diagram/launch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ absolutePath: path, type }),
-    }).catch(console.error);
+    invoke('launch_diagram', { absolutePath: path, kind: type }).catch(console.error);
   };
 
   const filteredFigures = figures.filter((f) =>
-    f.name.toLowerCase().includes(searchQuery.toLowerCase())
+    f.name.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   return (
@@ -124,7 +130,9 @@ export function ExplorerDrawer({
         {view === 'explorer' ? (
           <>
             <div className="border-b border-[#2b2f38] px-4 py-3 shrink-0 bg-[#171a21]/30">
-              <div className="text-xs uppercase text-[#aab2c0] font-semibold tracking-wider">Explorer</div>
+              <div className="text-xs uppercase text-[#aab2c0] font-semibold tracking-wider">
+                Explorer
+              </div>
               <div className="mt-1 truncate text-xs text-[#788190]" title={root}>
                 {root || 'Workspace'}
               </div>
@@ -148,7 +156,9 @@ export function ExplorerDrawer({
         ) : (
           <div className="flex h-full flex-col overflow-hidden">
             <div className="border-b border-[#2b2f38] px-4 py-3 flex flex-col gap-2.5 shrink-0 bg-[#171a21]/30">
-              <div className="text-xs uppercase text-[#aab2c0] font-semibold tracking-wider">Figures Library</div>
+              <div className="text-xs uppercase text-[#aab2c0] font-semibold tracking-wider">
+                Figures Library
+              </div>
               <div className="relative">
                 <input
                   placeholder="Search figures..."
@@ -187,7 +197,10 @@ export function ExplorerDrawer({
                         {fig.type}
                       </span>
                     </div>
-                    <div className="text-[10px] text-[#5c6370] truncate font-mono" title={fig.path}>
+                    <div
+                      className="text-[10px] text-[#5c6370] truncate font-mono"
+                      title={fig.path}
+                    >
                       {fig.path}
                     </div>
                     <div className="flex items-center justify-between mt-2 pt-2 border-t border-[#2b2f38]/30">
@@ -298,7 +311,9 @@ function ExplorerBranch({
             key={entry.path}
             className={cn(
               'flex h-7 w-full items-center gap-2 truncate px-2 text-left text-sm hover:bg-[#28303b] cursor-pointer',
-              isCurrent ? 'bg-[#2d3a4a] text-white font-semibold border-l-2 border-[#3b82f6]' : 'text-[#c8ced8]',
+              isCurrent
+                ? 'bg-[#2d3a4a] text-white font-semibold border-l-2 border-[#3b82f6]'
+                : 'text-[#c8ced8]',
             )}
             style={{ paddingLeft }}
             type="button"

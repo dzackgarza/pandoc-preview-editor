@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { PaneHeader } from './PaneHeader.jsx';
 
 export function PreviewPane({ html }: { html: string }) {
@@ -16,42 +17,53 @@ export function PreviewPane({ html }: { html: string }) {
       const win = doc.defaultView;
       if (win && !(win as any).__KEY_FORWARDING_ATTACHED__) {
         (win as any).__KEY_FORWARDING_ATTACHED__ = true;
-        win.addEventListener('keydown', (e: KeyboardEvent) => {
-          if (window.parent) {
-            window.parent.dispatchEvent(
-              new KeyboardEvent('keydown', {
-                key: e.key,
-                code: e.code,
-                ctrlKey: e.ctrlKey,
-                metaKey: e.metaKey,
-                shiftKey: e.shiftKey,
-                altKey: e.altKey,
-                bubbles: true,
-                cancelable: true,
-              })
-            );
-          }
-        }, { capture: true });
+        win.addEventListener(
+          'keydown',
+          (e: KeyboardEvent) => {
+            if (window.parent) {
+              window.parent.dispatchEvent(
+                new KeyboardEvent('keydown', {
+                  key: e.key,
+                  code: e.code,
+                  ctrlKey: e.ctrlKey,
+                  metaKey: e.metaKey,
+                  shiftKey: e.shiftKey,
+                  altKey: e.altKey,
+                  bubbles: true,
+                  cancelable: true,
+                }),
+              );
+            }
+          },
+          { capture: true },
+        );
       }
 
       // Find all potential TikZ elements rendered by Pandoc
       const tikzElements = doc.querySelectorAll(
-        'pre.tikz, pre.sourceCode.tikz, code.tikz, code.language-tikz'
+        'pre.tikz, pre.sourceCode.tikz, code.tikz, code.language-tikz',
       );
       if (tikzElements.length > 0) {
         tikzElements.forEach((el) => {
           let container = el;
-          if (el.tagName === 'CODE' && el.parentElement && el.parentElement.tagName === 'PRE') {
+          if (
+            el.tagName === 'CODE' &&
+            el.parentElement &&
+            el.parentElement.tagName === 'PRE'
+          ) {
             container = el.parentElement;
           }
-          if (container.parentElement && container.parentElement.classList.contains('sourceCode')) {
+          if (
+            container.parentElement &&
+            container.parentElement.classList.contains('sourceCode')
+          ) {
             container = container.parentElement;
           }
 
           let code = el.textContent || '';
           // Strip any non-breaking spaces or trim lines
           code = code.replace(/&nbsp;/g, ' ').trim();
-          
+
           // Ensure it is wrapped in \begin{document} and \end{document} if missing
           if (!code.includes('\\begin{document}')) {
             code = `\\begin{document}\n${code}\n\\end{document}`;
@@ -111,12 +123,14 @@ export function PreviewPane({ html }: { html: string }) {
         editableElements.forEach((el) => {
           const srcAttr = el.tagName === 'EMBED' ? 'src' : 'src';
           const srcValue = el.getAttribute(srcAttr) || '';
-          
+
           let figurePath: string | null = null;
           try {
             const url = new URL(srcValue, window.location.origin);
             if (url.pathname.startsWith('/api/preview-assets/')) {
-              figurePath = decodeURIComponent(url.pathname.replace('/api/preview-assets/', ''));
+              figurePath = decodeURIComponent(
+                url.pathname.replace('/api/preview-assets/', ''),
+              );
             } else if (url.pathname.startsWith('/api/figures/serve')) {
               figurePath = url.searchParams.get('path');
             } else {
@@ -146,7 +160,7 @@ export function PreviewPane({ html }: { html: string }) {
             const overlay = doc.createElement('div');
             overlay.className = 'pandoc-preview-hover-edit';
             overlay.textContent = 'Edit ⚙️';
-            
+
             // Gorgeous premium glassmorphic styling
             Object.assign(overlay.style, {
               position: 'absolute',
@@ -170,7 +184,7 @@ export function PreviewPane({ html }: { html: string }) {
             const rect = el.getBoundingClientRect();
             const scrollX = win.scrollX || doc.documentElement.scrollLeft;
             const scrollY = win.scrollY || doc.documentElement.scrollTop;
-            
+
             // Place overlay at top-right of image
             overlay.style.left = `${rect.right + scrollX - 70}px`;
             overlay.style.top = `${rect.top + scrollY + 8}px`;
@@ -188,11 +202,9 @@ export function PreviewPane({ html }: { html: string }) {
 
             overlay.addEventListener('click', (e) => {
               e.stopPropagation();
-              fetch('/api/diagram/launch', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ absolutePath: figurePath }),
-              }).catch(console.error);
+              invoke('launch_diagram', { absolutePath: figurePath }).catch(
+                console.error,
+              );
             });
 
             doc.body.appendChild(overlay);
@@ -244,5 +256,3 @@ export function PreviewPane({ html }: { html: string }) {
     </section>
   );
 }
-
-

@@ -1,13 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Tree, type NodeRendererProps } from 'react-arborist';
-import {
-  Folder,
-  FolderOpen,
-  FileText,
-  ChevronRight,
-  Loader2,
-  X,
-} from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
+import { Folder, FolderOpen, FileText, ChevronRight, Loader2, X } from 'lucide-react';
 import { cn } from '../lib/utils.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -75,17 +69,12 @@ export function FileSelectorDialog({
     let cancelled = false;
     setLoading(true);
     setError(null);
-    fetch(`/api/browse?dir=${encodeURIComponent(currentDir)}`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`server returned ${res.status}`);
-        return res.json() as Promise<BrowseResult>;
-      })
+    invoke<BrowseResult>('browse', { dir: currentDir })
       .then((data) => {
         if (!cancelled) setBrowse(data);
       })
       .catch((err: unknown) => {
-        if (!cancelled)
-          setError(err instanceof Error ? err.message : String(err));
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -128,15 +117,14 @@ export function FileSelectorDialog({
 
     if (mode === 'save') {
       try {
-        const res = await fetch(`/api/files/exists?path=${encodeURIComponent(target)}`);
-        if (res.ok) {
-          const data = (await res.json()) as { exists: boolean };
-          if (data.exists) {
-            const confirmOverwrite = window.confirm(
-              `"${trimmed}" already exists. Do you want to replace it?`,
-            );
-            if (!confirmOverwrite) return;
-          }
+        const data = await invoke<{ exists: boolean }>('file_exists', {
+          path: target,
+        });
+        if (data.exists) {
+          const confirmOverwrite = window.confirm(
+            `"${trimmed}" already exists. Do you want to replace it?`,
+          );
+          if (!confirmOverwrite) return;
         }
       } catch {
         // Proceed on failure
@@ -180,7 +168,10 @@ export function FileSelectorDialog({
             </button>
           </div>
           {description && (
-            <p className="mt-2 text-xs text-[#b9c0cc] bg-[#23262f] border border-[#2b3345] px-2.5 py-2 rounded leading-relaxed font-medium" data-testid="file-selector-description">
+            <p
+              className="mt-2 text-xs text-[#b9c0cc] bg-[#23262f] border border-[#2b3345] px-2.5 py-2 rounded leading-relaxed font-medium"
+              data-testid="file-selector-description"
+            >
               {description}
             </p>
           )}
@@ -195,9 +186,7 @@ export function FileSelectorDialog({
             const isLast = i === segments.length - 1;
             return (
               <span key={seg.absolutePath} className="flex items-center gap-0.5">
-                {i > 0 && (
-                  <ChevronRight className="h-3 w-3 shrink-0 text-[#4a5060]" />
-                )}
+                {i > 0 && <ChevronRight className="h-3 w-3 shrink-0 text-[#4a5060]" />}
                 {isLast ? (
                   <span className="max-w-[160px] truncate text-xs font-medium text-[#c8ced8]">
                     {seg.label}
@@ -254,8 +243,7 @@ export function FileSelectorDialog({
         {/* ── Filename input ── */}
         <div className="border-t border-[#2f3440] px-4 py-3">
           <div className="mb-1.5 text-xs text-[#788190]">
-            Saving to:{' '}
-            <span className="font-mono text-[#9aa3b0]">{currentDir}</span>
+            Saving to: <span className="font-mono text-[#9aa3b0]">{currentDir}</span>
           </div>
           <input
             ref={inputRef}

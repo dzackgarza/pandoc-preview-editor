@@ -4,6 +4,7 @@ import { Group, Panel, Separator, useGroupRef } from 'react-resizable-panels';
 import { GripVertical, FolderOpen, Image as ImageIcon, Settings } from 'lucide-react';
 import { EditorView } from '@codemirror/view';
 import * as Tooltip from '@radix-ui/react-tooltip';
+import { invoke } from '@tauri-apps/api/core';
 
 import { cn, lineCount } from './lib/utils.js';
 import { useToast, toast } from './lib/toast.js';
@@ -51,20 +52,14 @@ export type PluginMetadata = {
   category: string;
 };
 
-declare global {
-  interface Window {
-    __INITIAL_CONTENT?: string;
-    __INITIAL_FILE?: string | null;
-    __TEMP_BACKUP_FILE?: string | null;
-    __WORKSPACE_ROOT?: string;
-    __IS_TEMP_FILE?: boolean;
-    __RECOVERED_FROM_BACKUP?: boolean;
-    __PANDOC_PREVIEW_STATE__?: {
-      markdown: string;
-      currentFile: string | null;
-    };
-  }
-}
+type InitialState = {
+  content: string;
+  file: string | null;
+  tempBackupFile: string | null;
+  workspaceRoot: string;
+  isTempFile: boolean;
+  recoveredFromBackup: boolean;
+};
 
 const DEBOUNCE_MS = 400;
 const RESET_LAYOUT = {
@@ -73,28 +68,30 @@ const RESET_LAYOUT = {
 };
 
 export function App() {
-  const initialContent = window.__INITIAL_CONTENT ?? '';
-  const [markdownText, setMarkdownText] = useState(initialContent);
-  const [currentFile, setCurrentFile] = useState<string | null>(
-    window.__INITIAL_FILE ?? null,
-  );
-  const [isTempFile, setIsTempFile] = useState(window.__IS_TEMP_FILE ?? false);
+  const [markdownText, setMarkdownText] = useState('');
+  const [currentFile, setCurrentFile] = useState<string | null>(null);
+  const [isTempFile, setIsTempFile] = useState(false);
   const [previewHtml, setPreviewHtml] = useState('');
   const [status, setStatus] = useState<RenderStatus>('idle');
   const [durationMs, setDurationMs] = useState<number | null>(null);
-  const [diagnostics, setDiagnostics] = useState<{ summary: string; detail: string } | null>(null);
-  const [saveState, setSaveState] = useState<SaveState>(
-    window.__RECOVERED_FROM_BACKUP ? 'dirty' : 'idle'
-  );
+  const [diagnostics, setDiagnostics] = useState<{
+    summary: string;
+    detail: string;
+  } | null>(null);
+  const [saveState, setSaveState] = useState<SaveState>('idle');
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [pluginState, setPluginState] = useState<PluginState>('idle');
   const [plugins, setPlugins] = useState<PluginMetadata[]>([]);
   const [explorerOpen, setExplorerOpen] = useState(false);
   const [saveAsDialogOpen, setSaveAsDialogOpen] = useState(false);
   const [saveAsDialogMode, setSaveAsDialogMode] = useState<'save' | 'new'>('save');
-  const [saveAsDialogTitleOverride, setSaveAsDialogTitleOverride] = useState<string | undefined>(undefined);
-  const [saveAsDialogDescription, setSaveAsDialogDescription] = useState<string | undefined>(undefined);
-  const [workspaceRoot, setWorkspaceRoot] = useState(window.__WORKSPACE_ROOT ?? '');
+  const [saveAsDialogTitleOverride, setSaveAsDialogTitleOverride] = useState<
+    string | undefined
+  >(undefined);
+  const [saveAsDialogDescription, setSaveAsDialogDescription] = useState<
+    string | undefined
+  >(undefined);
+  const [workspaceRoot, setWorkspaceRoot] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [diagramOpen, setDiagramOpen] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<'explorer' | 'figures'>('explorer');
@@ -105,29 +102,42 @@ export function App() {
   const saveAsInputRef = useRef<HTMLInputElement>(null);
   const saveAsResolveRef = useRef<((path: string | null) => void) | null>(null);
   const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
-  const unsavedChangesResolveRef = useRef<((choice: 'save' | 'discard' | 'cancel') => void) | null>(null);
+  const unsavedChangesResolveRef = useRef<
+    ((choice: 'save' | 'discard' | 'cancel') => void) | null
+  >(null);
+
+  useEffect(() => {
+    invoke<InitialState>('get_initial_state')
+      .then((data) => {
+        setMarkdownText(data.content);
+        setCurrentFile(data.file ?? null);
+        setIsTempFile(data.isTempFile);
+        setWorkspaceRoot(data.workspaceRoot);
+        if (data.recoveredFromBackup) {
+          setSaveState('dirty');
+          toast({
+            title: 'Unsaved Changes Recovered',
+            description: 'Your unsaved changes were recovered from backup.',
+            variant: 'default',
+          });
+        }
+      })
+      .catch((err) => {
+        toast({
+          title: 'Startup Error',
+          description: err instanceof Error ? err.message : String(err),
+          variant: 'destructive',
+        });
+      });
+  }, []);
 
   useEffect(() => {
     window.__PANDOC_PREVIEW_STATE__ = { markdown: markdownText, currentFile };
   }, [currentFile, markdownText]);
 
   useEffect(() => {
-    if (window.__RECOVERED_FROM_BACKUP) {
-      toast({
-        title: 'Unsaved Changes Recovered',
-        description: 'Your unsaved changes were recovered from backup.',
-        variant: 'default',
-      });
-    }
-  }, []);
-
-  useEffect(() => {
     let cancelled = false;
-    fetch('/api/plugins')
-      .then((res) => {
-        if (!res.ok) throw new Error(`server returned ${res.status}`);
-        return res.json() as Promise<{ plugins?: PluginMetadata[] }>;
-      })
+    invoke<{ plugins: PluginMetadata[] }>('list_plugins')
       .then((data) => {
         if (!cancelled) setPlugins(data.plugins ?? []);
       })
@@ -149,22 +159,12 @@ export function App() {
   const doRender = useCallback(async (text: string, version: number) => {
     setStatus('rendering');
     try {
-      const res = await fetch('/api/render', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ markdown: text }),
-      });
-
-      if (!res.ok) {
-        throw new Error(`server returned ${res.status}`);
-      }
-
-      const data = (await res.json()) as {
+      const data = await invoke<{
         ok: boolean;
-        html?: string;
-        durationMs?: number;
-        stderr?: string;
-      };
+        html: string;
+        durationMs: number;
+        stderr: string;
+      }>('render', { markdown: text });
 
       if (version !== renderVersion.current) return;
 
@@ -221,13 +221,9 @@ export function App() {
   useEffect(() => {
     if (saveState !== 'dirty') return;
     const handle = window.setTimeout(() => {
-      void fetch('/api/backup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          markdown: markdownText,
-          path: currentFile,
-        }),
+      void invoke('backup', {
+        markdown: markdownText,
+        path: currentFile,
       });
     }, 500);
     return () => window.clearTimeout(handle);
@@ -247,7 +243,11 @@ export function App() {
   }, [saveState]);
 
   const promptForSavePath = useCallback(
-    (mode: 'save' | 'new', titleOverride?: string, description?: string): Promise<string | null> => {
+    (
+      mode: 'save' | 'new',
+      titleOverride?: string,
+      description?: string,
+    ): Promise<string | null> => {
       return new Promise((resolve) => {
         saveAsResolveRef.current = resolve;
         setSaveAsDialogMode(mode);
@@ -273,7 +273,9 @@ export function App() {
     saveAsResolveRef.current?.(null);
   }, []);
 
-  const promptForUnsavedChanges = useCallback((): Promise<'save' | 'discard' | 'cancel'> => {
+  const promptForUnsavedChanges = useCallback((): Promise<
+    'save' | 'discard' | 'cancel'
+  > => {
     return new Promise((resolve) => {
       unsavedChangesResolveRef.current = resolve;
       setUnsavedChangesDialogOpen(true);
@@ -295,51 +297,60 @@ export function App() {
     unsavedChangesResolveRef.current?.('cancel');
   }, []);
 
-  const persistMarkdown = useCallback(async (path: string, text: string) => {
-    setSaveState('saving');
-    try {
-      const res = await fetch('/api/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ markdown: text, path }),
-      });
-      const data = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        path?: string;
-        workspaceRoot?: string;
-        error?: string;
-      };
+  const persistMarkdown = useCallback(
+    async (path: string, text: string) => {
+      setSaveState('saving');
+      try {
+        const data = await invoke<{
+          ok: boolean;
+          path: string;
+          workspaceRoot: string;
+        }>('save', { markdown: text, path });
 
-      if (!res.ok || !data.ok) {
-        throw new Error(data.error ?? `server returned ${res.status}`);
+        if (!data.ok) {
+          throw new Error('save failed');
+        }
+
+        const savedPath = data.path ?? path;
+        setCurrentFile(savedPath);
+        setWorkspaceRoot(data.workspaceRoot ?? workspaceRoot);
+        setIsTempFile(false);
+        setSaveState('saved');
+        setSavedAt(new Date());
+        return savedPath;
+      } catch (err) {
+        setSaveState('error');
+        const message = err instanceof Error ? err.message : String(err);
+        toast({
+          title: 'Save failed',
+          description: message,
+          variant: 'destructive',
+        });
+        return null;
       }
-
-      const savedPath = data.path ?? path;
-      setCurrentFile(savedPath);
-      setWorkspaceRoot(data.workspaceRoot ?? workspaceRoot);
-      setIsTempFile(false);
-      setSaveState('saved');
-      setSavedAt(new Date());
-      return savedPath;
-    } catch (err) {
-      setSaveState('error');
-      const message = err instanceof Error ? err.message : String(err);
-      toast({
-        title: 'Save failed',
-        description: message,
-        variant: 'destructive',
-      });
-      return null;
-    }
-  }, [workspaceRoot]);
+    },
+    [workspaceRoot],
+  );
 
   const ensureRealFile = useCallback(
-    async (options: { promptForEmpty: boolean; title?: string; description?: string }) => {
+    async (options: {
+      promptForEmpty: boolean;
+      title?: string;
+      description?: string;
+    }) => {
       if (isTempFile || !currentFile) {
-        if (!options.promptForEmpty && markdownText.length === 0 && saveState !== 'dirty') {
+        if (
+          !options.promptForEmpty &&
+          markdownText.length === 0 &&
+          saveState !== 'dirty'
+        ) {
           return null;
         }
-        const savePath = await promptForSavePath('save', options.title, options.description);
+        const savePath = await promptForSavePath(
+          'save',
+          options.title,
+          options.description,
+        );
         if (savePath === null) return null;
         return persistMarkdown(savePath, markdownText);
       }
@@ -349,11 +360,22 @@ export function App() {
       }
       return currentFile;
     },
-    [currentFile, isTempFile, markdownText, persistMarkdown, promptForSavePath, saveState],
+    [
+      currentFile,
+      isTempFile,
+      markdownText,
+      persistMarkdown,
+      promptForSavePath,
+      saveState,
+    ],
   );
 
   const ensureBufferSafeToReplace = useCallback(async () => {
-    if ((isTempFile || !currentFile) && markdownText.length === 0 && saveState !== 'dirty') {
+    if (
+      (isTempFile || !currentFile) &&
+      markdownText.length === 0 &&
+      saveState !== 'dirty'
+    ) {
       return true;
     }
     if (saveState !== 'dirty') {
@@ -367,7 +389,14 @@ export function App() {
       return (await ensureRealFile({ promptForEmpty: true })) != null;
     }
     return true; // discard
-  }, [currentFile, ensureRealFile, isTempFile, markdownText, promptForUnsavedChanges, saveState]);
+  }, [
+    currentFile,
+    ensureRealFile,
+    isTempFile,
+    markdownText,
+    promptForUnsavedChanges,
+    saveState,
+  ]);
 
   const saveCurrent = useCallback(async () => {
     renderImmediate(markdownText);
@@ -408,15 +437,11 @@ export function App() {
 
   const insertCitation = useCallback(async () => {
     try {
-      const res = await fetch('/api/zotero/cite');
-      if (res.status === 204) return;
+      const data = await invoke<{ citation?: string; empty?: boolean }>('zotero_cite');
+      if (data.empty) return;
 
-      const data = (await res.json().catch(() => ({}))) as {
-        citation?: string;
-        error?: string;
-      };
-      if (!res.ok || typeof data.citation !== 'string') {
-        throw new Error(data.error ?? `server returned ${res.status}`);
+      if (typeof data.citation !== 'string') {
+        throw new Error('no citation returned');
       }
 
       insertTextAtCursor(data.citation);
@@ -438,22 +463,19 @@ export function App() {
   const uploadImageAndInsert = useCallback(
     async (imageBlob: Blob, filePath: string) => {
       const imageType = imageBlob.type || 'image/png';
-      const res = await fetch('/api/figures/assets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          documentPath: filePath,
-          mimeType: imageType,
-          contentBase64: await blobToBase64(imageBlob),
-        }),
+      const data = await invoke<{
+        ok: boolean;
+        markdown: string;
+        path: string;
+        relativePath: string;
+      }>('save_figure_asset', {
+        documentPath: filePath,
+        mimeType: imageType,
+        contentBase64: await blobToBase64(imageBlob),
       });
-      const data = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        markdown?: string;
-        error?: string;
-      };
-      if (!res.ok || !data.ok || typeof data.markdown !== 'string') {
-        throw new Error(data.error ?? `server returned ${res.status}`);
+
+      if (!data.ok || typeof data.markdown !== 'string') {
+        throw new Error('Failed to save figure asset');
       }
       insertTextAtCursor(`\n\n${data.markdown}\n\n`);
       toast({
@@ -470,7 +492,8 @@ export function App() {
       const filePath = await ensureRealFile({
         promptForEmpty: true,
         title: 'Save Markdown Document',
-        description: 'Save your active document to disk first. Adding figure/diagram assets requires a saved file context to resolve relative asset paths correctly.',
+        description:
+          'Save your active document to disk first. Adding figure/diagram assets requires a saved file context to resolve relative asset paths correctly.',
       });
       if (filePath == null) return;
       if (!navigator.clipboard?.read) {
@@ -514,21 +537,20 @@ export function App() {
       setSaveState('saving');
 
       try {
-        const res = await fetch(`/api/plugins/${encodeURIComponent(pluginId)}/run`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ markdown: markdownText, path: filePath }),
-        });
-        const data = (await res.json().catch(() => ({}))) as {
-          ok?: boolean;
-          error?: string;
-          stdout?: string;
-          stderr?: string;
+        const data = await invoke<{
+          ok: boolean;
+          stdout: string;
+          stderr: string;
+          exitCode: number | null;
           outputPath?: string;
-        };
+        }>('run_plugin', {
+          id: pluginId,
+          markdown: markdownText,
+          path: filePath,
+        });
 
-        if (!res.ok || !data.ok) {
-          throw new Error(data.error ?? `server returned ${res.status}`);
+        if (!data.ok) {
+          throw new Error(data.stderr || 'plugin execution failed');
         }
 
         setSaveState('saved');
@@ -538,11 +560,7 @@ export function App() {
         const handleOpen = async (e: React.MouseEvent) => {
           e.preventDefault();
           try {
-            await fetch('/api/open-file', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ path: data.outputPath }),
-            });
+            await invoke('open_file_external', { path: data.outputPath });
           } catch (err) {
             console.error('Failed to open file:', err);
           }
@@ -556,7 +574,12 @@ export function App() {
               <button
                 onClick={handleOpen}
                 className="underline text-[#8fb8ff] hover:text-[#b4d2ff] font-medium transition-colors focus-visible:outline-none"
-                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  cursor: 'pointer',
+                }}
               >
                 {data.outputPath.split('/').at(-1)}
               </button>
@@ -593,19 +616,16 @@ export function App() {
 
     try {
       // Create file at the specified workspace-relative path
-      const res = await fetch('/api/files/new', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: savePath }),
-      });
-      const data = (await res.json().catch(() => ({}))) as OpenFileResult & {
-        ok?: boolean;
-        workspaceRoot?: string;
-        error?: string;
-      };
+      const data = await invoke<{
+        ok: boolean;
+        path: string;
+        absolutePath: string;
+        content: string;
+        workspaceRoot: string;
+      }>('new_file', { path: savePath });
 
-      if (!res.ok || !data.ok || typeof data.absolutePath !== 'string') {
-        throw new Error(data.error ?? `server returned ${res.status}`);
+      if (!data.ok || typeof data.absolutePath !== 'string') {
+        throw new Error('Failed to create file');
       }
 
       setMarkdownText(data.content);
@@ -625,21 +645,29 @@ export function App() {
     }
   }, [ensureBufferSafeToReplace, promptForSavePath, workspaceRoot]);
 
-  const openFile = useCallback(async (result: OpenFileResult) => {
-    if (!(await ensureBufferSafeToReplace())) return false;
-    setMarkdownText(result.content);
-    setCurrentFile(result.absolutePath);
-    setIsTempFile(false);
-    setSaveState('idle');
-    setSavedAt(null);
-    return true;
-  }, [ensureBufferSafeToReplace]);
+  const openFile = useCallback(
+    async (result: OpenFileResult) => {
+      if (!(await ensureBufferSafeToReplace())) return false;
+      setMarkdownText(result.content);
+      setCurrentFile(result.absolutePath);
+      setIsTempFile(false);
+      setSaveState('idle');
+      setSavedAt(null);
+      return true;
+    },
+    [ensureBufferSafeToReplace],
+  );
 
   const handleQuickOpen = useCallback(async () => {
     try {
-      const res = await fetch('/api/files/quick-open-spawn', { method: 'POST' });
-      if (!res.ok) throw new Error(`server returned ${res.status}`);
-      const data = await res.json();
+      const data = await invoke<{
+        ok: boolean;
+        cancelled?: boolean;
+        path: string;
+        absolutePath: string;
+        content: string;
+        error?: string;
+      }>('quick_open_spawn');
       if (data.ok) {
         await openFile({
           path: data.path,
@@ -690,7 +718,8 @@ export function App() {
     };
 
     window.addEventListener('keydown', handleKeyDown, { capture: true });
-    return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
+    return () =>
+      window.removeEventListener('keydown', handleKeyDown, { capture: true });
   }, [handleQuickOpen, insertCitation, saveCurrentAs]);
 
   // Wayland-compatible paste handler: navigator.clipboard.read() is broken on
@@ -715,17 +744,20 @@ export function App() {
       void ensureRealFile({
         promptForEmpty: true,
         title: 'Save Markdown Document',
-        description: 'Save your active document to disk first. Adding figure/diagram assets requires a saved file context to resolve relative asset paths correctly.',
-      }).then((filePath) => {
-        if (filePath == null) return;
-        return uploadImageAndInsert(blob, filePath);
-      }).catch((err: unknown) => {
-        toast({
-          title: 'Clipboard image',
-          description: err instanceof Error ? err.message : String(err),
-          variant: 'destructive',
+        description:
+          'Save your active document to disk first. Adding figure/diagram assets requires a saved file context to resolve relative asset paths correctly.',
+      })
+        .then((filePath) => {
+          if (filePath == null) return;
+          return uploadImageAndInsert(blob, filePath);
+        })
+        .catch((err: unknown) => {
+          toast({
+            title: 'Clipboard image',
+            description: err instanceof Error ? err.message : String(err),
+            variant: 'destructive',
+          });
         });
-      });
     };
 
     document.addEventListener('paste', handlePaste, { capture: true });
@@ -771,10 +803,10 @@ export function App() {
                   }
                 }}
                 className={cn(
-                  "h-8 w-8 rounded-lg flex items-center justify-center transition-all cursor-pointer",
+                  'h-8 w-8 rounded-lg flex items-center justify-center transition-all cursor-pointer',
                   explorerOpen && sidebarTab === 'explorer'
-                    ? "bg-[#303541] text-white"
-                    : "text-[#788190] hover:text-[#e6e8eb]"
+                    ? 'bg-[#303541] text-white'
+                    : 'text-[#788190] hover:text-[#e6e8eb]',
                 )}
               >
                 <FolderOpen className="h-5 w-5" />
@@ -792,10 +824,10 @@ export function App() {
                   }
                 }}
                 className={cn(
-                  "h-8 w-8 rounded-lg flex items-center justify-center transition-all cursor-pointer",
+                  'h-8 w-8 rounded-lg flex items-center justify-center transition-all cursor-pointer',
                   explorerOpen && sidebarTab === 'figures'
-                    ? "bg-[#303541] text-white"
-                    : "text-[#788190] hover:text-[#e6e8eb]"
+                    ? 'bg-[#303541] text-white'
+                    : 'text-[#788190] hover:text-[#e6e8eb]',
                 )}
               >
                 <ImageIcon className="h-5 w-5" />
@@ -859,7 +891,10 @@ export function App() {
             className="flex flex-col border-t border-[#401614] bg-[#2d1413] px-4 py-3 text-sm text-[#ff9b8f] shrink-0"
           >
             <div className="flex items-center justify-between mb-1">
-              <span data-testid="diagnostics-title" className="font-semibold flex items-center gap-1.5">
+              <span
+                data-testid="diagnostics-title"
+                className="font-semibold flex items-center gap-1.5"
+              >
                 <span className="inline-block w-2 h-2 rounded-full bg-[#ff9b8f]"></span>
                 Renderer Error
               </span>
@@ -887,21 +922,21 @@ export function App() {
           saveState={saveState}
           status={status}
         />
-          <FileSelectorDialog
-            mode={saveAsDialogMode}
-            open={saveAsDialogOpen}
-            workspaceRoot={workspaceRoot}
-            titleOverride={saveAsDialogTitleOverride}
-            description={saveAsDialogDescription}
-            onCancel={handleSaveAsCancel}
-            onSubmit={handleSaveAsSubmit}
-          />
-         <UnsavedChangesDialog
-           open={unsavedChangesDialogOpen}
-           onCancel={handleUnsavedChangesCancel}
-           onDiscard={handleUnsavedChangesDiscard}
-           onSave={handleUnsavedChangesSave}
-         />
+        <FileSelectorDialog
+          mode={saveAsDialogMode}
+          open={saveAsDialogOpen}
+          workspaceRoot={workspaceRoot}
+          titleOverride={saveAsDialogTitleOverride}
+          description={saveAsDialogDescription}
+          onCancel={handleSaveAsCancel}
+          onSubmit={handleSaveAsSubmit}
+        />
+        <UnsavedChangesDialog
+          open={unsavedChangesDialogOpen}
+          onCancel={handleUnsavedChangesCancel}
+          onDiscard={handleUnsavedChangesDiscard}
+          onSave={handleUnsavedChangesSave}
+        />
         <SettingsDialog
           open={settingsOpen}
           onClose={() => setSettingsOpen(false)}
@@ -910,11 +945,14 @@ export function App() {
         <DiagramModal
           open={diagramOpen}
           onClose={() => setDiagramOpen(false)}
-          ensureRealFile={() => ensureRealFile({
-            promptForEmpty: true,
-            title: 'Save Markdown Document',
-            description: 'Save your active document to disk first. Adding figure/diagram assets requires a saved file context to resolve relative asset paths correctly.',
-          })}
+          ensureRealFile={() =>
+            ensureRealFile({
+              promptForEmpty: true,
+              title: 'Save Markdown Document',
+              description:
+                'Save your active document to disk first. Adding figure/diagram assets requires a saved file context to resolve relative asset paths correctly.',
+            })
+          }
           insertTextAtCursor={insertTextAtCursor}
         />
         <Toaster />
