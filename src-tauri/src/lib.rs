@@ -138,11 +138,7 @@ impl AppState {
 fn xdg_state_dir() -> PathBuf {
     let base = std::env::var("XDG_STATE_HOME")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            dirs::home_dir()
-                .unwrap_or_else(|| PathBuf::from("/tmp"))
-                .join(".local/state")
-        });
+        .unwrap_or_else(|_| dirs::home_dir().expect("HOME must be set").join(".local/state"));
     base.join("pandoc-preview")
 }
 
@@ -192,7 +188,7 @@ fn normalize_path(path: &Path) -> PathBuf {
 fn to_client_path(root: &Path, absolute: &Path) -> String {
     absolute
         .strip_prefix(root)
-        .map(|rel| rel.to_string_lossy().replace('\\', "/"))
+        .map(|rel| rel.to_string_lossy().into_owned())
         .unwrap_or_else(|_| absolute.to_string_lossy().into_owned())
 }
 
@@ -1005,7 +1001,7 @@ fn browse(dir: String) -> Result<serde_json::Value, String> {
         return Err("dir must be a directory".into());
     }
 
-    const BROWSE_IGNORE: &[&str] = &[".git", "node_modules", "dist", "build", "coverage"];
+    const BROWSE_IGNORE: &[&str] = IGNORE_NAMES;
     let mut entries: Vec<serde_json::Value> = fs::read_dir(&target_dir)
         .map_err(|e| e.to_string())?
         .flatten()
@@ -1932,7 +1928,7 @@ async fn quick_open_spawn(
         }
     };
 
-    let output = tokio::process::Command::new("sh")
+    let output = tokio::process::Command::new("zsh")
         .arg("-c")
         .arg(&cmd)
         .current_dir(&workspace_root)
