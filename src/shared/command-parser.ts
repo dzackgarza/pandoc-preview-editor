@@ -18,6 +18,36 @@ export interface ParsedFlags {
   otherFlags: string[];
 }
 
+interface MinimistOutput {
+  template?: string | string[];
+  'lua-filter'?: string | string[];
+  filter?: string | string[];
+  standalone?: boolean;
+  citeproc?: boolean;
+  toc?: boolean;
+  'number-sections'?: boolean;
+  'embed-resources'?: boolean;
+  mathjax?: boolean;
+  katex?: boolean;
+  webtex?: boolean;
+  s?: boolean;
+  N?: boolean;
+  _?: string[];
+  [key: string]: unknown;
+}
+
+function lastOf(value: string | string[] | undefined): string | null {
+  if (value === undefined || value === null) return null;
+  if (Array.isArray(value)) return value.at(-1) ?? null;
+  return value;
+}
+
+function allOf(value: string | string[] | undefined): string[] {
+  if (value === undefined || value === null) return [];
+  if (Array.isArray(value)) return value;
+  return [value];
+}
+
 export function parseCommand(command: string): ParsedFlags {
   const tokens = tokenize(command);
   const [commandName = 'pandoc', ...rest] = tokens;
@@ -41,21 +71,21 @@ export function parseCommand(command: string): ParsedFlags {
     },
     default: {},
     stopEarly: false,
-  });
+  }) as MinimistOutput;
 
-  const rawTemplate = pickLast(parsed.template);
+  const rawTemplate = lastOf(parsed.template);
   const selectedTemplate = rawTemplate
     ? rawTemplate.startsWith('/') || rawTemplate.startsWith('~/')
       ? rawTemplate
       : rawTemplate.split('/').at(-1) || rawTemplate
     : '';
 
-  const rawLuaFilters = toArray(parsed['lua-filter']);
-  const rawFilters = toArray(parsed.filter);
-  const selectedFilters = [...rawLuaFilters, ...rawFilters].map((f) => {
-    if (f.startsWith('/') || f.startsWith('~/')) return f;
-    return f.split('/').at(-1) || f;
-  });
+  const selectedFilters = [...allOf(parsed['lua-filter']), ...allOf(parsed.filter)].map(
+    (f) => {
+      if (f.startsWith('/') || f.startsWith('~/')) return f;
+      return f.split('/').at(-1) || f;
+    },
+  );
 
   let math: ParsedFlags['math'] = 'none';
   if (parsed.webtex) math = 'webtex';
@@ -85,9 +115,9 @@ export function parseCommand(command: string): ParsedFlags {
     if (typeof value === 'boolean') {
       if (value) otherFlags.push(`--${key}`);
     } else if (Array.isArray(value)) {
-      for (const v of value) otherFlags.push(`--${key}=${v}`);
+      for (const v of value) otherFlags.push(`--${key}=${String(v)}`);
     } else {
-      otherFlags.push(`--${key}=${value}`);
+      otherFlags.push(`--${key}=${String(value)}`);
     }
   }
 
@@ -141,16 +171,4 @@ export function buildCommand(
   }
   args.push(...flags.otherFlags);
   return quote([flags.commandName, ...args]);
-}
-
-function toArray(value: any): string[] {
-  if (value === undefined || value === null) return [];
-  if (Array.isArray(value)) return value;
-  return [String(value)];
-}
-
-function pickLast(value: any): string | null {
-  if (value === undefined || value === null) return null;
-  if (Array.isArray(value)) return value.at(-1) ?? null;
-  return String(value);
 }
