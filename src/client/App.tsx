@@ -129,24 +129,6 @@ export function App() {
       });
   }, []);
 
-  useEffect(() => {
-    window.__PANDOC_PREVIEW_STATE__ = { markdown: markdownText, currentFile };
-  }, [currentFile, markdownText]);
-
-  useEffect(() => {
-    let cancelled = false;
-    invoke<{ plugins: PluginMetadata[] }>('list_plugins')
-      .then((data) => {
-        if (!cancelled) setPlugins(data.plugins ?? []);
-      })
-      .catch(() => {
-        if (!cancelled) setPluginState('error');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   const clearRenderTimer = useCallback(() => {
     if (debounceTimer.current != null) {
       window.clearTimeout(debounceTimer.current);
