@@ -3,14 +3,10 @@
   "version": "0.2.1",
   "private": true,
   "type": "module",
-  "bin": {
-    "pandoc-preview": "./src/server/cli.ts"
-  },
   "scripts": {
-    "dev": "tsx src/server/cli.ts",
-    "start": "tsx src/server/cli.ts",
-    "typecheck": "tsc --noEmit",
-    "build": "vite build"
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.3",

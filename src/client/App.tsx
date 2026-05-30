@@ -61,6 +61,15 @@ type InitialState = {
   recoveredFromBackup: boolean;
 };
 
+declare global {
+  interface Window {
+    __PANDOC_PREVIEW_STATE__?: {
+      markdown: string;
+      currentFile: string | null;
+    };
+  }
+}
+
 const DEBOUNCE_MS = 400;
 const RESET_LAYOUT = {
   'editor-pane-panel': 56,
