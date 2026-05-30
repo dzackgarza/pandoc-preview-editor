@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X, Image, Globe, Monitor, Loader, Clipboard, Plus, Check } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
+import { blobToBase64 } from '../lib/utils.js';
 import { DIAGRAM_TOOLS, type DiagramTool } from '../../shared/diagram-tools.js';
 
 interface DiagramModalProps {

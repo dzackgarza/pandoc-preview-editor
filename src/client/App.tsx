@@ -6,7 +6,7 @@ import { EditorView } from '@codemirror/view';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { invoke } from '@tauri-apps/api/core';
 
-import { cn, lineCount } from './lib/utils.js';
+import { cn, lineCount, blobToBase64 } from './lib/utils.js';
 import { useToast, toast } from './lib/toast.js';
 
 // Import sub-components
@@ -939,15 +939,6 @@ export function App() {
       </div>
     </Tooltip.Provider>
   );
-}
-
-async function blobToBase64(blob: Blob) {
-  const bytes = new Uint8Array(await blob.arrayBuffer());
-  let binary = '';
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary);
 }
 
 function errorDocument(message: string) {
