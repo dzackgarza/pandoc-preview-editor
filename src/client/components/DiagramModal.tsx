@@ -17,13 +17,14 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
   const [error, setError] = useState<string | null>(null);
   
   // Desktop form states
-  const [desktopTool, setDesktopTool] = useState<'qtikz' | 'tikzit' | 'inkscape' | 'xournal'>('qtikz');
+  const [desktopTool, setDesktopTool] = useState<'qtikz' | 'tikzit' | 'inkscape' | 'xournal' | 'ipe'>('qtikz');
   const [filename, setFilename] = useState('');
   const [availableTools, setAvailableTools] = useState<Record<string, boolean>>({
     qtikz: true,
     tikzit: true,
     inkscape: true,
     xournal: true,
+    ipe: true,
   });
 
   useEffect(() => {
@@ -33,7 +34,7 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
         .then((data) => {
           if (data) {
             setAvailableTools(data);
-            const toolsOrder: ('qtikz' | 'tikzit' | 'inkscape' | 'xournal')[] = ['qtikz', 'tikzit', 'inkscape', 'xournal'];
+            const toolsOrder: ('qtikz' | 'tikzit' | 'inkscape' | 'xournal' | 'ipe')[] = ['qtikz', 'tikzit', 'inkscape', 'xournal', 'ipe'];
             if (!data[desktopTool]) {
               const firstAvailable = toolsOrder.find((t) => data[t]);
               if (firstAvailable) {
@@ -162,6 +163,7 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
     let ext = '.tikz';
     if (desktopTool === 'inkscape') ext = '.svg';
     if (desktopTool === 'xournal') ext = '.xopp';
+    if (desktopTool === 'ipe') ext = '.ipe';
 
     let finalName = filename.trim();
     if (!finalName.endsWith(ext)) {
@@ -376,28 +378,45 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
 
                   <div className="grid grid-cols-2 gap-2 mt-2">
                     {[
-                      { id: 'qtikz', name: 'Qtikz (TikZ editor)', desc: 'Writes .tikz files' },
-                      { id: 'tikzit', name: 'Tikzit (Node/TikZ)', desc: 'Writes .tikz files' },
-                      { id: 'inkscape', name: 'Inkscape (Vector)', desc: 'Writes .svg drawings' },
-                      { id: 'xournal', name: 'Xournal++ (Sketch)', desc: 'Writes .xopp notes' },
+                      { id: 'qtikz', name: 'Qtikz (TikZ editor)', desc: 'Writes .tikz files', url: 'https://github.com/nlohmann/qtikz' },
+                      { id: 'tikzit', name: 'Tikzit (Node/TikZ)', desc: 'Writes .tikz files', url: 'https://tikzit.github.io/' },
+                      { id: 'inkscape', name: 'Inkscape (Vector)', desc: 'Writes .svg drawings', url: 'https://inkscape.org/' },
+                      { id: 'xournal', name: 'Xournal++ (Sketch)', desc: 'Writes .xopp notes', url: 'https://github.com/xournalpp/xournalpp' },
+                      { id: 'ipe', name: 'Ipe (Extensible Editor)', desc: 'Writes .ipe drawings', url: 'https://ipe.otfried.org/' },
                     ].map((tool) => {
                       const isAvailable = availableTools[tool.id];
+                      if (!isAvailable) {
+                        return (
+                          <a
+                            key={tool.id}
+                            href={tool.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="rounded-md border p-3 text-left transition-all border-[#e06c75]/25 bg-[#e06c75]/5 text-[#e06c75] hover:bg-[#e06c75]/10 cursor-pointer block hover:no-underline"
+                          >
+                            <div className="text-sm font-semibold flex items-center gap-1.5 justify-between">
+                              <span>{tool.name}</span>
+                              <span className="text-[9px] font-normal px-1.5 py-0.5 rounded bg-[#2b1c1e] text-[#f38ba8] border border-[#f38ba8]/20 whitespace-nowrap">Install (Link)</span>
+                            </div>
+                            <div className="text-xs text-[#aab2c8] mt-0.5">{tool.desc}</div>
+                            <div className="text-[10px] text-[#e06c75] underline mt-1.5 flex items-center gap-1">
+                              Visit homepage to install &rarr;
+                            </div>
+                          </a>
+                        );
+                      }
                       return (
                         <button
                           key={tool.id}
-                          disabled={!isAvailable}
                           onClick={() => { setDesktopTool(tool.id as any); setError(null); }}
                           className={`rounded-md border p-3 text-left transition-all ${
-                            !isAvailable
-                              ? 'border-[#22252a] bg-[#121419]/30 text-[#404550] cursor-not-allowed opacity-50'
-                              : desktopTool === tool.id
+                            desktopTool === tool.id
                               ? 'border-[#89b4fa] bg-[#89b4fa]/5 text-white cursor-pointer'
                               : 'border-[#2b2f38] bg-[#171a21]/50 text-[#788190] hover:bg-[#20242e] hover:text-[#e6e8eb] cursor-pointer'
                           }`}
                         >
                           <div className="text-sm font-semibold flex items-center gap-1.5 justify-between">
                             <span>{tool.name}</span>
-                            {!isAvailable && <span className="text-[9px] font-normal px-1.5 py-0.5 rounded bg-[#2b2121] text-[#f38ba8] border border-[#f38ba8]/10 whitespace-nowrap">Not Installed</span>}
                           </div>
                           <div className="text-xs text-[#5c6370] mt-0.5">{tool.desc}</div>
                         </button>
@@ -416,7 +435,7 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
                     />
                     <div className="text-xs text-[#5c6370] font-mono">
                       Will create: <span className="text-[#aab2c0]">figures/{filename || 'filename'}{
-                        desktopTool === 'qtikz' || desktopTool === 'tikzit' ? '.tikz' : desktopTool === 'inkscape' ? '.svg' : '.xopp'
+                        desktopTool === 'qtikz' || desktopTool === 'tikzit' ? '.tikz' : desktopTool === 'inkscape' ? '.svg' : desktopTool === 'xournal' ? '.xopp' : '.ipe'
                       }</span>
                     </div>
                   </div>

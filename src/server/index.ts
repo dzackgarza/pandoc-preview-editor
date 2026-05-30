@@ -251,6 +251,7 @@ export function createApp(config: ServerConfig) {
     tikzit: isCommandAvailable('tikzit'),
     inkscape: isCommandAvailable('inkscape'),
     xournal: isCommandAvailable('xournalpp') || isCommandAvailable('xournal'),
+    ipe: isCommandAvailable('ipe'),
   };
 
   const xournalCmd = isCommandAvailable('xournalpp') ? 'xournalpp' : 'xournal';
@@ -1082,6 +1083,18 @@ export function createApp(config: ServerConfig) {
             '</page>',
             '</xournal>',
           ].join('\n') + '\n';
+      } else if (type === 'ipe') {
+        template =
+          [
+            '<?xml version="1.0"?>',
+            '<!DOCTYPE ipe SYSTEM "ipe.dtd">',
+            '<ipe version="70218" creator="Ipe 7.2">',
+            '<page>',
+            '<layer name="alpha"/>',
+            '<view layers="alpha" active="alpha"/>',
+            '</page>',
+            '</ipe>',
+          ].join('\n') + '\n';
       }
 
       writeFileSync(figurePath, template, 'utf-8');
@@ -1116,13 +1129,13 @@ export function createApp(config: ServerConfig) {
       res.status(400).json({ error: 'absolutePath is required' });
       return;
     }
-
-    let toolType = type;
-    if (typeof toolType !== 'string' || !toolType) {
+    let toolType = typeof type === 'string' ? type : '';
+    if (!toolType) {
       const ext = extname(absolutePath).toLowerCase();
       if (ext === '.tikz') toolType = 'qtikz';
       else if (ext === '.svg') toolType = 'inkscape';
       else if (ext === '.xopp' || ext === '.xopps' || ext === '.xopp') toolType = 'xournal';
+      else if (ext === '.ipe') toolType = 'ipe';
       else toolType = 'inkscape';
     }
 
