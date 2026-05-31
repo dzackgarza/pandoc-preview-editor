@@ -41,6 +41,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
+    "@srsholmes/tauri-playwright": "^0.2.2",
     "@tailwindcss/vite": "^4.3.0",
     "@tauri-apps/cli": "^2.11.2",
     "@types/express": "^5.0.0",

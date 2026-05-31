@@ -6,9 +6,7 @@ use tauri::State;
 
 use crate::config::{figures_central_dir, register_figure};
 use crate::fs_utils::{normalize_path, path_is_inside};
-use crate::state::{
-    AppState, FiguresStorageStrategy, starter_template_for_tool, tool_id_for_ext,
-};
+use crate::state::{starter_template_for_tool, tool_id_for_ext, AppState, FiguresStorageStrategy};
 
 // ─── diagram proxy ────────────────────────────────────────────────────────────
 
@@ -76,8 +74,7 @@ pub fn create_diagram_file(
     if s.is_temp_file || s.file.is_none() || s.file.as_ref() != Some(&resolved_doc) {
         return Err("save the document before adding figures".into());
     }
-    let is_central =
-        matches!(s.figures_storage_strategy, FiguresStorageStrategy::Central);
+    let is_central = matches!(s.figures_storage_strategy, FiguresStorageStrategy::Central);
     let figures_dir = if is_central {
         figures_central_dir(&s)
     } else {
@@ -141,9 +138,7 @@ pub fn launch_diagram(
     let resolved = if Path::new(&absolute_path).is_absolute() {
         PathBuf::from(&absolute_path)
     } else if let Some(ref file) = s.file {
-        file.parent()
-            .unwrap_or(Path::new("."))
-            .join(&absolute_path)
+        file.parent().unwrap_or(Path::new(".")).join(&absolute_path)
     } else {
         PathBuf::from(&absolute_path)
     };

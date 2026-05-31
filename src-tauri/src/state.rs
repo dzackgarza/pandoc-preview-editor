@@ -118,6 +118,7 @@ impl AppState {
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct DiagramToolDef {
     id: String,
     executables: Vec<String>,

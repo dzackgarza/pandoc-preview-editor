@@ -111,10 +111,14 @@ pub fn save(
                 resolve_inside(&workspace_root, p)?
             }
         } else {
-            s.file.clone().ok_or("no file path configured or provided")?
+            s.file
+                .clone()
+                .ok_or("no file path configured or provided")?
         }
     } else {
-        s.file.clone().ok_or("no file path configured or provided")?
+        s.file
+            .clone()
+            .ok_or("no file path configured or provided")?
     };
 
     // Check for external modification
@@ -276,13 +280,16 @@ pub fn browse(dir: String) -> Result<serde_json::Value, String> {
         na.cmp(nb)
     });
 
-    let parent_path = target_dir.parent().map(|p| p.to_string_lossy().into_owned());
-    let parent =
-        if parent_path.as_deref() == Some(target_dir.to_string_lossy().as_ref()) {
-            serde_json::Value::Null
-        } else {
-            parent_path.map(serde_json::Value::String).unwrap_or(serde_json::Value::Null)
-        };
+    let parent_path = target_dir
+        .parent()
+        .map(|p| p.to_string_lossy().into_owned());
+    let parent = if parent_path.as_deref() == Some(target_dir.to_string_lossy().as_ref()) {
+        serde_json::Value::Null
+    } else {
+        parent_path
+            .map(serde_json::Value::String)
+            .unwrap_or(serde_json::Value::Null)
+    };
 
     Ok(serde_json::json!({
         "dir": target_dir.to_string_lossy(),
@@ -414,9 +421,11 @@ pub fn quick_open(
 
     let mut entries: Vec<serde_json::Value> =
         recent_entries.into_iter().filter(|e| matches(e)).collect();
-    entries.extend(workspace_entries.into_iter().filter(|e| {
-        !recent_paths.contains(e["path"].as_str().unwrap_or("")) && matches(e)
-    }));
+    entries.extend(
+        workspace_entries
+            .into_iter()
+            .filter(|e| !recent_paths.contains(e["path"].as_str().unwrap_or("")) && matches(e)),
+    );
 
     Ok(serde_json::json!({
         "root": workspace_root.to_string_lossy(),
@@ -488,16 +497,10 @@ pub fn new_file(
                 resolve_inside(&workspace_root, p)?
             }
         } else {
-            resolve_inside(
-                &workspace_root,
-                &format!("untitled-{}.md", Uuid::new_v4()),
-            )?
+            resolve_inside(&workspace_root, &format!("untitled-{}.md", Uuid::new_v4()))?
         }
     } else {
-        resolve_inside(
-            &workspace_root,
-            &format!("untitled-{}.md", Uuid::new_v4()),
-        )?
+        resolve_inside(&workspace_root, &format!("untitled-{}.md", Uuid::new_v4()))?
     };
 
     if target_path.exists() {
@@ -553,10 +556,8 @@ pub async fn quick_open_spawn(
     let cmd = if let Some(c) = launcher_cmd {
         c
     } else {
-        let has_rofi =
-            Path::new("/usr/bin/rofi").exists() || Path::new("/bin/rofi").exists();
-        let has_dmenu =
-            Path::new("/usr/bin/dmenu").exists() || Path::new("/bin/dmenu").exists();
+        let has_rofi = Path::new("/usr/bin/rofi").exists() || Path::new("/bin/rofi").exists();
+        let has_dmenu = Path::new("/usr/bin/dmenu").exists() || Path::new("/bin/dmenu").exists();
         let has_fd = Path::new("/usr/bin/fd").exists() || Path::new("/bin/fd").exists();
         let finder = if has_fd {
             "fd -e md -t f"
@@ -585,9 +586,7 @@ pub async fn quick_open_spawn(
         return Ok(serde_json::json!({ "ok": false, "cancelled": true }));
     }
 
-    let trimmed = String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .to_string();
+    let trimmed = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if trimmed.is_empty() {
         return Ok(serde_json::json!({ "ok": false, "cancelled": true }));
     }

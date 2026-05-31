@@ -60,3 +60,87 @@ restrictive:
   uncommon flag combinations, chained wrappers) always have the raw text tab. The
   structured UI is a convenience, not a gate. The app does not canonicalize paths in the
   raw string.
+
+- **Templates are data, not code**: Pandoc templates, TikZ intermediates, macros, and
+  style files are user-editable data stored under `~/.pandoc/` or the app's config
+  directory. No app code may embed template content or construct templates through
+  string manipulation. When a new macro package is released or a style needs updating,
+  the user edits a file in their version-controlled dotfiles — no code change, no
+  deployment blast radius. For TikZ rendering, the injection template lives under
+  `~/.pandoc/` and is referenced from the render command like any other template.
+
+- **TikZ rendered to SVG via Pandoc, never tikzjax**: TikZ diagrams are rendered to SVG
+  through the Pandoc pipeline, never through an in-browser JavaScript engine. TikZjax
+  lacks full TikZ feature coverage, does not support user macros, is outside the app's
+  template control, and — most critically — produces output that is not reproducible
+  outside the app. Server-side Pandoc → SVG rendering is externally auditable, handles
+  text vs drawing scaling correctly, and compiles identically on any machine. The
+  resulting SVG is embedded as an image in the preview output.
+
+## Fail-Fast Architecture
+
+Research-critical tooling cannot tolerate silent corruption. The app must crash
+immediately and visibly on any unexpected state or invariant violation.
+
+- **No error swallowing**: Every exception representing unexpected state must be surfaced
+  visibly to the user. Catching errors to log and continue, substituting fallback defaults,
+  or silently retrying is prohibited — these patterns convert recoverable runtime errors
+  into unrecoverable data corruption.
+
+- **Assert invariants at every boundary**: Assumptions about data shape, system state,
+  and renderer output must be enforced where they enter the system. A null file path,
+  an unreadable config file, a renderer timeout, or a missing template must produce a
+  hard user-visible failure, not a silent log entry.
+
+- **Crash over corrupt**: A broken build, a stalled render, or a crashed subsystem is
+  always less costly than silently incorrect output. Every suppression of an error signal
+  for "user experience" reasons is a bet against the user's research data — the app
+  cannot win that bet.
+
+- **Instrument for agent triage**: Error output must contain enough information (stack
+  trace, state snapshot, input context) for an automated agent to diagnose and harden
+  the failing path without manual reproduction. Opaque "something went wrong" placeholders,
+  partial error messages, and truncated failure codes are not acceptable.
+
+## Git-Native Version Control
+
+The app delegates versioning, crash recovery, and rollback to git rather than
+reinventing any of these mechanisms. This follows from the core value: the
+user's writing is gold and must be protected, recoverable, and roll-back-able
+with minimal app-specific machinery.
+
+- **GUI signals VC state prominently**: The workspace chrome always displays
+  whether the active file is tracked in a git repository (has been committed
+  at least once). Untracked files — whether outside any repo or sitting in a
+  repo but never committed — receive a visually prominent indicator (banner,
+  color coding, status bar entry) so the risk surface is immediate and
+  unmistakable. The absence of tracking is treated as an exceptional state
+  worth highlighting. The prominent indicator is a call to action — the user
+  is expected to track the file in git, not to tolerate the warning
+  indefinitely.
+
+- **Every save is a git commit** — both explicit user saves and automatic
+  timer-driven autosaves. For a tracked file, saving and committing are the
+  same operation: the file write IS a git commit. There is no two-step process.
+  For an untracked file (not in git at all, or inside a repo but never
+  committed) or an unsaved buffer, save and commit necessarily split because
+  there is no tracking — the backend writes to its own recovery repo. This
+  split is a transient condition flagged by the prominent untracked warning,
+  not a normal dual-path workflow. Autosaves also create git commits on a
+  short timer, keeping the crash-loss window to single-digit seconds
+  regardless of where the autosave target lands.
+
+- **Commits are cheap; squash is deferred**: On 2026 hardware, creating a
+  commit per save is negligible in both time and storage. The resulting
+  high-frequency history provides fine-grained rollback and crash recovery
+  without any app-owned backup machinery. Agents can squash and clean history
+  during maintenance — the app never gates a write on squash readiness.
+
+- **Crash recovery delegated to git, not app code**: There is no app-owned
+  backup format, no "autosave" system separate from git, no temporary-file
+  snapshot scheme. The backend git repo is the crash recovery layer, period.
+  The backend autosaves the current buffer on a short internal timer
+  (sub-10-second debounce) and commits every autosave. A power outage or
+  killed process loses at most a few seconds of work. The moment text enters
+  the buffer it is continuously protected; there is no manual-save dependency
+  for crash safety.

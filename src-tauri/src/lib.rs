@@ -1,9 +1,9 @@
-pub mod state;
-pub mod config;
 pub mod command_flags;
+pub mod commands;
+pub mod config;
 pub mod fs_utils;
 pub mod render;
-pub mod commands;
+pub mod state;
 
 use std::sync::Mutex;
 
@@ -13,7 +13,11 @@ pub fn run() {
 
     commands::register_commands(
         tauri::Builder::default()
-            .plugin(tauri_plugin_log::Builder::default().level(log::LevelFilter::Info).build())
+            .plugin(
+                tauri_plugin_log::Builder::default()
+                    .level(log::LevelFilter::Info)
+                    .build(),
+            )
             .plugin(tauri_plugin_shell::init())
             .plugin(tauri_plugin_fs::init())
             .plugin(tauri_plugin_dialog::init())

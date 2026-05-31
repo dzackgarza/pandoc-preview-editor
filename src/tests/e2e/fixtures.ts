@@ -3,7 +3,10 @@
 import { createTauriTest } from '@srsholmes/tauri-playwright';
 
 export const { test, expect } = createTauriTest({
-  devUrl: 'http://localhost:1420',
+  devUrl: 'http://localhost:5173',
+  tauriCommand: 'src/tests/e2e/run-tauri-dev.sh',
+  tauriCwd: process.cwd(),
+  startTimeout: 120,
   ipcMocks: {
     get_initial_state: () => ({
       content: '',
@@ -36,6 +39,12 @@ export const { test, expect } = createTauriTest({
     pandoc_assets: () => ({
       templates: [],
       filters: [],
+    }),
+    render: ({ markdown }: { markdown: string }) => ({
+      ok: true,
+      html: `<p>${markdown || 'empty document'}</p>`,
+      durationMs: 1,
+      stderr: '',
     }),
     list_plugins: () => ({
       plugins: [],

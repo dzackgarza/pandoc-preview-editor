@@ -1,8 +1,10 @@
 import { test, expect } from './fixtures.js';
 
-test('app loads without errors and renders static content', async ({
+test('renders the editor shell through the selected app boundary', async ({
   tauriPage,
 }: any) => {
   await tauriPage.goto('/');
-  await expect(tauriPage.locator('body')).toContainText('pandoc-preview');
+  await expect(tauriPage.getByTestId('editor')).toBeVisible();
+  await expect(tauriPage.getByTestId('preview-pane')).toBeVisible();
+  await expect(tauriPage.locator('#status')).toContainText('ready');
 });

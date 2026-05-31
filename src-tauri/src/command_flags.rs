@@ -310,10 +310,20 @@ mod tests {
         );
     }
 
-    /// Helper: parse-reconstruct-reparse and assert structured flags are equivalent.
-    fn assert_semantic_round_trip(cmd: &str) {
+    fn split_shell(command: &str) -> Vec<String> {
+        shell_words::split(command).expect("test command must be valid shell syntax")
+    }
+
+    /// Helper: parse-reconstruct-reparse and assert command behavior is preserved.
+    fn assert_round_trip_argv(cmd: &str, expected_reconstructed: &[&str]) {
         let original = parse_render_command(cmd);
         let reconstructed = original.reconstruct_command();
+        let reconstructed_argv = split_shell(&reconstructed);
+        assert_eq!(
+            reconstructed_argv, expected_reconstructed,
+            "reconstructed argv mismatch for: {cmd}\nreconstructed command: {reconstructed}"
+        );
+
         let reparsed = parse_render_command(&reconstructed);
         assert_eq!(
             original.standalone, reparsed.standalone,
@@ -340,55 +350,98 @@ mod tests {
             original.template, reparsed.template,
             "template mismatch for: {cmd}"
         );
-        // filters: compare paths and flags, unordered
-        let orig_filters: std::collections::BTreeSet<_> = original
-            .filters
-            .iter()
-            .map(|f| (f.flag.clone(), f.path.clone()))
-            .collect();
-        let reparsed_filters: std::collections::BTreeSet<_> = reparsed
-            .filters
-            .iter()
-            .map(|f| (f.flag.clone(), f.path.clone()))
-            .collect();
         assert_eq!(
-            orig_filters, reparsed_filters,
+            original.filters, reparsed.filters,
             "filters mismatch for: {cmd}"
         );
-        // other_args: compare unordered
-        let orig_other: std::collections::BTreeSet<_> =
-            original.other_args.iter().cloned().collect();
-        let reparsed_other: std::collections::BTreeSet<_> =
-            reparsed.other_args.iter().cloned().collect();
-        assert_eq!(orig_other, reparsed_other, "other_args mismatch for: {cmd}");
+        assert_eq!(
+            original.other_args, reparsed.other_args,
+            "other_args mismatch for: {cmd}"
+        );
     }
 
     #[test]
     fn round_trip_basic() {
-        assert_semantic_round_trip("pandoc --standalone -t html5");
+        assert_round_trip_argv(
+            "pandoc --standalone -t html5",
+            &["pandoc", "--standalone", "-t", "html5"],
+        );
     }
 
     #[test]
     fn round_trip_with_filters() {
-        assert_semantic_round_trip(
+        assert_round_trip_argv(
             "pandoc --standalone --lua-filter=/a/f.lua --filter=/b/f.py --lua-filter=/c/g.lua -t html5",
+            &[
+                "pandoc",
+                "--standalone",
+                "--lua-filter=/a/f.lua",
+                "--filter=/b/f.py",
+                "--lua-filter=/c/g.lua",
+                "-t",
+                "html5",
+            ],
         );
     }
 
     #[test]
     fn round_trip_with_template() {
-        assert_semantic_round_trip("pandoc --standalone --template=tpl.html -t html5");
+        assert_round_trip_argv(
+            "pandoc --standalone --template=tpl.html -t html5",
+            &[
+                "pandoc",
+                "--standalone",
+                "--template=tpl.html",
+                "-t",
+                "html5",
+            ],
+        );
     }
 
     #[test]
     fn round_trip_math() {
-        assert_semantic_round_trip("pandoc --mathjax --standalone -t html5");
+        assert_round_trip_argv(
+            "pandoc --mathjax --standalone -t html5",
+            &["pandoc", "--standalone", "--mathjax", "-t", "html5"],
+        );
     }
 
     #[test]
     fn round_trip_all_flags() {
-        assert_semantic_round_trip(
+        assert_round_trip_argv(
             "pandoc --standalone --citeproc --table-of-contents --number-sections --embed-resources --mathjax --template=tpl.html --lua-filter=f1.lua --lua-filter=f2.lua --filter=f3.py -t html5 -f markdown",
+            &[
+                "pandoc",
+                "--standalone",
+                "--citeproc",
+                "--table-of-contents",
+                "--number-sections",
+                "--embed-resources",
+                "--mathjax",
+                "--template=tpl.html",
+                "--lua-filter=f1.lua",
+                "--lua-filter=f2.lua",
+                "--filter=f3.py",
+                "-t",
+                "html5",
+                "-f",
+                "markdown",
+            ],
+        );
+    }
+
+    #[test]
+    fn round_trip_quoted_paths_preserves_argv() {
+        assert_round_trip_argv(
+            "pandoc --standalone --template 'templates/acme preview.html' --lua-filter 'filters/tikz diagrams.lua' -t html5",
+            &[
+                "pandoc",
+                "--standalone",
+                "--template=templates/acme preview.html",
+                "--lua-filter=filters/tikz diagrams.lua",
+                "-t",
+                "html5",
+            ],
         );
     }
 
