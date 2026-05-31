@@ -51,10 +51,4 @@ test-rust:
 test-verbose:
     cargo test --manifest-path src-tauri/Cargo.toml -- --show-output
 
-# Run E2E tests (browser mode, no Tauri GUI)
-test-e2e:
-    npx playwright test --config src/tests/playwright.config.ts --project=browser-smoke
 
-# Run Tauri E2E through the Playwright socket bridge (launches real GUI)
-test-tauri-e2e:
-    npx playwright test --config src/tests/playwright.config.ts --project=tauri
