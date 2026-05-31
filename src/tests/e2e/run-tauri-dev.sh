@@ -2,4 +2,5 @@
 set -euo pipefail
 
 script_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-exec node "$script_dir/run-tauri-dev.mjs" "$@"
+export XDG_CONFIG_HOME="$script_dir/xdg-config"
+exec npx tauri dev "$@"
