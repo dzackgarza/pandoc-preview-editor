@@ -13,7 +13,7 @@ use crate::config::{get_backup_path, write_config_toml, save_session_state, figu
 use crate::fs_utils::{get_file_fingerprint, IGNORE_NAMES, is_markdown_file, is_text_like_file,
     normalize_path, path_is_inside, resolve_inside, should_ignore, to_client_path,
     write_file_atomic, image_extension, sanitize_figure_filename};
-use crate::render::{extract_filter_paths, remove_filter_flags, inline_preview_assets};
+use crate::render::inline_preview_assets;
 use crate::state::{AppState, FiguresStorageStrategy, starter_template_for_tool, tool_id_for_ext};
 
 // ─── plugins ──────────────────────────────────────────────────────────────────
@@ -658,6 +658,7 @@ pub fn pandoc_assets(state: State<'_, Mutex<AppState>>) -> Result<serde_json::Va
 #[tauri::command]
 pub fn get_config(state: State<'_, Mutex<AppState>>) -> serde_json::Value {
     let s = state.lock().unwrap();
+    let parsed = serde_json::to_value(&s.parsed_flags).unwrap_or(serde_json::Value::Null);
     serde_json::json!({
         "templatesDir": s.templates_dir.to_string_lossy(),
         "filtersDir": s.filters_dir.to_string_lossy(),
@@ -665,6 +666,7 @@ pub fn get_config(state: State<'_, Mutex<AppState>>) -> serde_json::Value {
         "timeoutMs": s.timeout_ms,
         "renderCommand": s.render_command,
         "restoreLastFile": s.restore_last_file,
+        "parsedFlags": parsed,
     })
 }
 
@@ -690,6 +692,7 @@ pub fn set_config(
     s.debounce_ms = debounce_ms;
     s.timeout_ms = timeout_ms;
     s.render_command = render_command.clone();
+    s.parsed_flags = crate::command_flags::parse_render_command(&render_command);
     s.restore_last_file = restore_last_file.unwrap_or(true);
 
     if let Some(ref config_path) = s.config_path {
@@ -712,32 +715,25 @@ pub fn set_config(
 #[tauri::command]
 pub fn list_filters(state: State<'_, Mutex<AppState>>) -> Result<serde_json::Value, String> {
     let s = state.lock().unwrap();
-    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
-    let expand = |p: &str| -> PathBuf {
-        if p.starts_with("~/") {
-            home.join(&p[2..])
-        } else {
-            PathBuf::from(p)
-        }
-    };
+    let filters_dir = s.filters_dir.clone();
 
-    let raw_paths = extract_filter_paths(&s.render_command);
-    let active: std::collections::HashSet<PathBuf> = raw_paths
+    let active: std::collections::HashSet<PathBuf> = s
+        .parsed_flags
+        .filters
         .iter()
-        .map(|p| {
-            let exp = expand(p);
-            if exp.is_absolute() {
-                exp
+        .map(|f| {
+            let p = if f.path.starts_with("~/") {
+                dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp")).join(&f.path[2..])
             } else {
-                std::env::current_dir().unwrap_or_default().join(exp)
-            }
+                PathBuf::from(&f.path)
+            };
+            if p.is_absolute() { p } else { std::env::current_dir().unwrap_or_default().join(p) }
         })
         .collect();
 
     let mut files: Vec<serde_json::Value> = vec![];
-    if s.filters_dir.exists() {
-        if let Ok(entries) = fs::read_dir(&s.filters_dir) {
-            let filters_dir = s.filters_dir.clone();
+    if filters_dir.exists() {
+        if let Ok(entries) = fs::read_dir(&filters_dir) {
             files = entries
                 .flatten()
                 .filter(|e| {
@@ -770,8 +766,25 @@ pub fn toggle_filters(
 ) -> Result<serde_json::Value, String> {
     let mut s = state.lock().unwrap();
     let filters_dir = s.filters_dir.clone();
-    let mut remaining = remove_filter_flags(&s.render_command, &filters_dir);
 
+    // Keep filters from parsed_flags that are NOT inside filters_dir
+    let mut new_filters: Vec<crate::command_flags::FilterEntry> = s
+        .parsed_flags
+        .filters
+        .iter()
+        .filter(|f| {
+            let p = if f.path.starts_with("~/") {
+                dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp")).join(&f.path[2..])
+            } else {
+                PathBuf::from(&f.path)
+            };
+            let resolved = if p.is_absolute() { p } else { std::env::current_dir().unwrap_or_default().join(p) };
+            !path_is_inside(&filters_dir, &resolved)
+        })
+        .cloned()
+        .collect();
+
+    // Add newly enabled filters that live in filters_dir
     for item in &enabled {
         let filename = if item.ends_with(".lua") {
             Path::new(item)
@@ -795,10 +808,14 @@ pub fn toggle_filters(
                 filters_dir.display()
             ));
         }
-        remaining.push(format!("--lua-filter={}", path_opt.to_string_lossy()));
+        new_filters.push(crate::command_flags::FilterEntry {
+            flag: "lua-filter".into(),
+            path: path_opt.to_string_lossy().into_owned(),
+        });
     }
 
-    let new_cmd = shell_words::join(std::iter::once("pandoc").chain(remaining.iter().map(String::as_str)));
+    s.parsed_flags.filters = new_filters;
+    let new_cmd = s.parsed_flags.reconstruct_command();
     s.render_command = new_cmd.clone();
 
     if let Some(ref config_path) = s.config_path.clone() {

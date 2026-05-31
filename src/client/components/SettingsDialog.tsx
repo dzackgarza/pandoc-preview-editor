@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as Tabs from '@radix-ui/react-tabs';
 import { X, Settings, Cpu, FolderOpen, Terminal, Filter, Plug } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import {
   ParsedFlags,
-  parseCommand as parseFlags,
+  fromRustParsedFlags,
   buildCommand,
+  RustParsedFlags,
 } from '../../shared/command-parser.js';
 
 interface SettingsData {
@@ -16,6 +17,7 @@ interface SettingsData {
   timeoutMs: number;
   renderCommand: string;
   restoreLastFile?: boolean;
+  parsedFlags?: RustParsedFlags;
 }
 
 interface PluginMetadata {
@@ -50,8 +52,20 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
   const [rawArgsText, setRawArgsText] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
 
-  // All flag state derived from rawArgsText; no separate per-flag state vars
-  const parsedFlags = useMemo(() => parseFlags(rawArgsText), [rawArgsText]);
+  // Flag state from Rust parser (single source of truth), kept in Settings-UI form.
+  // Updated locally when user modifies structured controls; rebuilt from raw text on dialog open.
+  const [parsedFlags, setParsedFlags] = useState<ParsedFlags>({
+    commandName: 'pandoc',
+    standalone: false,
+    citeproc: false,
+    toc: false,
+    numberSections: false,
+    embedResources: false,
+    math: 'none',
+    selectedTemplate: '',
+    selectedFilters: [],
+    otherFlags: [],
+  });
 
   // Fetch config, plugins, and asset lists when the dialog opens
   useEffect(() => {
@@ -65,6 +79,9 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
           setTimeoutMs(data.timeoutMs);
           setRawArgsText(data.renderCommand || 'pandoc');
           setRestoreLastFile(data.restoreLastFile !== false);
+          if (data.parsedFlags) {
+            setParsedFlags(fromRustParsedFlags(data.parsedFlags));
+          }
         })
         .catch(console.error);
 
@@ -83,11 +100,11 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
     }
   }, [open]);
 
-  // Update a single flag: rebuild the raw command string from the new flag state
+  // Update a single flag: patch local state and rebuild the raw command string
   const updateFlag = (patch: Partial<ParsedFlags>) => {
-    setRawArgsText(
-      buildCommand({ ...parsedFlags, ...patch }, templatesDir, filtersDir),
-    );
+    const next = { ...parsedFlags, ...patch };
+    setParsedFlags(next);
+    setRawArgsText(buildCommand(next, templatesDir, filtersDir));
   };
 
   const handleFilterToggle = (filterName: string) => {
@@ -471,8 +488,9 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
                   onChange={(e) => handleRawTextChange(e.target.value)}
                 />
                 <p className="text-xs text-[#788190]">
-                  Changes in raw arguments automatically update the options checkboxes,
-                  and vice-versa.
+                  Edit flags using the structured controls above, or paste a complete
+                  command into the Raw Command tab and save. Structured controls update
+                  on dialog reopen.
                 </p>
               </Tabs.Content>
 

@@ -42,6 +42,7 @@ pub struct FileFingerprint {
 #[derive(Debug)]
 pub struct AppState {
     pub render_command: String,
+    pub parsed_flags: crate::command_flags::ParsedCommandFlags,
     pub timeout_ms: u64,
     pub file: Option<PathBuf>,
     pub file_content: Option<String>,

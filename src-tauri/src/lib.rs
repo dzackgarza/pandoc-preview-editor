@@ -1,5 +1,6 @@
 pub mod state;
 pub mod config;
+pub mod command_flags;
 pub mod fs_utils;
 pub mod render;
 pub mod commands;

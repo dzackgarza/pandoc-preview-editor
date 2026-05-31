@@ -10,7 +10,11 @@ use uuid::Uuid;
 fn xdg_state_dir() -> PathBuf {
     let base = std::env::var("XDG_STATE_HOME")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| dirs::home_dir().expect("HOME must be set").join(".local/state"));
+        .unwrap_or_else(|_| {
+            dirs::home_dir()
+                .expect("HOME must be set")
+                .join(".local/state")
+        });
     base.join("pandoc-preview")
 }
 
@@ -39,7 +43,10 @@ pub fn save_session_state(last_file: &Path, is_temp_file: bool) {
         "last_file": last_file.to_string_lossy(),
         "is_temp_file": is_temp_file,
     });
-    let _ = fs::write(state_file_path(), serde_json::to_string_pretty(&state).unwrap());
+    let _ = fs::write(
+        state_file_path(),
+        serde_json::to_string_pretty(&state).unwrap(),
+    );
 }
 
 pub fn load_figures_registry(dir: &Path) -> FiguresRegistry {
@@ -198,6 +205,7 @@ pub fn build_initial_state() -> AppState {
     let render_command = pandoc
         .render_command
         .unwrap_or_else(|| DEFAULT_RENDER_COMMAND.to_string());
+    let parsed_flags = crate::command_flags::parse_render_command(&render_command);
     let templates_dir = pandoc
         .templates_dir
         .map(PathBuf::from)
@@ -232,6 +240,7 @@ pub fn build_initial_state() -> AppState {
 
     AppState {
         render_command,
+        parsed_flags,
         timeout_ms,
         file: last_file,
         file_content: None,
@@ -290,7 +299,10 @@ mod tests {
         let path = dir.path().join("config.toml");
 
         write_config_toml(
-            &path, 500, 20000, true,
+            &path,
+            500,
+            20000,
+            true,
             "pandoc --standalone -t html5",
             "/home/user/.pandoc/templates",
             "/home/user/.pandoc/filters",
@@ -319,18 +331,15 @@ pub fn load_bundled_plugins(plugin_dir: &Path) -> Vec<crate::state::PluginManife
     if let Ok(entries) = std::fs::read_dir(plugin_dir) {
         let mut names: Vec<_> = entries
             .flatten()
-            .filter(|e| {
-                e.path()
-                    .extension()
-                    .map(|x| x == "toml")
-                    .unwrap_or(false)
-            })
+            .filter(|e| e.path().extension().map(|x| x == "toml").unwrap_or(false))
             .map(|e| e.path())
             .collect();
         names.sort();
         for path in names {
             if let Ok(content) = std::fs::read_to_string(&path) {
-                if let Ok(manifest) = toml_edit::de::from_str::<crate::state::PluginManifest>(&content) {
+                if let Ok(manifest) =
+                    toml_edit::de::from_str::<crate::state::PluginManifest>(&content)
+                {
                     manifests.push(manifest);
                 }
             }
