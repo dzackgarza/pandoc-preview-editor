@@ -14,27 +14,10 @@
     "declarationMap": true,
     "sourceMap": true,
     "jsx": "react-jsx",
-    "lib": [
-      "ESNext",
-      "DOM",
-      "DOM.Iterable"
-    ],
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "allowSyntheticDefaultImports": true,
-    "types": [
-      "node",
-      "react",
-      "react-dom"
-    ]
+    "types": ["node", "react", "react-dom"]
   },
-  "include": [
-    "src/**/*.ts",
-    "src/**/*.tsx",
-    "vite.config.ts",
-    "playwright.config.ts"
-  ],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "archive"
-  ]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"],
+  "exclude": ["node_modules", "dist", "archive", "src/tests"]
 }

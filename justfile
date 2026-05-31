@@ -45,10 +45,19 @@ build-tauri:
 typecheck:
     npx tsc --noEmit
 
-# Run all Rust unit tests
+# Run all tests: Rust pipelines + Playwright browser E2E
 test:
+    cargo test --manifest-path src-tauri/Cargo.toml
+    npx playwright test --config src/tests/playwright.config.ts --project=browser
+
+# Run only Rust tests
+test-rust:
     cargo test --manifest-path src-tauri/Cargo.toml
 
 # Run Rust tests with output
 test-verbose:
     cargo test --manifest-path src-tauri/Cargo.toml -- --show-output
+
+# Run only Playwright E2E browser tests
+test-e2e:
+    npx playwright test --config src/tests/playwright.config.ts --project=browser
