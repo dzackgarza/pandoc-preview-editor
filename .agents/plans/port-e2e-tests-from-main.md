@@ -17,9 +17,10 @@
 
 - Use Playwright browser mode for UI-only tests (headless Chromium, no GUI).
 - Use Playwright tauri mode for tests needing IPC (render pipeline, file ops).
-  GUI window suppressed via `xvfb-run` in `run-tauri-dev.sh`.
-- Only port tests that test owned app boundaries (not Express-specific endpoints
-  that no longer exist).
+  GUI window suppressed via `xvfb-run` in `run-tauri-dev.sh` (confirmed working).
+- Every feature that existed in the Express app still exists in the Tauri app.
+  No tests are excluded because a feature was "lost" — if a feature is missing,
+  that's a migration gap, not a test exclusion.
 - No IPC mocks. Real Tauri IPC is the only testing boundary.
 - All test files go in `src/tests/e2e/`. No top-level `src/tests/*.spec.ts`.
 - The `justfile` has only: `test` (full suite), `test-rust` (Rust only),
@@ -34,7 +35,11 @@
 
 ## Scope
 
-### Included targets (port from main):
+Port ALL old test files from `main`. Each file tests a feature that the Tauri app
+still owns, regardless of whether the backend implementation changed from Express
+HTTP to Tauri IPC.
+
+### Full inventory (17 test files from main):
 
 1. `e2e.spec.ts` — proof loop: torture document → preview iframe assertions
 2. `renderer-diagnostics.spec.ts` — render errors shown in UI
@@ -42,29 +47,24 @@
 4. `file-integrity.spec.ts` — file save/reload preserves content
 5. `settings.spec.ts` — settings dialog read/write
 6. `plugins.spec.ts` — plugin execution
-
-### Explicitly excluded (not ported):
-
-- `diagram-workflow.spec.ts`, `tikz-filter.spec.ts`, `tikzjax.spec.ts` — depend on
-  server-side Express endpoints that were removed during Tauri migration (diagram
-  tools, tikz rendering). These would need the Express server resurrected or the
-  features reimplemented. Out of scope for "port existing tests."
-- `config-loading.spec.ts`, `session-persistence.spec.ts`, `mime-types.spec.ts` —
-  test CLI/server startup behavior that no longer exists. The Tauri app has no CLI
-  config flag, and session persistence is now handled by the Rust backend. These
-  would need new designs, not ports.
-- `architectural-regression.spec.ts` — tests Express-specific code patterns
-  (withPreviewAssetUrls regex, quick-open endpoint). The Tauri architecture has
-  different mechanisms. Would need a new regression suite.
-- `command-parsing.spec.ts` — tests Express-specific command parsing. The Rust
-  command_flags module handles this differently.
-- `bug-fixes.spec.ts` — tests Express-specific bugs. Tauri version doesn't have
-  these bugs.
-- `file-selector.spec.ts` — tests the Express file dialog. Tauri has native file
-  dialog.
-- `user-behaviors.spec.ts` — tests keyboard shortcuts and save flows. Port-worthy
-  but complex; defer if not in the initial set.
-- `failing-renderer.mjs` — no longer needed (Express-specific helper).
+7. `diagram-workflow.spec.ts` — diagram toolbar and launch
+8. `tikz-filter.spec.ts` — TikZ diagram compilation via pandoc
+9. `tikzjax.spec.ts` — in-browser TikZ rendering (NOTE: AGENTS.md forbids
+   tikzjax. This test may need to be dropped or rewritten for the allowed
+   server-side TikZ path. Evaluate during porting.)
+10. `config-loading.spec.ts` — config file loading from disk
+11. `session-persistence.spec.ts` — session autosave and recovery
+12. `mime-types.spec.ts` — MIME type detection for file operations
+13. `architectural-regression.spec.ts` — regression suite for known failure
+    patterns (regex, dead code)
+14. `command-parsing.spec.ts` — render command string parsing (now owned by
+    Rust `command_flags` module)
+15. `bug-fixes.spec.ts` — regression tests for past bugs (may need new bug
+    scenarios specific to Tauri architecture)
+16. `file-selector.spec.ts` — file open/save dialog
+17. `user-behaviors.spec.ts` — keyboard shortcuts, save flow, new/create file
+18. `failing-renderer.mjs` — helper for renderer error tests (may or may not
+    port depending on whether the test needs a fake renderer)
 
 ### Removed (current branch):
 
@@ -100,15 +100,34 @@ Port the main E2E test: type markdown → verify preview iframe content.
 - Key change: replace `frameLocator('#preview')` with `evaluate()` to read iframe
   content (TauriPage doesn't have frameLocator)
 
-### Phase 2: Supporting E2E Tests
+### Phase 2: All Other E2E Tests
 
-Port remaining tests that verify owned app boundaries.
+Port every remaining old test file. Each test may need:
+- `launchServer`/`killServer` replaced by `tauriPage` fixture (for IPC tests)
+- `page` replaced by `tauriPage` (tauri mode) or kept as `page` (browser mode)
+- `frameLocator` replaced by `evaluate()` for iframe content access
+- `window.__PANDOC_PREVIEW_STATE__` replaced by equivalent Tauri IPC calls
+- Express endpoint calls replaced by Tauri IPC invoke equivalents
+- CLI spawn tests adapted to test the Tauri app's behavior instead
 
-- `renderer-diagnostics.spec.ts` → `src/tests/e2e/renderer-diagnostics.spec.ts`
-- `editor-height.spec.ts` → `src/tests/e2e/editor-height.spec.ts`
-- `file-integrity.spec.ts` → `src/tests/e2e/file-integrity.spec.ts`
-- `settings.spec.ts` → `src/tests/e2e/settings.spec.ts`
-- `plugins.spec.ts` → `src/tests/e2e/plugins.spec.ts`
+List (sources from `main:src/tests/`, targets to `src/tests/e2e/`):
+
+- `renderer-diagnostics.spec.ts`
+- `editor-height.spec.ts`
+- `file-integrity.spec.ts`
+- `settings.spec.ts`
+- `plugins.spec.ts`
+- `diagram-workflow.spec.ts`
+- `tikz-filter.spec.ts`
+- `tikzjax.spec.ts` (evaluate: drop if AGENTS.md forbids tikzjax entirely)
+- `config-loading.spec.ts`
+- `session-persistence.spec.ts`
+- `mime-types.spec.ts`
+- `architectural-regression.spec.ts`
+- `command-parsing.spec.ts`
+- `bug-fixes.spec.ts`
+- `file-selector.spec.ts`
+- `user-behaviors.spec.ts`
 
 ### Phase 3: Remove Slop Tests
 
@@ -139,33 +158,33 @@ but test the wrong layer.
 
 ## Risks / Rollback
 
-- **Risk:** `xvfb-run` may not work with Tauri v2 on this platform (Wayland vs X11
-  issues). **Mitigation:** Test `xvfb-run npx tauri dev` directly first. Fallback:
-  accept visible GUI window for tauri-mode tests.
-- **Risk:** Porting old tests may reveal architecture gaps (features that worked
-  via Express but have no Tauri IPC equivalent). **Mitigation:** Exclude tests for
-  features that no longer exist; note gaps explicitly.
+- **Risk:** Some old tests depend on Express-specific helpers (e.g., `failing-renderer.mjs`,
+  `window.__PANDOC_PREVIEW_STATE__`) that have no Tauri equivalent.
+  **Mitigation:** Rewrite the test to use the Tauri mechanism for the same outcome.
+  If the feature genuinely no longer exists, that's a migration gap — file an issue,
+  don't silently exclude the test.
 - **Risk:** `TauriPage.evaluate()` may not return iframe content correctly (CSP,
-  cross-origin restrictions). **Mitigation:** Test with simple evaluate call first.
-  Fallback: extract preview content via the app's state API if available.
+  cross-origin restrictions in the preview iframe).
+  **Mitigation:** Test with simple evaluate call first.
+  Fallback: extract preview content via `__PANDOC_PREVIEW_STATE__`-like mechanism
+  if one exists, or add one.
 - **Rollback:** All changes are forward-only (new files, no destructive edits to
-  existing Rust code at first). If a test fails, skip it and note the gap.
+  existing Rust code at first). If a test fails because the Tauri app actually
+  lacks the feature, note the gap and move on — do not delete the test.
 
 ## Stop Rules
 
 - Do not proceed to Phase 2 until Phase 1 test passes reliably.
 - Do not remove Rust slop tests until Phase 1 test passes (so we have at least one
   working test).
-- If `xvfb-run` doesn't work, do not block — accept visible window for tauri-mode
-  tests.
 
 ## Execution Progress
 
 ### Prerequisites
 
-- [ ] <!-- status: pending --> All old test files read from main branch
-- [ ] <!-- status: pending --> `xvfb-run npx tauri dev` verified to work
-- [ ] <!-- status: pending --> Current playground test passes in browser mode
+- [x] <!-- status: completed --> All old test files read from main branch
+- [x] <!-- status: completed --> `xvfb-run npx tauri dev` verified to work (ping+eval both respond)
+- [x] <!-- status: completed --> Current trivial test passes in browser mode (done in previous commit)
 
 ### Phase 0: Infrastructure
 
