@@ -2,10 +2,16 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e',
-  timeout: 180000,
+  timeout: 30000,
   retries: 0,
   workers: 1,
   fullyParallel: false,
+  webServer: {
+    command: 'npx vite',
+    port: 5173,
+    reuseExistingServer: true,
+    timeout: 30000,
+  },
   projects: [
     {
       name: 'browser-smoke',
