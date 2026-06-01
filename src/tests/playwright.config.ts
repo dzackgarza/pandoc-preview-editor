@@ -28,7 +28,8 @@ export default defineConfig({
     },
     {
       name: 'tauri',
-      testMatch: /(desktop-.*|proof-loop)\.spec\.ts/,
+      testMatch:
+        /(desktop-.*|proof-loop|renderer-diagnostics|editor-height|file-integrity|settings|plugins|diagram-workflow|tikz-filter|config-loading|session-persistence|mime-types|architectural-regression|command-parsing|bug-fixes|file-selector|user-behaviors)\.spec\.ts/,
       use: {
         mode: 'tauri',
       } as any,
