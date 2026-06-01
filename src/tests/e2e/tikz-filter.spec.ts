@@ -2,36 +2,11 @@ import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { expect, test } from './fixtures.js';
-
-async function replaceEditorContents(appPage: any, text: string) {
-  await appPage.evaluate(`
-    (() => {
-      const view = window.__PANDOC_PREVIEW_EDITOR_VIEW__;
-      if (!view) {
-        throw new Error('Playwright editor hook is not available');
-      }
-      view.dispatch({
-        changes: {
-          from: 0,
-          to: view.state.doc.length,
-          insert: ${JSON.stringify(text)},
-        },
-      });
-    })()
-  `);
-}
-
-async function previewText(appPage: any) {
-  return appPage.locator('#preview').evaluate((element: HTMLIFrameElement) => {
-    return element.contentDocument?.body?.textContent ?? '';
-  });
-}
-
-async function previewInnerHTML(appPage: any) {
-  return appPage.locator('#preview').evaluate((element: HTMLIFrameElement) => {
-    return element.contentDocument?.body?.innerHTML ?? '';
-  });
-}
+import {
+  replaceEditorContents,
+  previewText,
+  previewInnerHTML,
+} from './editor-helpers.js';
 
 const tikzTest = test.extend({
   testEnv: async ({ testEnv }, use) => {

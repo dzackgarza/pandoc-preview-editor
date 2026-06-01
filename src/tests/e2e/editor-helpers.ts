@@ -2,23 +2,61 @@
 
 import { expect } from './fixtures.js';
 
-/** Type markdown into the CodeMirror editor by replacing all content. */
-export async function setEditorMarkdown(page, markdown) {
-  const editor = page.getByTestId('editor').locator('.cm-content');
-  await editor.click();
-  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
-  await page.keyboard.insertText(markdown);
-  // Wait for render to propagate — debounce is 250ms default, give it time
-  // then check the preview frame for non-empty content
-  const preview = page.locator('#preview');
-  await expect(preview).toBeAttached({ timeout: 5000 });
+/**
+ * Replace all content in the CodeMirror editor.
+ * Uses TauriPage.evaluate(string) — NOT Playwright's evaluate(fn, arg).
+ */
+export async function replaceEditorContents(appPage, text) {
+  await appPage.evaluate(`
+    (() => {
+      const view = window.__PANDOC_PREVIEW_EDITOR_VIEW__;
+      if (!view) {
+        throw new Error('Playwright editor hook is not available');
+      }
+      view.dispatch({
+        changes: {
+          from: 0,
+          to: view.state.doc.length,
+          insert: ${JSON.stringify(text)},
+        },
+      });
+    })()
+  `);
 }
 
-/** Read the rendered HTML from the preview iframe. */
-export async function previewContent(page) {
-  return page.evaluate(() => {
-    const iframe = document.querySelector('#preview');
-    if (!iframe || !iframe.contentDocument) return '';
-    return iframe.contentDocument.body.innerHTML;
+/**
+ * Read the rendered text content from the preview iframe.
+ * Uses TauriLocator.evaluate(fn) — this one IS supported.
+ */
+export async function previewText(appPage) {
+  return appPage.locator('#preview').evaluate((element) => {
+    return element.contentDocument?.body?.textContent ?? '';
   });
+}
+
+/**
+ * Read the rendered innerHTML from the preview iframe.
+ */
+export async function previewInnerHTML(appPage) {
+  return appPage.locator('#preview').evaluate((element) => {
+    return element.contentDocument?.body?.innerHTML ?? '';
+  });
+}
+
+/**
+ * Call a Tauri IPC command via the window.__TAURI_INTERNALS__.invoke bridge.
+ * Uses TauriPage.evaluate(string) — args are serialized into the script.
+ */
+export async function invokeTauri(appPage, command, args = {}) {
+  const result = await appPage.evaluate(
+    `window.__TAURI_INTERNALS__.invoke(${JSON.stringify(command)}, ${JSON.stringify(args)})`,
+  );
+  return result;
+}
+
+/**
+ * Reload the page via TauriPage (supported API).
+ */
+export async function reloadPage(appPage) {
+  await appPage.evaluate('window.location.reload()');
 }

@@ -2,38 +2,11 @@ import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { expect, test } from './fixtures.js';
-
-async function invoke(appPage: any, command: string, args: Record<string, unknown>) {
-  return appPage.evaluate(
-    ([cmd, a]: [string, Record<string, unknown>]) =>
-      (window as any).__TAURI_INTERNALS__.invoke(cmd, a),
-    [command, args],
-  );
-}
-
-async function replaceEditorContents(appPage: any, text: string) {
-  await appPage.evaluate(`
-    (() => {
-      const view = window.__PANDOC_PREVIEW_EDITOR_VIEW__;
-      if (!view) {
-        throw new Error('Playwright editor hook is not available');
-      }
-      view.dispatch({
-        changes: {
-          from: 0,
-          to: view.state.doc.length,
-          insert: ${JSON.stringify(text)},
-        },
-      });
-    })()
-  `);
-}
-
-async function previewInnerHTML(appPage: any) {
-  return appPage.locator('#preview').evaluate((element: HTMLIFrameElement) => {
-    return element.contentDocument?.body?.innerHTML ?? '';
-  });
-}
+import {
+  invokeTauri,
+  replaceEditorContents,
+  previewInnerHTML,
+} from './editor-helpers.js';
 
 const renderTest = test.extend({
   testEnv: async ({ testEnv }, use) => {
@@ -60,7 +33,7 @@ test.describe('Architectural Slop Regression Tests', () => {
         '<script>const src="script.png";</script>',
       ].join('\n');
 
-      const result = await invoke(appPage, 'render', { markdown });
+      const result = await invokeTauri(appPage, 'render', { markdown });
 
       expect(result.ok).toBe(true);
 
@@ -97,7 +70,7 @@ test.describe('Architectural Slop Regression Tests', () => {
         '<img src="">',
       ].join('\n\n');
 
-      const result = await invoke(appPage, 'render', { markdown });
+      const result = await invokeTauri(appPage, 'render', { markdown });
 
       expect(result.ok).toBe(true);
 

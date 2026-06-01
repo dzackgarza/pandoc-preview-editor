@@ -2,20 +2,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { expect, test } from './fixtures.js';
+import { invokeTauri, previewText } from './editor-helpers.js';
 import { load } from 'js-toml';
-
-async function invokeConfig(
-  appPage: any,
-  method: string,
-  args: Record<string, unknown>,
-) {
-  return appPage.evaluate(
-    async ({ cmd, params }: { cmd: string; params: Record<string, unknown> }) => {
-      return (window as any).__TAURI_INTERNALS__.invoke(cmd, params);
-    },
-    { cmd: method, params: args },
-  );
-}
 
 const commandParsingTest = test.extend({
   testEnv: async ({ testEnv }, use) => {
@@ -54,7 +42,7 @@ test.describe('Command parsing via Tauri IPC', () => {
     async ({ appPage, testEnv }) => {
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
 
-      const assets = await invokeConfig(appPage, 'pandoc_assets', {});
+      const assets = await invokeTauri(appPage, 'pandoc_assets', {});
       const filters = (assets as any).filters as string[];
 
       expect(filters).toContain('my-filter.lua');
@@ -67,7 +55,7 @@ test.describe('Command parsing via Tauri IPC', () => {
     async ({ appPage, testEnv }) => {
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
 
-      const config = await invokeConfig(appPage, 'get_config', {});
+      const config = await invokeTauri(appPage, 'get_config', {});
       const c = config as Record<string, unknown>;
       const parsedFlags = c.parsedFlags as Record<string, unknown>;
 
@@ -86,7 +74,7 @@ test.describe('Command parsing via Tauri IPC', () => {
 
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
 
-      const result = await invokeConfig(appPage, 'set_config', {
+      const result = await invokeTauri(appPage, 'set_config', {
         templates_dir: templatesDir,
         filters_dir: filtersDir,
         debounce_ms: 100,
@@ -96,7 +84,7 @@ test.describe('Command parsing via Tauri IPC', () => {
       });
       expect(result).toEqual({ ok: true });
 
-      const config = await invokeConfig(appPage, 'get_config', {});
+      const config = await invokeTauri(appPage, 'get_config', {});
       const c = config as Record<string, unknown>;
       const parsedFlags = c.parsedFlags as Record<string, unknown>;
 
@@ -122,7 +110,7 @@ test.describe('Command parsing via Tauri IPC', () => {
 
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
 
-      const result = await invokeConfig(appPage, 'set_config', {
+      const result = await invokeTauri(appPage, 'set_config', {
         templates_dir: templatesDir,
         filters_dir: filtersDir,
         debounce_ms: 100,
@@ -132,7 +120,7 @@ test.describe('Command parsing via Tauri IPC', () => {
       });
       expect(result).toEqual({ ok: true });
 
-      const config = await invokeConfig(appPage, 'get_config', {});
+      const config = await invokeTauri(appPage, 'get_config', {});
       const c = config as Record<string, unknown>;
       const parsedFlags = c.parsedFlags as Record<string, unknown>;
 
@@ -153,7 +141,7 @@ test.describe('Command parsing via Tauri IPC', () => {
 
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
 
-      const result = await invokeConfig(appPage, 'set_config', {
+      const result = await invokeTauri(appPage, 'set_config', {
         templates_dir: templatesDir,
         filters_dir: filtersDir,
         debounce_ms: 100,
@@ -163,7 +151,7 @@ test.describe('Command parsing via Tauri IPC', () => {
       });
       expect(result).toEqual({ ok: true });
 
-      const config = await invokeConfig(appPage, 'get_config', {});
+      const config = await invokeTauri(appPage, 'get_config', {});
       const c = config as Record<string, unknown>;
       const parsedFlags = c.parsedFlags as Record<string, unknown>;
 
@@ -183,7 +171,7 @@ test.describe('Command parsing via Tauri IPC', () => {
 
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
 
-      const result = await invokeConfig(appPage, 'set_config', {
+      const result = await invokeTauri(appPage, 'set_config', {
         templates_dir: templatesDir,
         filters_dir: filtersDir,
         debounce_ms: 100,
@@ -193,7 +181,7 @@ test.describe('Command parsing via Tauri IPC', () => {
       });
       expect(result).toEqual({ ok: true });
 
-      const config = await invokeConfig(appPage, 'get_config', {});
+      const config = await invokeTauri(appPage, 'get_config', {});
       const c = config as Record<string, unknown>;
       const parsedFlags = c.parsedFlags as Record<string, unknown>;
 
@@ -290,7 +278,7 @@ test.describe('Command parsing via Settings dialog', () => {
 
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
 
-      await invokeConfig(appPage, 'set_config', {
+      await invokeTauri(appPage, 'set_config', {
         templates_dir: templatesDir,
         filters_dir: filtersDir,
         debounce_ms: 100,
@@ -327,9 +315,3 @@ test.describe('Command parsing via Settings dialog', () => {
     },
   );
 });
-
-async function previewText(appPage: any) {
-  return appPage.locator('#preview').evaluate((element: HTMLIFrameElement) => {
-    return element.contentDocument?.body?.textContent ?? '';
-  });
-}

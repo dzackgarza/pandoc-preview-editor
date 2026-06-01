@@ -1,4 +1,5 @@
 import { expect, test } from './fixtures.js';
+import { replaceEditorContents } from './editor-helpers.js';
 
 test.describe('editor height', () => {
   test('editor fills available height, not just content height', async ({
@@ -22,11 +23,7 @@ test.describe('editor height', () => {
     expect(cmBox.height, 'cm-editor height').toBeGreaterThan(100);
 
     // After setting minimal content, the container should still fill the space
-    await appPage.locator('#editor .cm-content').click();
-    await appPage.keyboard.press('Control+A');
-    await appPage.keyboard.press('Backspace');
-    await appPage.keyboard.insertText('x');
-    await appPage.waitForTimeout(200);
+    await replaceEditorContents(appPage, 'x');
 
     const cmBoxAfter = await appPage.locator('#editor .cm-editor').boundingBox();
     if (!cmBoxAfter) throw new Error('Could not get cm-editor box after clearing');

@@ -2,43 +2,7 @@ import path from 'node:path';
 import { writeFileSync } from 'node:fs';
 
 import { expect, test } from './fixtures.js';
-
-async function replaceEditorContents(appPage: any, text: string) {
-  await appPage.evaluate(`
-    (() => {
-      const view = window.__PANDOC_PREVIEW_EDITOR_VIEW__;
-      if (!view) {
-        throw new Error('Playwright editor hook is not available');
-      }
-      view.dispatch({
-        changes: {
-          from: 0,
-          to: view.state.doc.length,
-          insert: ${JSON.stringify(text)},
-        },
-      });
-    })()
-  `);
-}
-
-async function previewText(appPage: any) {
-  return appPage.locator('#preview').evaluate((element: HTMLIFrameElement) => {
-    return element.contentDocument?.body?.textContent ?? '';
-  });
-}
-
-async function invokeConfig(
-  appPage: any,
-  method: string,
-  args: Record<string, unknown>,
-) {
-  return appPage.evaluate(
-    async ({ cmd, params }: { cmd: string; params: Record<string, unknown> }) => {
-      return (window as any).__TAURI_INTERNALS__.invoke(cmd, params);
-    },
-    { cmd: method, params: args },
-  );
-}
+import { invokeTauri, replaceEditorContents, previewText } from './editor-helpers.js';
 
 const failingRendererTest = test.extend({
   testEnv: async ({ testEnv }, use) => {
@@ -47,7 +11,7 @@ const failingRendererTest = test.extend({
       failingScript,
       [
         '#!/usr/bin/env node',
-        'process.stderr.write("Fatal compilation error:\\nMissing \\\\end{document}\\nat line 14\\n");',
+        'process.stderr.write("Fatal compilation error:\nMissing \\end{document}\nat line 14\n");',
         'process.exit(1);',
       ].join('\n'),
       'utf8',
@@ -94,7 +58,7 @@ test.describe('Renderer Diagnostics UI E2E', () => {
       const goodCommand =
         'pandoc -f markdown+tex_math_dollars+citations -t html --standalone --citeproc --mathjax --lua-filter=~/.pandoc/filters/tikzcd.lua --lua-filter=~/.pandoc/filters/convert_amsthm_envs.lua --template=~/.pandoc/templates/pandoc_preview_template.html';
 
-      const configResult = await invokeConfig(appPage, 'set_config', {
+      const configResult = await invokeTauri(appPage, 'set_config', {
         templates_dir: testEnv.homeDir + '/.pandoc/templates',
         filters_dir: testEnv.homeDir + '/.pandoc/filters',
         debounce_ms: 100,

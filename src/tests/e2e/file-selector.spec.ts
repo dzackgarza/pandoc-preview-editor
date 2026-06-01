@@ -1,29 +1,24 @@
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
+// @ts-nocheck — tauri-playwright 0.2.2 fixture/types are intentionally loose
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { expect, test } from './fixtures.js';
+import { invokeTauri, previewText } from './editor-helpers.js';
 
 function cleanupDir(dir: string) {
   try {
+    const { rmSync } = require('node:fs');
     rmSync(dir, { recursive: true, force: true });
   } catch {
     /* ok */
   }
 }
 
-function fileSelector(appPage: any) {
+function fileSelector(appPage) {
   return appPage.getByTestId('file-selector-dialog');
 }
 
-async function clickDirInSelector(appPage: any, name: string) {
+async function clickDirInSelector(appPage, name) {
   await fileSelector(appPage)
     .getByTestId('file-selector-dir')
     .filter({ hasText: name })
@@ -31,7 +26,7 @@ async function clickDirInSelector(appPage: any, name: string) {
     .click();
 }
 
-async function clickFileInSelector(appPage: any, name: string) {
+async function clickFileInSelector(appPage, name) {
   await fileSelector(appPage)
     .getByTestId('file-selector-file')
     .filter({ hasText: name })
@@ -39,7 +34,7 @@ async function clickFileInSelector(appPage: any, name: string) {
     .click();
 }
 
-async function submitSelectorWithName(appPage: any, filename: string) {
+async function submitSelectorWithName(appPage, filename) {
   const input = fileSelector(appPage).locator(
     'input[data-testid="file-selector-input"]',
   );
@@ -78,14 +73,7 @@ test.describe('file selector dialog', () => {
 
       // Wait for the initial render to settle
       await expect
-        .poll(
-          async () => {
-            return appPage.locator('#preview').evaluate((el: HTMLIFrameElement) => {
-              return el.contentDocument?.body?.textContent ?? '';
-            });
-          },
-          { timeout: 5000 },
-        )
+        .poll(() => previewText(appPage), { timeout: 5000 })
         .toContain('Initial');
 
       await appPage.keyboard.press('Control+Shift+S');
@@ -135,13 +123,11 @@ test.describe('file selector dialog', () => {
     mkdirSync(path.join(dir, 'alpha'), { recursive: true });
     writeFileSync(path.join(dir, 'beta.md'), '# Beta', 'utf-8');
 
-    const result = await appPage.evaluate((args: [string]) => {
-      return window.__TAURI_INTERNALS__.invoke('browse', { dir: args[0] });
-    }, dir);
+    const result = await invokeTauri(appPage, 'browse', { dir });
 
     expect(result.dir).toBe(dir);
     expect(typeof result.parent).toBe('string');
-    const names = result.entries.map((e: { name: string }) => e.name);
+    const names = result.entries.map((e) => e.name);
     expect(names).toContain('alpha');
     expect(names).toContain('beta.md');
   });
@@ -169,14 +155,7 @@ test.describe('file selector dialog', () => {
       });
 
       await expect
-        .poll(
-          async () => {
-            return appPage.locator('#preview').evaluate((el: HTMLIFrameElement) => {
-              return el.contentDocument?.body?.textContent ?? '';
-            });
-          },
-          { timeout: 5000 },
-        )
+        .poll(() => previewText(appPage), { timeout: 5000 })
         .toContain('Click Test');
 
       await appPage.keyboard.press('Control+Shift+S');

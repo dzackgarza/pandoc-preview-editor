@@ -1,3 +1,4 @@
+// @ts-nocheck — tauri-playwright 0.2.2 types are intentionally loose
 import { expect, test } from './fixtures.js';
 
 test.describe('App shell asset loading', () => {
@@ -5,8 +6,9 @@ test.describe('App shell asset loading', () => {
     await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
     await expect(appPage.locator('#status')).toContainText('ready', { timeout: 15000 });
 
-    const scripts = await appPage.locator('script[src]').evaluateAll(
-      (els: HTMLScriptElement[]) => els.map((el) => el.getAttribute('src') ?? ''),
+    // Use evaluate(string) to get script src attributes
+    const scripts = await appPage.evaluate(
+      `Array.from(document.querySelectorAll('script[src]')).map(el => el.getAttribute('src') ?? '')`,
     );
 
     for (const src of scripts) {
@@ -19,8 +21,9 @@ test.describe('App shell asset loading', () => {
     );
     expect(hasCompiledJs).toBe(true);
 
-    const stylesheets = await appPage.locator('link[rel="stylesheet"]').evaluateAll(
-      (els: HTMLLinkElement[]) => els.map((el) => el.getAttribute('href') ?? ''),
+    // Use evaluate(string) to get stylesheet href attributes
+    const stylesheets = await appPage.evaluate(
+      `Array.from(document.querySelectorAll('link[rel="stylesheet"]')).map(el => el.getAttribute('href') ?? '')`,
     );
 
     const hasCompiledCss = stylesheets.some(

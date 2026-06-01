@@ -3,48 +3,23 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { expect, test } from './fixtures.js';
+import { replaceEditorContents, previewText, previewHTML } from './editor-helpers.js';
 
-async function replaceEditorContents(appPage: any, text: string) {
-  await appPage.evaluate(`
-    (() => {
-      const view = window.__PANDOC_PREVIEW_EDITOR_VIEW__;
-      if (!view) throw new Error('Playwright editor hook is not available');
-      view.dispatch({
-        changes: { from: 0, to: view.state.doc.length, insert: ${JSON.stringify(text)} },
-      });
-    })()
-  `);
+async function getEditorContents(appPage) {
+  return appPage.evaluate(
+    `(() => { const view = window.__PANDOC_PREVIEW_EDITOR_VIEW__; if (!view) throw new Error('Playwright editor hook is not available'); return view.state.doc.toString(); })()`,
+  );
 }
 
-async function getEditorContents(appPage: any): Promise<string> {
-  return appPage.evaluate(() => {
-    const view = (window as any).__PANDOC_PREVIEW_EDITOR_VIEW__;
-    if (!view) throw new Error('Playwright editor hook is not available');
-    return view.state.doc.toString();
-  });
-}
-
-async function previewText(appPage: any): Promise<string> {
-  return appPage.locator('#preview').evaluate((element: HTMLIFrameElement) => {
-    return element.contentDocument?.body?.textContent ?? '';
-  });
-}
-
-async function previewHTML(appPage: any): Promise<string> {
-  return appPage.locator('#preview').evaluate((element: HTMLIFrameElement) => {
-    return element.contentDocument?.body?.innerHTML ?? '';
-  });
-}
-
-async function openMenu(appPage: any, name: string) {
+async function openMenu(appPage, name) {
   await appPage.getByRole('menuitem', { name }).click();
 }
 
-async function clickMenuItem(appPage: any, name: string) {
+async function clickMenuItem(appPage, name) {
   await appPage.getByRole('menuitem', { name, exact: true }).click();
 }
 
-async function saveViaFileSelector(appPage: any, absolutePath: string) {
+async function saveViaFileSelector(appPage, absolutePath) {
   await expect(appPage.getByTestId('file-selector-dialog')).toBeVisible();
   await appPage.getByTestId('file-selector-input').fill(absolutePath);
   await appPage.getByTestId('file-selector-save').click();
@@ -213,11 +188,11 @@ test.describe('user workflows', () => {
       await expect(appPage.locator('footer')).toContainText('120 lines');
 
       const scroller = appPage.locator('#editor .cm-scroller');
-      await scroller.evaluate((el: HTMLElement) => {
+      await scroller.evaluate((el) => {
         el.scrollTop = 700;
       });
       await expect
-        .poll(() => scroller.evaluate((el: HTMLElement) => el.scrollTop), {
+        .poll(() => scroller.evaluate((el) => el.scrollTop), {
           timeout: 3000,
           intervals: [100, 200],
         })
@@ -314,32 +289,48 @@ test.describe('user workflows', () => {
         .poll(() => previewText(appPage))
         .toContain('Paste Test', { timeout: 5000 });
 
-      const pngBytes: number[] = await appPage.evaluate(async () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = 1;
-        canvas.height = 1;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) throw new Error('no canvas context');
-        ctx.fillStyle = '#00ff00';
-        ctx.fillRect(0, 0, 1, 1);
-        const blob = await new Promise<Blob>((resolve, reject) => {
-          canvas.toBlob((b) => {
-            if (b) resolve(b);
-            else reject(new Error('canvas.toBlob failed'));
+      // Create a tiny PNG and dispatch a paste event with it
+      const pngBytes = await appPage.evaluate(`
+        (() => {
+          const canvas = document.createElement('canvas');
+          canvas.width = 1;
+          canvas.height = 1;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) throw new Error('no canvas context');
+          ctx.fillStyle = '#00ff00';
+          ctx.fillRect(0, 0, 1, 1);
+          return new Promise((resolve, reject) => {
+            canvas.toBlob((b) => {
+              if (!b) { reject(new Error('canvas.toBlob failed')); return; }
+              b.arrayBuffer().then(ab => resolve(Array.from(new Uint8Array(ab))));
+            }, 'image/png');
+          });
+        })()
+      `);
+
+      // Dispatch the paste event via evaluate(string)
+      await appPage.evaluate(`
+        (() => {
+          const canvas = document.createElement('canvas');
+          canvas.width = 1;
+          canvas.height = 1;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#00ff00';
+          ctx.fillRect(0, 0, 1, 1);
+          canvas.toBlob((blob) => {
+            if (!blob) throw new Error('no blob');
+            const file = new File([blob], 'pasted.png', { type: 'image/png' });
+            const dt = new DataTransfer();
+            dt.items.add(file);
+            const event = new ClipboardEvent('paste', {
+              bubbles: true,
+              cancelable: true,
+              clipboardData: dt,
+            });
+            document.dispatchEvent(event);
           }, 'image/png');
-        });
-        const file = new File([blob], 'pasted.png', { type: 'image/png' });
-        const dt = new DataTransfer();
-        dt.items.add(file);
-        const event = new ClipboardEvent('paste', {
-          bubbles: true,
-          cancelable: true,
-          clipboardData: dt,
-        });
-        document.dispatchEvent(event);
-        return Array.from(new Uint8Array(await blob.arrayBuffer()));
-      });
-      const expectedPng = Buffer.from(pngBytes);
+        })()
+      `);
 
       await expect
         .poll(() => getEditorContents(appPage), {
@@ -354,6 +345,13 @@ test.describe('user workflows', () => {
       );
       expect(figureMatch).not.toBeNull();
       const figurePath = path.join(saveDir, figureMatch![1]);
+
+      // Wait for the file to be written to disk
+      await expect
+        .poll(() => existsSync(figurePath), { timeout: 5000, intervals: [100, 200] })
+        .toBe(true);
+
+      const expectedPng = Buffer.from(pngBytes);
       expect(readFileSync(figurePath)).toEqual(expectedPng);
 
       await expect

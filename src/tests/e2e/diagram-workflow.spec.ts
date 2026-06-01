@@ -4,14 +4,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { expect, test } from './fixtures.js';
-
-async function invoke(appPage: any, command: string, args: Record<string, unknown>) {
-  return appPage.evaluate(
-    ([cmd, a]: [string, Record<string, unknown>]) =>
-      (window as any).__TAURI_INTERNALS__.invoke(cmd, a),
-    [command, args],
-  );
-}
+import { invokeTauri } from './editor-helpers.js';
 
 const savedFileTest = test.extend({
   testEnv: async ({ testEnv }, use) => {
@@ -43,7 +36,7 @@ test.describe('diagram toolbar and filter workflows', () => {
   test('get_diagram_tools returns available tools with installed status', async ({
     appPage,
   }) => {
-    const data = await invoke(appPage, 'get_diagram_tools', {});
+    const data = await invokeTauri(appPage, 'get_diagram_tools', {});
 
     expect(data).toBeDefined();
     expect(typeof data).toBe('object');
@@ -53,7 +46,7 @@ test.describe('diagram toolbar and filter workflows', () => {
   });
 
   diagramToolsTest('pandoc_assets returns available filters', async ({ appPage }) => {
-    const data = await invoke(appPage, 'pandoc_assets', {});
+    const data = await invokeTauri(appPage, 'pandoc_assets', {});
 
     expect(data).toBeDefined();
     expect(Array.isArray(data.filters)).toBe(true);
@@ -62,7 +55,7 @@ test.describe('diagram toolbar and filter workflows', () => {
   test('create_diagram_file rejects on unsaved temp buffer', async ({ appPage }) => {
     // When no file path is established, creating a diagram should be blocked (save-gate)
     try {
-      await invoke(appPage, 'create_diagram_file', {
+      await invokeTauri(appPage, 'create_diagram_file', {
         kind: 'qtikz',
         filename: 'diagram1.tikz',
         documentPath: '/tmp/pandoc-preview/untitled-123.md',
@@ -81,7 +74,7 @@ test.describe('diagram toolbar and filter workflows', () => {
       const rand = Math.random().toString(36).substring(7);
       const figFilename = `diagram-${rand}.tikz`;
 
-      const result = await invoke(appPage, 'create_diagram_file', {
+      const result = await invokeTauri(appPage, 'create_diagram_file', {
         kind: 'qtikz',
         filename: figFilename,
         documentPath: docPath,
@@ -104,7 +97,7 @@ test.describe('diagram toolbar and filter workflows', () => {
       // Proxy a known local-ish URL through the Tauri command.
       // We use a real allowed host (q.uiver.app) — the test verifies
       // the proxy returns HTML with the injected overlay.
-      const result = await invoke(appPage, 'diagram_proxy', {
+      const result = await invokeTauri(appPage, 'diagram_proxy', {
         url: 'https://q.uiver.app',
       });
 

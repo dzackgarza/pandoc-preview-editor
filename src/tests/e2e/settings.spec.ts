@@ -2,44 +2,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { expect, test } from './fixtures.js';
+import { invokeTauri, replaceEditorContents, previewText } from './editor-helpers.js';
 import { load } from 'js-toml';
-
-async function replaceEditorContents(appPage: any, text: string) {
-  await appPage.evaluate(`
-    (() => {
-      const view = window.__PANDOC_PREVIEW_EDITOR_VIEW__;
-      if (!view) {
-        throw new Error('Playwright editor hook is not available');
-      }
-      view.dispatch({
-        changes: {
-          from: 0,
-          to: view.state.doc.length,
-          insert: ${JSON.stringify(text)},
-        },
-      });
-    })()
-  `);
-}
-
-async function previewText(appPage: any) {
-  return appPage.locator('#preview').evaluate((element: HTMLIFrameElement) => {
-    return element.contentDocument?.body?.textContent ?? '';
-  });
-}
-
-async function invokeConfig(
-  appPage: any,
-  method: string,
-  args: Record<string, unknown>,
-) {
-  return appPage.evaluate(
-    async ({ cmd, params }: { cmd: string; params: Record<string, unknown> }) => {
-      return (window as any).__TAURI_INTERNALS__.invoke(cmd, params);
-    },
-    { cmd: method, params: args },
-  );
-}
 
 const settingsTest = test.extend({
   testEnv: async ({ testEnv }, use) => {
@@ -186,7 +150,7 @@ test.describe('Settings and Preferences (Tauri)', () => {
       await expect(appPage.getByTestId('editor')).toBeVisible();
 
       const newCommand = 'pandoc -f markdown -t html --standalone --mathjax';
-      const result = await invokeConfig(appPage, 'set_config', {
+      const result = await invokeTauri(appPage, 'set_config', {
         templates_dir: templatesDir,
         filters_dir: filtersDir,
         debounce_ms: 100,

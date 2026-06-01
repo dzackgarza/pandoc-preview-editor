@@ -2,20 +2,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { expect, test } from './fixtures.js';
+import { invokeTauri } from './editor-helpers.js';
 import { load } from 'js-toml';
-
-async function invokeConfig(
-  appPage: any,
-  method: string,
-  args: Record<string, unknown>,
-) {
-  return appPage.evaluate(
-    async ({ cmd, params }: { cmd: string; params: Record<string, unknown> }) => {
-      return (window as any).__TAURI_INTERNALS__.invoke(cmd, params);
-    },
-    { cmd: method, params: args },
-  );
-}
 
 const defaultConfigTest = test.extend({
   testEnv: async ({ testEnv }, use) => {
@@ -79,7 +67,7 @@ test.describe('Centralized TOML Configuration (Tauri)', () => {
   defaultConfigTest(
     'config.toml values are reflected in get_config invoke',
     async ({ appPage, testEnv }) => {
-      const config = await invokeConfig(appPage, 'get_config', {});
+      const config = await invokeTauri(appPage, 'get_config', {});
 
       expect(typeof config).toBe('object');
       expect(config).not.toBeNull();
@@ -105,7 +93,7 @@ test.describe('Centralized TOML Configuration (Tauri)', () => {
       expect(contents).toContain('debounce_ms = 999');
       expect(contents).toContain('timeout_ms = 40000');
 
-      const config = await invokeConfig(appPage, 'get_config', {});
+      const config = await invokeTauri(appPage, 'get_config', {});
       const c = config as Record<string, unknown>;
 
       expect(c.debounceMs).toBe(999);
@@ -119,7 +107,7 @@ test.describe('Centralized TOML Configuration (Tauri)', () => {
     async ({ appPage, testEnv }) => {
       const beforeStart = readFileSync(testEnv.configPath, 'utf-8');
 
-      const config = await invokeConfig(appPage, 'get_config', {});
+      const config = await invokeTauri(appPage, 'get_config', {});
       const c = config as Record<string, unknown>;
       expect(c.debounceMs).toBe(999);
 
@@ -135,7 +123,7 @@ test.describe('Centralized TOML Configuration (Tauri)', () => {
       const templatesDir = path.join(testEnv.homeDir, '.pandoc', 'templates');
       const filtersDir = path.join(testEnv.homeDir, '.pandoc', 'filters');
 
-      const result = await invokeConfig(appPage, 'set_config', {
+      const result = await invokeTauri(appPage, 'set_config', {
         templates_dir: templatesDir,
         filters_dir: filtersDir,
         debounce_ms: 200,
@@ -151,7 +139,7 @@ test.describe('Centralized TOML Configuration (Tauri)', () => {
       expect(parsedToml.render.timeout_ms).toBe(15000);
       expect(parsedToml.pandoc.render_command).toContain('--mathjax');
 
-      const config = await invokeConfig(appPage, 'get_config', {});
+      const config = await invokeTauri(appPage, 'get_config', {});
       const c = config as Record<string, unknown>;
       expect(c.debounceMs).toBe(200);
       expect(c.renderCommand).toContain('--mathjax');

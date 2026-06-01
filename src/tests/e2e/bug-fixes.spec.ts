@@ -3,43 +3,21 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { expect, test } from './fixtures.js';
+import { replaceEditorContents, previewText, invokeTauri } from './editor-helpers.js';
 
-async function replaceEditorContents(appPage: any, text: string) {
-  await appPage.evaluate(`
-    (() => {
-      const view = window.__PANDOC_PREVIEW_EDITOR_VIEW__;
-      if (!view) throw new Error('Playwright editor hook is not available');
-      view.dispatch({
-        changes: { from: 0, to: view.state.doc.length, insert: ${JSON.stringify(text)} },
-      });
-    })()
-  `);
+async function getEditorContents(appPage) {
+  return appPage.evaluate(
+    `(() => { const view = window.__PANDOC_PREVIEW_EDITOR_VIEW__; if (!view) throw new Error('Playwright editor hook is not available'); return view.state.doc.toString(); })()`,
+  );
 }
 
-async function getEditorContents(appPage: any): Promise<string> {
-  return appPage.evaluate(() => {
-    const view = (window as any).__PANDOC_PREVIEW_EDITOR_VIEW__;
-    if (!view) throw new Error('Playwright editor hook is not available');
-    return view.state.doc.toString();
-  });
+async function getToastText(appPage) {
+  return appPage.evaluate(
+    `(() => { const toasts = document.querySelectorAll('[data-testid="toast"]'); const texts = []; toasts.forEach((t) => texts.push(t.textContent ?? '')); return texts.join('\\n'); })()`,
+  );
 }
 
-async function previewText(appPage: any): Promise<string> {
-  return appPage.locator('#preview').evaluate((element: HTMLIFrameElement) => {
-    return element.contentDocument?.body?.textContent ?? '';
-  });
-}
-
-async function getToastText(appPage: any): Promise<string> {
-  return appPage.evaluate(() => {
-    const toasts = document.querySelectorAll('[data-testid="toast"]');
-    const texts: string[] = [];
-    toasts.forEach((t) => texts.push(t.textContent ?? ''));
-    return texts.join('\n');
-  });
-}
-
-async function waitForToast(appPage: any, substring: string, timeout = 10000) {
+async function waitForToast(appPage, substring, timeout = 10000) {
   await expect
     .poll(
       async () => {
@@ -51,11 +29,11 @@ async function waitForToast(appPage: any, substring: string, timeout = 10000) {
     .toBe(true);
 }
 
-async function openMenu(appPage: any, name: string) {
+async function openMenu(appPage, name) {
   await appPage.getByRole('menuitem', { name }).click();
 }
 
-async function clickMenuItem(appPage: any, name: string) {
+async function clickMenuItem(appPage, name) {
   await appPage.getByRole('menuitem', { name, exact: true }).click();
 }
 
@@ -82,19 +60,19 @@ test.describe('Bug fixes TDD', () => {
     async ({ appPage }) => {
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
 
-      await appPage.evaluate(async () => {
-        const orig = (window as any).__TAURI_INTERNALS__?.invoke;
-        if (!orig) throw new Error('Tauri IPC not available');
-        (window as any).__TAURI_INTERNALS__.invoke = async (
-          cmd: string,
-          args?: Record<string, unknown>,
-        ) => {
-          if (cmd === 'zotero_cite') {
-            return { citation: '[@Cox35]' };
-          }
-          return orig(cmd, args);
-        };
-      });
+      // Mock the zotero_cite command by overriding __TAURI_INTERNALS__.invoke
+      await appPage.evaluate(`
+        (() => {
+          const orig = window.__TAURI_INTERNALS__?.invoke;
+          if (!orig) throw new Error('Tauri IPC not available');
+          window.__TAURI_INTERNALS__.invoke = async (cmd, args) => {
+            if (cmd === 'zotero_cite') {
+              return { citation: '[@Cox35]' };
+            }
+            return orig(cmd, args);
+          };
+        })()
+      `);
 
       await appPage.getByRole('button', { name: 'Insert Citation' }).click();
 
@@ -114,19 +92,19 @@ test.describe('Bug fixes TDD', () => {
     async ({ appPage, testEnv }) => {
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
 
-      await appPage.evaluate(async () => {
-        const orig = (window as any).__TAURI_INTERNALS__?.invoke;
-        if (!orig) throw new Error('Tauri IPC not available');
-        (window as any).__TAURI_INTERNALS__.invoke = async (
-          cmd: string,
-          args?: Record<string, unknown>,
-        ) => {
-          if (cmd === 'save') {
-            throw new Error('Disk is completely full');
-          }
-          return orig(cmd, args);
-        };
-      });
+      // Mock save command to throw
+      await appPage.evaluate(`
+        (() => {
+          const orig = window.__TAURI_INTERNALS__?.invoke;
+          if (!orig) throw new Error('Tauri IPC not available');
+          window.__TAURI_INTERNALS__.invoke = async (cmd, args) => {
+            if (cmd === 'save') {
+              throw new Error('Disk is completely full');
+            }
+            return orig(cmd, args);
+          };
+        })()
+      `);
 
       await replaceEditorContents(appPage, '# Document\nmodified');
       await expect(appPage.locator('#save-state')).toContainText('unsaved');
@@ -143,19 +121,19 @@ test.describe('Bug fixes TDD', () => {
     async ({ appPage, testEnv }) => {
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
 
-      await appPage.evaluate(async () => {
-        const orig = (window as any).__TAURI_INTERNALS__?.invoke;
-        if (!orig) throw new Error('Tauri IPC not available');
-        (window as any).__TAURI_INTERNALS__.invoke = async (
-          cmd: string,
-          args?: Record<string, unknown>,
-        ) => {
-          if (cmd === 'new_file') {
-            throw new Error('Permission denied in workspace');
-          }
-          return orig(cmd, args);
-        };
-      });
+      // Mock new_file command to throw
+      await appPage.evaluate(`
+        (() => {
+          const orig = window.__TAURI_INTERNALS__?.invoke;
+          if (!orig) throw new Error('Tauri IPC not available');
+          window.__TAURI_INTERNALS__.invoke = async (cmd, args) => {
+            if (cmd === 'new_file') {
+              throw new Error('Permission denied in workspace');
+            }
+            return orig(cmd, args);
+          };
+        })()
+      `);
 
       await openMenu(appPage, 'File');
       await clickMenuItem(appPage, 'New');
@@ -174,6 +152,10 @@ test.describe('Bug fixes TDD', () => {
     'isCurrent file highlighting inside Explorer uses exact path match, not suffix match',
     async ({ appPage, testEnv }) => {
       const docPath = path.join(testEnv.workspaceDir, 'chapter.md');
+
+      // rename the session state file to chapter.md
+      writeFileSync(docPath, '# Doc\n', 'utf-8');
+      testEnv.writeSessionState(docPath, false);
 
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
       await expect(appPage.locator('footer span[title]')).toHaveAttribute(
@@ -209,29 +191,29 @@ test.describe('Bug fixes TDD', () => {
 
       await appPage.getByTestId('file-selector-input').fill('existing.md');
 
-      await appPage.evaluate(() => {
-        (window as any).__confirmResult = false;
-        const origConfirm = window.confirm;
-        window.confirm = (msg?: string) => {
-          (window as any).__confirmResult = msg ?? '';
-          window.confirm = origConfirm;
-          return false;
-        };
-      });
+      // Replace window.confirm with a version that returns false and records the message
+      await appPage.evaluate(`
+        (() => {
+          window.__confirmResult = false;
+          const origConfirm = window.confirm;
+          window.confirm = (msg) => {
+            window.__confirmResult = msg ?? '';
+            window.confirm = origConfirm;
+            return false;
+          };
+        })()
+      `);
 
       await appPage.getByTestId('file-selector-save').click();
 
-      const confirmMsg = await appPage.evaluate(
-        () => (window as any).__confirmResult as string,
-      );
+      const confirmMsg = await appPage.evaluate('window.__confirmResult');
       expect(confirmMsg).toContain('already exists');
       await expect(appPage.getByTestId('file-selector-dialog')).toBeVisible({
         timeout: 5000,
       });
 
-      await appPage.evaluate(() => {
-        window.confirm = () => true;
-      });
+      // Now set confirm to return true
+      await appPage.evaluate('window.confirm = () => true');
       await appPage.getByTestId('file-selector-save').click();
 
       await expect(appPage.getByTestId('file-selector-dialog')).toHaveCount(0);
@@ -254,31 +236,31 @@ test.describe('Bug fixes TDD', () => {
 
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
 
-      await appPage.evaluate((outputPath: string) => {
-        const orig = (window as any).__TAURI_INTERNALS__?.invoke;
-        if (!orig) throw new Error('Tauri IPC not available');
-        (window as any).__TAURI_INTERNALS__.invoke = async (
-          cmd: string,
-          args?: Record<string, unknown>,
-        ) => {
-          if (cmd === 'run_plugin') {
-            return {
-              ok: true,
-              stdout: '',
-              stderr: '',
-              exitCode: 0,
-              outputPath,
-            };
-          }
-          return orig(cmd, args);
-        };
-      }, outputPath);
+      // Mock run_plugin to return success
+      await appPage.evaluate(`
+        (() => {
+          const orig = window.__TAURI_INTERNALS__?.invoke;
+          if (!orig) throw new Error('Tauri IPC not available');
+          window.__TAURI_INTERNALS__.invoke = async (cmd, args) => {
+            if (cmd === 'run_plugin') {
+              return {
+                ok: true,
+                stdout: '',
+                stderr: '',
+                exitCode: 0,
+                outputPath: ${JSON.stringify(outputPath)},
+              };
+            }
+            return orig(cmd, args);
+          };
+        })()
+      `);
 
       await openMenu(appPage, 'Plugin');
       await appPage.getByRole('menuitem', { name: 'Export' }).hover();
       await clickMenuItem(appPage, 'Export to PDF');
 
-      await waitForToast(appPage, expectedPdfName, 10000);
+      await waitForToast(appPage, 'doc.pdf', 10000);
     },
   );
 
@@ -287,25 +269,25 @@ test.describe('Bug fixes TDD', () => {
     async ({ appPage, testEnv }) => {
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
 
-      await appPage.evaluate(async () => {
-        const orig = (window as any).__TAURI_INTERNALS__?.invoke;
-        if (!orig) throw new Error('Tauri IPC not available');
-        (window as any).__TAURI_INTERNALS__.invoke = async (
-          cmd: string,
-          args?: Record<string, unknown>,
-        ) => {
-          if (cmd === 'run_plugin') {
-            return {
-              ok: true,
-              stdout: '',
-              stderr: '',
-              exitCode: 0,
-              outputPath: '/tmp/test-output.pdf',
-            };
-          }
-          return orig(cmd, args);
-        };
-      });
+      // Mock run_plugin to return success
+      await appPage.evaluate(`
+        (() => {
+          const orig = window.__TAURI_INTERNALS__?.invoke;
+          if (!orig) throw new Error('Tauri IPC not available');
+          window.__TAURI_INTERNALS__.invoke = async (cmd, args) => {
+            if (cmd === 'run_plugin') {
+              return {
+                ok: true,
+                stdout: '',
+                stderr: '',
+                exitCode: 0,
+                outputPath: '/tmp/test-output.pdf',
+              };
+            }
+            return orig(cmd, args);
+          };
+        })()
+      `);
 
       await openMenu(appPage, 'Plugin');
       await appPage.getByRole('menuitem', { name: 'Export' }).hover();
@@ -413,10 +395,9 @@ test.describe('Bug fixes TDD', () => {
     async ({ appPage, testEnv }) => {
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
 
-      const workspaceRoot = await appPage.evaluate(() => {
-        const footer = document.querySelector('footer span[title]');
-        return footer?.getAttribute('title') ?? '';
-      });
+      const workspaceRoot = await appPage.evaluate(
+        `(() => { const footer = document.querySelector('footer span[title]'); return footer?.getAttribute('title') ?? ''; })()`,
+      );
 
       expect(workspaceRoot).toBeTruthy();
     },

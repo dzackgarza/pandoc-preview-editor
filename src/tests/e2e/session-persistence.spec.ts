@@ -3,43 +3,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 
 import { expect, test } from './fixtures.js';
-
-async function invokeConfig(
-  appPage: any,
-  method: string,
-  args: Record<string, unknown>,
-) {
-  return appPage.evaluate(
-    async ({ cmd, params }: { cmd: string; params: Record<string, unknown> }) => {
-      return (window as any).__TAURI_INTERNALS__.invoke(cmd, params);
-    },
-    { cmd: method, params: args },
-  );
-}
-
-async function replaceEditorContents(appPage: any, text: string) {
-  await appPage.evaluate(`
-    (() => {
-      const view = window.__PANDOC_PREVIEW_EDITOR_VIEW__;
-      if (!view) {
-        throw new Error('Playwright editor hook is not available');
-      }
-      view.dispatch({
-        changes: {
-          from: 0,
-          to: view.state.doc.length,
-          insert: ${JSON.stringify(text)},
-        },
-      });
-    })()
-  `);
-}
-
-async function previewText(appPage: any) {
-  return appPage.locator('#preview').evaluate((element: HTMLIFrameElement) => {
-    return element.contentDocument?.body?.textContent ?? '';
-  });
-}
+import { invokeTauri, replaceEditorContents, previewText } from './editor-helpers.js';
 
 const sessionRecoveryTest = test.extend({
   testEnv: async ({ testEnv }, use) => {
@@ -125,7 +89,7 @@ test.describe('Session Persistence and Ephemeral Buffer Recovery (Tauri)', () =>
 
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
 
-      const initialState = await invokeConfig(appPage, 'get_initial_state', {});
+      const initialState = await invokeTauri(appPage, 'get_initial_state', {});
       const s = initialState as Record<string, unknown>;
 
       expect(s.file).toBe(docPath);
@@ -154,7 +118,7 @@ test.describe('Session Persistence and Ephemeral Buffer Recovery (Tauri)', () =>
       await expect(appPage.locator('#save-state')).toContainText('unsaved');
 
       // Trigger a backup via the Tauri command
-      await invokeConfig(appPage, 'backup', {
+      await invokeTauri(appPage, 'backup', {
         markdown: editedContent,
         path: docPath,
       });
@@ -169,9 +133,9 @@ test.describe('Session Persistence and Ephemeral Buffer Recovery (Tauri)', () =>
       expect(readFileSync(expectedBackup, 'utf-8')).toContain('Edited before backup');
 
       // Verify the backup is reflected in get_initial_state
-      const state = await invokeConfig(appPage, 'get_initial_state', {});
-      const s = state as Record<string, unknown>;
-      expect(s.recoveredFromBackup).toBe(true);
+      const state = await invokeTauri(appPage, 'get_initial_state', {});
+      const st = state as Record<string, unknown>;
+      expect(st.recoveredFromBackup).toBe(true);
     },
   );
 
@@ -191,7 +155,7 @@ test.describe('Session Persistence and Ephemeral Buffer Recovery (Tauri)', () =>
       await expect(appPage.locator('#save-state')).toContainText('unsaved');
 
       // Trigger backup before reload
-      await invokeConfig(appPage, 'backup', {
+      await invokeTauri(appPage, 'backup', {
         markdown: unsavedContent,
         path: docPath,
       });
@@ -200,7 +164,7 @@ test.describe('Session Persistence and Ephemeral Buffer Recovery (Tauri)', () =>
       await appPage.evaluate('window.location.reload()');
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
 
-      const state = await invokeConfig(appPage, 'get_initial_state', {});
+      const state = await invokeTauri(appPage, 'get_initial_state', {});
       const s = state as Record<string, unknown>;
       expect(s.recoveredFromBackup).toBe(true);
 
@@ -224,7 +188,7 @@ test.describe('Session Persistence and Ephemeral Buffer Recovery (Tauri)', () =>
 
       // When restore_last_file is false and no session state written,
       // the app should start with a blank/temp buffer, not loading any file.
-      const state = await invokeConfig(appPage, 'get_initial_state', {});
+      const state = await invokeTauri(appPage, 'get_initial_state', {});
       const s = state as Record<string, unknown>;
 
       // File should be null or the app should show a scratch buffer

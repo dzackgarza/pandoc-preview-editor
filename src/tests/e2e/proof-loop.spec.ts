@@ -1,3 +1,5 @@
+// @ts-nocheck — tauri-playwright 0.2.2 types reference unexported PageLike
+
 /**
  * Proof loop E2E: type markdown → see pandoc HTML in the preview iframe.
  *
