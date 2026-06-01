@@ -28,7 +28,7 @@ export default defineConfig({
     },
     {
       name: 'tauri',
-      testMatch: /desktop-.*\.spec\.ts/,
+      testMatch: /(desktop-.*|proof-loop)\.spec\.ts/,
       use: {
         mode: 'tauri',
       } as any,
