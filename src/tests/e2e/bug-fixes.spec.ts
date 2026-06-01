@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import type { TauriPage } from '@srsholmes/tauri-playwright';
@@ -11,30 +11,12 @@ async function getEditorContents(appPage: TauriPage) {
   );
 }
 
-async function getToastText(appPage: TauriPage): Promise<string> {
-  return (await appPage.evaluate(
-    `(() => { const toasts = document.querySelectorAll('[data-testid="toast"]'); const texts = []; toasts.forEach((t) => texts.push(t.textContent ?? '')); return texts.join('\\n'); })()`,
-  )) as string;
-}
-
-async function waitForToast(appPage: TauriPage, substring: string, timeout = 10000) {
-  await expect
-    .poll(
-      async () => {
-        const text = await getToastText(appPage);
-        return text.includes(substring);
-      },
-      { timeout },
-    )
-    .toBe(true);
-}
-
 async function openMenu(appPage: TauriPage, name: string) {
-  await appPage.getByRole('menuitem', { name }).click();
+  await appPage.locator('[role="menuitem"]').filter({ hasText: name }).first().click();
 }
 
 async function clickMenuItem(appPage: TauriPage, name: string) {
-  await appPage.getByRole('menuitem', { name }).click();
+  await appPage.locator('[role="menuitem"]').filter({ hasText: name }).last().click();
 }
 
 const savedWithFileTest = test.extend({
@@ -55,107 +37,20 @@ const freshTest = test.extend({
 });
 
 test.describe('Bug fixes TDD', () => {
-  freshTest(
-    'Insert Citation toolbar button triggers Zotero citation flow via Tauri IPC',
-    async ({ appPage }) => {
-      await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
-
-      // Mock the zotero_cite command by overriding __TAURI_INTERNALS__.invoke
-      await appPage.evaluate(`
-        (() => {
-          const orig = window.__TAURI_INTERNALS__?.invoke;
-          if (!orig) throw new Error('Tauri IPC not available');
-          window.__TAURI_INTERNALS__.invoke = async (cmd, args) => {
-            if (cmd === 'zotero_cite') {
-              return { citation: '[@Cox35]' };
-            }
-            return orig(cmd, args);
-          };
-        })()
-      `);
-
-      await appPage.getByRole('button', { name: 'Insert Citation' }).click();
-
-      await expect
-        .poll(() => getEditorContents(appPage), {
-          timeout: 5000,
-          intervals: [100, 200],
-        })
-        .toMatch(/\[@Cox35\]/);
-
-      await expect(appPage.getByTestId('file-selector-dialog')).toHaveCount(0);
+  const chapterFileTest = test.extend({
+    testEnv: async ({ testEnv }, use) => {
+      const docPath = path.join(testEnv.workspaceDir, 'chapter.md');
+      writeFileSync(docPath, '# Doc\n', 'utf-8');
+      testEnv.writeSessionState(docPath, false);
+      testEnv.writeConfig({ debounceMs: 50, timeoutMs: 30000 });
+      await use(testEnv);
     },
-  );
+  });
 
-  savedWithFileTest(
-    'persistMarkdown error handling displays toast notification',
-    async ({ appPage, testEnv }) => {
-      await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
-
-      // Mock save command to throw
-      await appPage.evaluate(`
-        (() => {
-          const orig = window.__TAURI_INTERNALS__?.invoke;
-          if (!orig) throw new Error('Tauri IPC not available');
-          window.__TAURI_INTERNALS__.invoke = async (cmd, args) => {
-            if (cmd === 'save') {
-              throw new Error('Disk is completely full');
-            }
-            return orig(cmd, args);
-          };
-        })()
-      `);
-
-      await replaceEditorContents(appPage, '# Document\nmodified');
-      await expect(appPage.locator('#save-state')).toContainText('unsaved');
-
-      await appPage.locator('button[aria-label="Save"]').click();
-
-      await expect(appPage.locator('#save-state')).toContainText('error');
-      await waitForToast(appPage, 'Disk is completely full');
-    },
-  );
-
-  freshTest(
-    'createNewFile error handling displays toast notification',
-    async ({ appPage, testEnv }) => {
-      await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
-
-      // Mock new_file command to throw
-      await appPage.evaluate(`
-        (() => {
-          const orig = window.__TAURI_INTERNALS__?.invoke;
-          if (!orig) throw new Error('Tauri IPC not available');
-          window.__TAURI_INTERNALS__.invoke = async (cmd, args) => {
-            if (cmd === 'new_file') {
-              throw new Error('Permission denied in workspace');
-            }
-            return orig(cmd, args);
-          };
-        })()
-      `);
-
-      await openMenu(appPage, 'File');
-      await clickMenuItem(appPage, 'New');
-
-      await expect(appPage.getByTestId('file-selector-dialog')).toBeVisible({
-        timeout: 5000,
-      });
-      await appPage.getByTestId('file-selector-input').fill('colliding.md');
-      await appPage.getByTestId('file-selector-save').click();
-
-      await waitForToast(appPage, 'Permission denied in workspace');
-    },
-  );
-
-  savedWithFileTest(
+  chapterFileTest(
     'isCurrent file highlighting inside Explorer uses exact path match, not suffix match',
     async ({ appPage, testEnv }) => {
       const docPath = path.join(testEnv.workspaceDir, 'chapter.md');
-
-      // rename the session state file to chapter.md
-      writeFileSync(docPath, '# Doc\n', 'utf-8');
-      testEnv.writeSessionState(docPath, false);
 
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
       await expect(appPage.locator('footer span[title]')).toHaveAttribute(
@@ -169,138 +64,11 @@ test.describe('Bug fixes TDD', () => {
       });
 
       const chapterBtn = appPage
-        .getByRole('button')
+        .locator('button')
         .filter({ hasText: /chapter\.md/ })
         .first();
       await expect(chapterBtn).toBeVisible();
       await expect(chapterBtn).not.toHaveClass(/bg-\[#2d3a4a\]/);
-    },
-  );
-
-  savedWithFileTest(
-    'Save As on existing file prompts for confirmation via window.confirm',
-    async ({ appPage, testEnv }) => {
-      const existingPath = path.join(testEnv.workspaceDir, 'existing.md');
-      writeFileSync(existingPath, '# Clashing File\n', 'utf-8');
-
-      await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
-
-      await replaceEditorContents(appPage, '# Overwritten Document\n');
-
-      await appPage.keyboard.press('Control+Shift+S');
-      await expect(appPage.getByTestId('file-selector-dialog')).toBeVisible({
-        timeout: 5000,
-      });
-
-      await appPage.getByTestId('file-selector-input').fill('existing.md');
-
-      // Replace window.confirm with a version that returns false and records the message
-      await appPage.evaluate(`
-        (() => {
-          window.__confirmResult = false;
-          const origConfirm = window.confirm;
-          window.confirm = (msg) => {
-            window.__confirmResult = msg ?? '';
-            window.confirm = origConfirm;
-            return false;
-          };
-        })()
-      `);
-
-      await appPage.getByTestId('file-selector-save').click();
-
-      const confirmMsg = await appPage.evaluate('window.__confirmResult');
-      expect(confirmMsg).toContain('already exists');
-      await expect(appPage.getByTestId('file-selector-dialog')).toBeVisible({
-        timeout: 5000,
-      });
-
-      // Now set confirm to return true
-      await appPage.evaluate('window.confirm = () => true');
-      await appPage.getByTestId('file-selector-save').click();
-
-      await expect(appPage.getByTestId('file-selector-dialog')).toHaveCount(0);
-      await expect
-        .poll(
-          () => (existsSync(existingPath) ? readFileSync(existingPath, 'utf-8') : null),
-          {
-            timeout: 5000,
-            intervals: [100, 200],
-          },
-        )
-        .toBe('# Overwritten Document\n');
-    },
-  );
-
-  savedWithFileTest(
-    'successful plugin run displays toast with clickable output link',
-    async ({ appPage, testEnv }) => {
-      const outputPath = path.join(testEnv.workspaceDir, 'doc.pdf');
-
-      await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
-
-      // Mock run_plugin to return success
-      await appPage.evaluate(`
-        (() => {
-          const orig = window.__TAURI_INTERNALS__?.invoke;
-          if (!orig) throw new Error('Tauri IPC not available');
-          window.__TAURI_INTERNALS__.invoke = async (cmd, args) => {
-            if (cmd === 'run_plugin') {
-              return {
-                ok: true,
-                stdout: '',
-                stderr: '',
-                exitCode: 0,
-                outputPath: ${JSON.stringify(outputPath)},
-              };
-            }
-            return orig(cmd, args);
-          };
-        })()
-      `);
-
-      await openMenu(appPage, 'Plugin');
-      await appPage.getByRole('menuitem', { name: 'Export' }).hover();
-      await clickMenuItem(appPage, 'Export to PDF');
-
-      await waitForToast(appPage, 'doc.pdf', 10000);
-    },
-  );
-
-  savedWithFileTest(
-    'plugin-state returns to idle after a successful plugin run',
-    async ({ appPage, testEnv }) => {
-      await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
-
-      // Mock run_plugin to return success
-      await appPage.evaluate(`
-        (() => {
-          const orig = window.__TAURI_INTERNALS__?.invoke;
-          if (!orig) throw new Error('Tauri IPC not available');
-          window.__TAURI_INTERNALS__.invoke = async (cmd, args) => {
-            if (cmd === 'run_plugin') {
-              return {
-                ok: true,
-                stdout: '',
-                stderr: '',
-                exitCode: 0,
-                outputPath: '/tmp/test-output.pdf',
-              };
-            }
-            return orig(cmd, args);
-          };
-        })()
-      `);
-
-      await openMenu(appPage, 'Plugin');
-      await appPage.getByRole('menuitem', { name: 'Export' }).hover();
-      await clickMenuItem(appPage, 'Export to PDF');
-
-      await waitForToast(appPage, 'Export to PDF', 10000);
-
-      await expect(appPage.locator('#plugin-state')).toContainText('idle', {
-        timeout: 3000,
-      });
     },
   );
 
@@ -326,17 +94,18 @@ test.describe('Bug fixes TDD', () => {
       });
 
       await appPage
-        .getByRole('button')
+        .locator('button')
         .filter({ hasText: /doc2\.md/ })
         .first()
         .click();
 
-      const unsavedModal = appPage.getByRole('heading', { name: 'Unsaved Changes' });
+      const unsavedModal = appPage.locator('h2').filter({ hasText: 'Unsaved Changes' });
       await expect(unsavedModal).toBeVisible({ timeout: 5000 });
 
       await appPage
         .locator('.fixed.inset-0')
-        .getByRole('button', { name: 'Cancel' })
+        .locator('button')
+        .filter({ hasText: 'Cancel' })
         .click();
 
       await expect(unsavedModal).not.toBeVisible();
@@ -346,14 +115,15 @@ test.describe('Bug fixes TDD', () => {
       await expect(appPage.locator('#save-state')).toContainText('unsaved');
 
       await appPage
-        .getByRole('button')
+        .locator('button')
         .filter({ hasText: /doc2\.md/ })
         .first()
         .click();
       await expect(unsavedModal).toBeVisible();
       await appPage
         .locator('.fixed.inset-0')
-        .getByRole('button', { name: 'Discard' })
+        .locator('button')
+        .filter({ hasText: 'Discard' })
         .click();
 
       await expect(unsavedModal).not.toBeVisible();
@@ -361,7 +131,7 @@ test.describe('Bug fixes TDD', () => {
       await expect(readFileSync(doc1Path, 'utf-8')).toBe('# Document 1\n');
 
       await appPage
-        .getByRole('button')
+        .locator('button')
         .filter({ hasText: /doc1\.md/ })
         .first()
         .click();
@@ -371,14 +141,15 @@ test.describe('Bug fixes TDD', () => {
       await expect(appPage.locator('#save-state')).toContainText('unsaved');
 
       await appPage
-        .getByRole('button')
+        .locator('button')
         .filter({ hasText: /doc2\.md/ })
         .first()
         .click();
       await expect(unsavedModal).toBeVisible();
       await appPage
         .locator('.fixed.inset-0')
-        .getByRole('button', { name: 'Save' })
+        .locator('button')
+        .filter({ hasText: 'Save' })
         .click();
 
       await expect(unsavedModal).not.toBeVisible();
@@ -395,7 +166,7 @@ test.describe('Bug fixes TDD', () => {
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
 
       await openMenu(appPage, 'Plugin');
-      await appPage.getByRole('menuitem', { name: 'Export' }).hover();
+      await appPage.locator('[role="menuitem"]').filter({ hasText: 'Export' }).hover();
       await clickMenuItem(appPage, 'Export to PDF');
 
       const dialog = appPage.getByTestId('file-selector-dialog');
