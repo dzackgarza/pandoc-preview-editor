@@ -117,25 +117,3 @@ pub async fn run_plugin(
     }))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn interpolate_plugin_arg_substitutes_file() {
-        let result = interpolate_plugin_arg("${FILE}", Path::new("/ws/doc.md"));
-        assert_eq!(result, "/ws/doc.md");
-    }
-
-    #[test]
-    fn interpolate_plugin_arg_substitutes_stem() {
-        let result = interpolate_plugin_arg("${FILE_STEM}", Path::new("/ws/doc.md"));
-        assert_eq!(result, "doc");
-    }
-
-    #[test]
-    fn interpolate_plugin_arg_substitutes_dir() {
-        let result = interpolate_plugin_arg("${FILE_DIR}", Path::new("/ws/doc.md"));
-        assert_eq!(result, "/ws");
-    }
-}

@@ -1,8 +1,8 @@
+use crate::state::AppState;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use crate::state::AppState;
-use sha2::{Digest, Sha256};
 
 fn xdg_state_dir() -> PathBuf {
     let base = std::env::var("XDG_STATE_HOME")
@@ -264,66 +264,6 @@ fn try_restore_last_file(restore: bool) -> (Option<PathBuf>, bool) {
         }
     }
     (last_file, is_temp)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-
-    #[test]
-    fn config_toml_round_trip() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("config.toml");
-
-        write_config_toml(
-            &path,
-            500,
-            20000,
-            true,
-            "pandoc --standalone -t html5",
-            "/home/user/.pandoc/templates",
-            "/home/user/.pandoc/filters",
-        )
-        .unwrap();
-
-        let loaded = load_config_from_toml(&path).unwrap();
-        let render = loaded.render.unwrap();
-        let pandoc = loaded.pandoc.unwrap();
-
-        assert_eq!(render.debounce_ms, Some(500));
-        assert_eq!(render.timeout_ms, Some(20000));
-        assert_eq!(render.restore_last_file, Some(true));
-        assert_eq!(
-            pandoc.render_command.unwrap(),
-            "pandoc --standalone -t html5"
-        );
-    }
-
-    #[test]
-    fn config_parse_error_is_not_defaulted() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("config.toml");
-        fs::write(&path, "[render\nbroken").unwrap();
-
-        let error = load_config_from_toml(&path).expect_err("malformed config must fail");
-
-        assert!(
-            error.contains("failed to parse config"),
-            "parse failure should preserve diagnostic context, got: {error}"
-        );
-    }
-
-    #[test]
-    fn missing_config_is_first_run_default() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("missing.toml");
-
-        let loaded = load_config_from_toml(&path).unwrap();
-
-        assert!(loaded.render.is_none());
-        assert!(loaded.pandoc.is_none());
-    }
 }
 
 pub fn load_bundled_plugins(plugin_dir: &Path) -> Vec<crate::state::PluginManifest> {

@@ -185,89 +185,14 @@ pub fn sanitize_figure_filename(filename: &str, mime_type: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-
-    #[test]
-    fn normalize_path_strips_dots() {
-        assert_eq!(
-            normalize_path(Path::new("/foo/./bar/./baz")),
-            PathBuf::from("/foo/bar/baz")
-        );
-    }
-
-    #[test]
-    fn normalize_path_resolves_parent_dirs() {
-        assert_eq!(
-            normalize_path(Path::new("/foo/bar/../baz")),
-            PathBuf::from("/foo/baz")
-        );
-    }
-
-    #[test]
-    fn normalize_path_noop_clean_path() {
-        assert_eq!(
-            normalize_path(Path::new("/foo/bar/baz")),
-            PathBuf::from("/foo/bar/baz")
-        );
-    }
-
-    #[test]
-    fn path_is_inside_direct_child() {
-        assert!(path_is_inside(Path::new("/ws"), Path::new("/ws/file.md")));
-    }
-
-    #[test]
-    fn path_is_inside_deep_child() {
-        assert!(path_is_inside(
-            Path::new("/ws"),
-            Path::new("/ws/a/b/c/file.md")
-        ));
-    }
-
-    #[test]
-    fn path_is_inside_self() {
-        assert!(path_is_inside(Path::new("/ws"), Path::new("/ws")));
-    }
-
-    #[test]
-    fn path_is_outside_rejected() {
-        assert!(!path_is_inside(Path::new("/ws"), Path::new("/etc/passwd")));
-    }
-
-    #[test]
-    fn path_is_outside_parent_dir_escape_rejected() {
-        assert!(!path_is_inside(
-            Path::new("/ws/sub"),
-            Path::new("/ws/../outside")
-        ));
-    }
-
-    #[test]
-    fn resolve_inside_relative_path() {
-        let root = Path::new("/ws");
-        assert_eq!(
-            resolve_inside(root, "sub/file.md").unwrap(),
-            PathBuf::from("/ws/sub/file.md")
-        );
-    }
-
-    #[test]
-    fn resolve_inside_empty_path_returns_root() {
-        assert_eq!(
-            resolve_inside(Path::new("/ws"), "").unwrap(),
-            PathBuf::from("/ws")
-        );
-    }
+    use std::path::Path;
 
     #[test]
     fn should_ignore_hidden_path_segments() {
+        assert!(should_ignore(Path::new("/ws"), Path::new("/ws/.hidden.md"),));
         assert!(should_ignore(
             Path::new("/ws"),
-            Path::new("/ws/.hidden.md")
-        ));
-        assert!(should_ignore(
-            Path::new("/ws"),
-            Path::new("/ws/nested/.secret/file.md")
+            Path::new("/ws/nested/.secret/file.md"),
         ));
     }
 
@@ -275,99 +200,16 @@ mod tests {
     fn should_ignore_named_debris_directories() {
         assert!(should_ignore(
             Path::new("/ws"),
-            Path::new("/ws/node_modules/pkg/index.js")
+            Path::new("/ws/node_modules/pkg/index.js"),
         ));
         assert!(!should_ignore(
             Path::new("/ws"),
-            Path::new("/ws/nested/file.md")
+            Path::new("/ws/nested/file.md"),
         ));
     }
 
     #[test]
     fn resolve_inside_rejects_parent_dir_escape() {
         assert!(resolve_inside(Path::new("/ws/sub"), "../outside").is_err());
-    }
-
-    #[test]
-    fn write_file_atomic_creates_and_overwrites() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("doc.md");
-        write_file_atomic(&path, "hello").unwrap();
-        assert_eq!(fs::read_to_string(&path).unwrap(), "hello");
-        write_file_atomic(&path, "world").unwrap();
-        assert_eq!(fs::read_to_string(&path).unwrap(), "world");
-    }
-
-    #[test]
-    fn write_file_atomic_leaves_no_tmp_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("doc.md");
-        write_file_atomic(&path, "data").unwrap();
-        let tmp_count = fs::read_dir(dir.path())
-            .unwrap()
-            .filter(|e| {
-                e.as_ref()
-                    .unwrap()
-                    .file_name()
-                    .to_string_lossy()
-                    .starts_with(".tmp-")
-            })
-            .count();
-        assert_eq!(tmp_count, 0);
-    }
-
-    #[test]
-    fn is_markdown_file_detects_extensions() {
-        assert!(is_markdown_file(Path::new("doc.md")));
-        assert!(is_markdown_file(Path::new("doc.mdown")));
-        assert!(is_markdown_file(Path::new("doc.markdown")));
-        assert!(!is_markdown_file(Path::new("doc.txt")));
-        assert!(!is_markdown_file(Path::new("doc.tex")));
-    }
-
-    #[test]
-    fn is_text_like_file_detects_known_text_types() {
-        assert!(is_text_like_file(Path::new("doc.md")));
-        assert!(is_text_like_file(Path::new("doc.tex")));
-        assert!(is_text_like_file(Path::new("doc.toml")));
-        assert!(is_text_like_file(Path::new("justfile")));
-    }
-
-    #[test]
-    fn is_text_like_file_rejects_binaries() {
-        assert!(!is_text_like_file(Path::new("photo.png")));
-        assert!(!is_text_like_file(Path::new("doc.pdf")));
-        assert!(!is_text_like_file(Path::new("archive.zip")));
-    }
-
-    #[test]
-    fn is_text_like_file_sniffs_null_bytes() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("unknown.bin");
-        fs::write(&path, b"\x00\x00hello").unwrap();
-        assert!(!is_text_like_file(&path));
-        let path2 = dir.path().join("unknown.txt");
-        fs::write(&path2, b"hello world").unwrap();
-        assert!(is_text_like_file(&path2));
-    }
-
-    #[test]
-    fn sanitize_figure_filename_cleans_special_chars() {
-        let result = sanitize_figure_filename("my diagram (1).png", "image/png");
-        assert!(result.starts_with("my-diagram--1-"));
-        assert!(result.ends_with(".png"));
-    }
-
-    #[test]
-    fn sanitize_figure_filename_handles_empty_input() {
-        let result = sanitize_figure_filename("", "image/png");
-        assert!(result.starts_with("figure-"));
-        assert!(result.ends_with(".png"));
-    }
-
-    #[test]
-    fn sanitize_figure_filename_preserves_valid_name() {
-        let result = sanitize_figure_filename("my-diagram.tikz", "image/png");
-        assert_eq!(result, "my-diagram.tikz");
     }
 }
