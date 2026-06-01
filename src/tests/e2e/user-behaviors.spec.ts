@@ -3,7 +3,11 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { expect, test } from './fixtures.js';
-import { replaceEditorContents, previewText, previewHTML } from './editor-helpers.js';
+import {
+  replaceEditorContents,
+  previewText,
+  previewInnerHTML,
+} from './editor-helpers.js';
 
 async function getEditorContents(appPage) {
   return appPage.evaluate(
@@ -355,7 +359,7 @@ test.describe('user workflows', () => {
       expect(readFileSync(figurePath)).toEqual(expectedPng);
 
       await expect
-        .poll(() => previewHTML(appPage))
+        .poll(() => previewInnerHTML(appPage))
         .toContain('<img', { timeout: 5000 });
     },
   );
