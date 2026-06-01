@@ -1,5 +1,3 @@
-// @ts-nocheck -- tauri-playwright 0.2.2 fixture/types are intentionally loose
-
 import { createTauriTest } from '@srsholmes/tauri-playwright';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
@@ -36,6 +34,7 @@ const repoRoot = process.cwd();
 const devUrl = 'http://localhost:5173';
 
 const base = createTauriTest({
+  devUrl,
   tauriCommand: 'src/tests/e2e/run-tauri-dev.sh',
   tauriCwd: repoRoot,
   startTimeout: 180,
@@ -98,7 +97,7 @@ filters_dir = ${JSON.stringify(filtersDir)}
 export const test = base.test.extend<{
   launchSetup: LaunchSetup;
   testEnv: TestEnvironment;
-  appPage: typeof base extends { test: infer T } ? any : never;
+  appPage: import('@srsholmes/tauri-playwright').TauriPage;
 }>({
   launchSetup: [
     async ({}, use) => {
@@ -250,7 +249,7 @@ export const test = base.test.extend<{
       );
     }
 
-    await use(tauriPage);
+    await use(tauriPage as import('@srsholmes/tauri-playwright').TauriPage);
   },
 });
 

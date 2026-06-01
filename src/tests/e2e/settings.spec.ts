@@ -89,7 +89,12 @@ test.describe('Settings and Preferences (Tauri)', () => {
 
       await appPage.getByRole('button', { name: 'Apply Settings' }).click();
       await expect(dialog).toBeVisible();
-      await expect(dialog.getByText(/is external.*templates directory/i)).toBeVisible();
+      await expect(
+        dialog
+          .locator('*')
+          .filter({ hasText: /is external.*templates directory/i })
+          .first(),
+      ).toBeVisible();
 
       await dialog.getByRole('button', { name: 'Cancel' }).click();
       await expect(dialog).not.toBeVisible();
@@ -129,7 +134,9 @@ test.describe('Settings and Preferences (Tauri)', () => {
       }
 
       await dialog.getByRole('tab', { name: 'Lua Filters' }).click();
-      await expect(dialog.getByLabel('Filters Directory')).toHaveValue(filtersDir);
+      await expect(dialog.locator('[aria-label="Filters Directory"]')).toHaveValue(
+        filtersDir,
+      );
       await expect(dialog.getByText('my-filter.lua', { exact: true })).toBeVisible();
 
       await dialog.getByRole('tab', { name: 'Plugins' }).click();

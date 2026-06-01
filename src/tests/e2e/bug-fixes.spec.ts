@@ -1,23 +1,23 @@
-// @ts-nocheck — tauri-playwright 0.2.2 fixture/types are intentionally loose
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
+import type { TauriPage } from '@srsholmes/tauri-playwright';
 import { expect, test } from './fixtures.js';
-import { replaceEditorContents, previewText, invokeTauri } from './editor-helpers.js';
+import { replaceEditorContents, previewText } from './editor-helpers.js';
 
-async function getEditorContents(appPage) {
+async function getEditorContents(appPage: TauriPage) {
   return appPage.evaluate(
     `(() => { const view = window.__PANDOC_PREVIEW_EDITOR_VIEW__; if (!view) throw new Error('Playwright editor hook is not available'); return view.state.doc.toString(); })()`,
   );
 }
 
-async function getToastText(appPage) {
-  return appPage.evaluate(
+async function getToastText(appPage: TauriPage): Promise<string> {
+  return (await appPage.evaluate(
     `(() => { const toasts = document.querySelectorAll('[data-testid="toast"]'); const texts = []; toasts.forEach((t) => texts.push(t.textContent ?? '')); return texts.join('\\n'); })()`,
-  );
+  )) as string;
 }
 
-async function waitForToast(appPage, substring, timeout = 10000) {
+async function waitForToast(appPage: TauriPage, substring: string, timeout = 10000) {
   await expect
     .poll(
       async () => {
@@ -29,12 +29,12 @@ async function waitForToast(appPage, substring, timeout = 10000) {
     .toBe(true);
 }
 
-async function openMenu(appPage, name) {
+async function openMenu(appPage: TauriPage, name: string) {
   await appPage.getByRole('menuitem', { name }).click();
 }
 
-async function clickMenuItem(appPage, name) {
-  await appPage.getByRole('menuitem', { name, exact: true }).click();
+async function clickMenuItem(appPage: TauriPage, name: string) {
+  await appPage.getByRole('menuitem', { name }).click();
 }
 
 const savedWithFileTest = test.extend({
@@ -168,7 +168,10 @@ test.describe('Bug fixes TDD', () => {
         timeout: 5000,
       });
 
-      const chapterBtn = appPage.getByRole('button', { name: /chapter\.md/ });
+      const chapterBtn = appPage
+        .getByRole('button')
+        .filter({ hasText: /chapter\.md/ })
+        .first();
       await expect(chapterBtn).toBeVisible();
       await expect(chapterBtn).not.toHaveClass(/bg-\[#2d3a4a\]/);
     },
@@ -322,7 +325,11 @@ test.describe('Bug fixes TDD', () => {
         timeout: 5000,
       });
 
-      await appPage.getByRole('button', { name: /doc2\.md/ }).click();
+      await appPage
+        .getByRole('button')
+        .filter({ hasText: /doc2\.md/ })
+        .first()
+        .click();
 
       const unsavedModal = appPage.getByRole('heading', { name: 'Unsaved Changes' });
       await expect(unsavedModal).toBeVisible({ timeout: 5000 });
@@ -338,7 +345,11 @@ test.describe('Bug fixes TDD', () => {
         .toBe('# Document 1\nmodified');
       await expect(appPage.locator('#save-state')).toContainText('unsaved');
 
-      await appPage.getByRole('button', { name: /doc2\.md/ }).click();
+      await appPage
+        .getByRole('button')
+        .filter({ hasText: /doc2\.md/ })
+        .first()
+        .click();
       await expect(unsavedModal).toBeVisible();
       await appPage
         .locator('.fixed.inset-0')
@@ -349,13 +360,21 @@ test.describe('Bug fixes TDD', () => {
       await expect.poll(() => previewText(appPage)).toContain('Document 2');
       await expect(readFileSync(doc1Path, 'utf-8')).toBe('# Document 1\n');
 
-      await appPage.getByRole('button', { name: /doc1\.md/ }).click();
+      await appPage
+        .getByRole('button')
+        .filter({ hasText: /doc1\.md/ })
+        .first()
+        .click();
       await expect.poll(() => previewText(appPage)).toContain('Document 1');
 
       await replaceEditorContents(appPage, '# Document 1\nmodified again');
       await expect(appPage.locator('#save-state')).toContainText('unsaved');
 
-      await appPage.getByRole('button', { name: /doc2\.md/ }).click();
+      await appPage
+        .getByRole('button')
+        .filter({ hasText: /doc2\.md/ })
+        .first()
+        .click();
       await expect(unsavedModal).toBeVisible();
       await appPage
         .locator('.fixed.inset-0')

@@ -33,7 +33,10 @@ test.describe('Architectural Slop Regression Tests', () => {
         '<script>const src="script.png";</script>',
       ].join('\n');
 
-      const result = await invokeTauri(appPage, 'render', { markdown });
+      const result = (await invokeTauri(appPage, 'render', { markdown })) as {
+        ok: boolean;
+        html: string;
+      };
 
       expect(result.ok).toBe(true);
 
@@ -70,7 +73,10 @@ test.describe('Architectural Slop Regression Tests', () => {
         '<img src="">',
       ].join('\n\n');
 
-      const result = await invokeTauri(appPage, 'render', { markdown });
+      const result = (await invokeTauri(appPage, 'render', { markdown })) as {
+        ok: boolean;
+        html: string;
+      };
 
       expect(result.ok).toBe(true);
 

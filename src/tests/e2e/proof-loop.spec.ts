@@ -1,5 +1,3 @@
-// @ts-nocheck — tauri-playwright 0.2.2 types reference unexported PageLike
-
 /**
  * Proof loop E2E: type markdown → see pandoc HTML in the preview iframe.
  *
@@ -15,34 +13,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { expect, test } from './fixtures.js';
+import { replaceEditorContents, previewText } from './editor-helpers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ORACLE_DIR = path.join(__dirname, 'oracles');
 const tortureMarkdown = readFileSync(path.join(ORACLE_DIR, 'torture.md'), 'utf-8');
-
-async function replaceEditorContents(appPage: any, text: string) {
-  await appPage.evaluate(`
-    (() => {
-      const view = window.__PANDOC_PREVIEW_EDITOR_VIEW__;
-      if (!view) {
-        throw new Error('Playwright editor hook is not available');
-      }
-      view.dispatch({
-        changes: {
-          from: 0,
-          to: view.state.doc.length,
-          insert: ${JSON.stringify(text)},
-        },
-      });
-    })()
-  `);
-}
-
-async function previewText(appPage: any) {
-  return appPage.locator('#preview').evaluate((element: HTMLIFrameElement) => {
-    return element.contentDocument?.body?.textContent ?? '';
-  });
-}
 
 /**
  * tauri project: proof loop with real IPC — type → render → verify.
@@ -67,10 +42,8 @@ proofTest.describe('proof loop: markdown → pandoc HTML', () => {
 
       // Wait for pandoc to render — the h1 heading is the first semantic marker.
       await expect
-        .poll(() => previewText(appPage))
-        .toContain('Torture Document', {
-          timeout: 20000,
-        });
+        .poll(() => previewText(appPage), { timeout: 20000 })
+        .toContain('Torture Document');
 
       // Verify document structure: theorems, proofs, definitions, examples, warnings
       await expect.poll(() => previewText(appPage)).toContain('Theorem');
@@ -87,14 +60,15 @@ proofTest.describe('proof loop: markdown → pandoc HTML', () => {
       await expect.poll(() => previewText(appPage)).toContain('Example');
 
       // Verify refresh preserves content
-      const refreshBtn = appPage.getByRole('button', { name: /refresh/i });
-      if (await refreshBtn.isVisible({ timeout: 3000 })) {
+      const refreshBtn = appPage
+        .getByRole('button')
+        .filter({ hasText: /refresh/i })
+        .first();
+      if (await refreshBtn.isVisible()) {
         await refreshBtn.click();
         await expect
-          .poll(() => previewText(appPage))
-          .toContain('Torture Document', {
-            timeout: 10000,
-          });
+          .poll(() => previewText(appPage), { timeout: 10000 })
+          .toContain('Torture Document');
       }
     },
   );
@@ -110,10 +84,6 @@ proofTest.describe('proof loop: markdown → pandoc HTML', () => {
       'Inline math $E=mc^2$ and display $$a^2 + b^2 = c^2$$',
     );
 
-    await expect
-      .poll(() => previewText(appPage))
-      .toContain('mc', {
-        timeout: 10000,
-      });
+    await expect.poll(() => previewText(appPage), { timeout: 10000 }).toContain('mc');
   });
 });

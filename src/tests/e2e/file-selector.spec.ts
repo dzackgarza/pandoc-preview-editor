@@ -1,6 +1,7 @@
-// @ts-nocheck — tauri-playwright 0.2.2 fixture/types are intentionally loose
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+
+import type { TauriPage } from '@srsholmes/tauri-playwright';
 
 import { expect, test } from './fixtures.js';
 import { invokeTauri, previewText } from './editor-helpers.js';
@@ -14,11 +15,11 @@ function cleanupDir(dir: string) {
   }
 }
 
-function fileSelector(appPage) {
+function fileSelector(appPage: TauriPage) {
   return appPage.getByTestId('file-selector-dialog');
 }
 
-async function clickDirInSelector(appPage, name) {
+async function clickDirInSelector(appPage: TauriPage, name: string) {
   await fileSelector(appPage)
     .getByTestId('file-selector-dir')
     .filter({ hasText: name })
@@ -26,7 +27,7 @@ async function clickDirInSelector(appPage, name) {
     .click();
 }
 
-async function clickFileInSelector(appPage, name) {
+async function clickFileInSelector(appPage: TauriPage, name: string) {
   await fileSelector(appPage)
     .getByTestId('file-selector-file')
     .filter({ hasText: name })
@@ -34,7 +35,7 @@ async function clickFileInSelector(appPage, name) {
     .click();
 }
 
-async function submitSelectorWithName(appPage, filename) {
+async function submitSelectorWithName(appPage: TauriPage, filename: string) {
   const input = fileSelector(appPage).locator(
     'input[data-testid="file-selector-input"]',
   );
@@ -123,7 +124,11 @@ test.describe('file selector dialog', () => {
     mkdirSync(path.join(dir, 'alpha'), { recursive: true });
     writeFileSync(path.join(dir, 'beta.md'), '# Beta', 'utf-8');
 
-    const result = await invokeTauri(appPage, 'browse', { dir });
+    const result = (await invokeTauri(appPage, 'browse', { dir })) as {
+      dir: string;
+      parent: string;
+      entries: Array<{ name: string }>;
+    };
 
     expect(result.dir).toBe(dir);
     expect(typeof result.parent).toBe('string');

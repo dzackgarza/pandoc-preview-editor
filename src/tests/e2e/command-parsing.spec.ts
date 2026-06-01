@@ -249,7 +249,9 @@ test.describe('Command parsing via Settings dialog', () => {
       await expect(dialog).toBeVisible();
 
       await dialog.getByRole('tab', { name: 'Lua Filters' }).click();
-      await expect(dialog.getByLabel('Filters Directory')).toHaveValue(filtersDir);
+      await expect(dialog.locator('[aria-label="Filters Directory"]')).toHaveValue(
+        filtersDir,
+      );
 
       const myFilterCheckbox = dialog.locator('input[type="checkbox"]').filter({
         hasText: 'my-filter.lua',

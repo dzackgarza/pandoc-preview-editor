@@ -1,5 +1,3 @@
-// @ts-nocheck -- tauri-playwright 0.2.2 fixture/types are intentionally loose
-
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -36,7 +34,10 @@ test.describe('diagram toolbar and filter workflows', () => {
   test('get_diagram_tools returns available tools with installed status', async ({
     appPage,
   }) => {
-    const data = await invokeTauri(appPage, 'get_diagram_tools', {});
+    const data = (await invokeTauri(appPage, 'get_diagram_tools', {})) as Record<
+      string,
+      unknown
+    >;
 
     expect(data).toBeDefined();
     expect(typeof data).toBe('object');
@@ -46,7 +47,9 @@ test.describe('diagram toolbar and filter workflows', () => {
   });
 
   diagramToolsTest('pandoc_assets returns available filters', async ({ appPage }) => {
-    const data = await invokeTauri(appPage, 'pandoc_assets', {});
+    const data = (await invokeTauri(appPage, 'pandoc_assets', {})) as {
+      filters: unknown;
+    };
 
     expect(data).toBeDefined();
     expect(Array.isArray(data.filters)).toBe(true);
@@ -74,11 +77,11 @@ test.describe('diagram toolbar and filter workflows', () => {
       const rand = Math.random().toString(36).substring(7);
       const figFilename = `diagram-${rand}.tikz`;
 
-      const result = await invokeTauri(appPage, 'create_diagram_file', {
+      const result = (await invokeTauri(appPage, 'create_diagram_file', {
         kind: 'qtikz',
         filename: figFilename,
         documentPath: docPath,
-      });
+      })) as { ok: boolean; relativePath: string; absolutePath: string };
 
       expect(result.ok).toBe(true);
       expect(result.relativePath).toBe(`figures/${figFilename}`);
@@ -97,9 +100,9 @@ test.describe('diagram toolbar and filter workflows', () => {
       // Proxy a known local-ish URL through the Tauri command.
       // We use a real allowed host (q.uiver.app) — the test verifies
       // the proxy returns HTML with the injected overlay.
-      const result = await invokeTauri(appPage, 'diagram_proxy', {
+      const result = (await invokeTauri(appPage, 'diagram_proxy', {
         url: 'https://q.uiver.app',
-      });
+      })) as { html: string };
 
       expect(result).toBeDefined();
       expect(result.html).toBeDefined();
