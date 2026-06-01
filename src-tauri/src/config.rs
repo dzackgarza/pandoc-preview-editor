@@ -1,11 +1,8 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
-
-use crate::state::{AppState, FigureEntry, FiguresRegistry, FiguresStorageStrategy};
+use crate::state::AppState;
 use sha2::{Digest, Sha256};
-use uuid::Uuid;
 
 fn xdg_state_dir() -> PathBuf {
     let base = std::env::var("XDG_STATE_HOME")
@@ -47,75 +44,6 @@ pub fn save_session_state(last_file: &Path, is_temp_file: bool) {
         state_file_path(),
         serde_json::to_string_pretty(&state).unwrap(),
     );
-}
-
-pub fn load_figures_registry(dir: &Path) -> FiguresRegistry {
-    let registry_path = dir.join("registry.json");
-    if registry_path.exists() {
-        if let Ok(content) = fs::read_to_string(&registry_path) {
-            if let Ok(reg) = serde_json::from_str::<FiguresRegistry>(&content) {
-                return reg;
-            }
-        }
-    }
-    FiguresRegistry { figures: vec![] }
-}
-
-fn save_figures_registry(dir: &Path, registry: &FiguresRegistry) {
-    let _ = fs::create_dir_all(dir);
-    let path = dir.join("registry.json");
-    let _ = fs::write(path, serde_json::to_string_pretty(registry).unwrap());
-}
-
-fn default_figures_central_dir() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("/tmp"))
-        .join(".pandoc/figures")
-}
-
-pub fn figures_central_dir(state: &AppState) -> PathBuf {
-    state
-        .figures_central_directory
-        .clone()
-        .unwrap_or_else(default_figures_central_dir)
-}
-
-pub fn register_figure(state: &AppState, name: &str, absolute_path: &Path, kind: &str) {
-    let central_dir = figures_central_dir(state);
-    let mut registry = load_figures_registry(&central_dir);
-    let doc_path = state
-        .file
-        .as_ref()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let abs_str = absolute_path.to_string_lossy().into_owned();
-    if let Some(entry) = registry.figures.iter_mut().find(|f| f.path == abs_str) {
-        if !doc_path.is_empty() && !entry.documents.contains(&doc_path) {
-            entry.documents.push(doc_path);
-        }
-    } else {
-        registry.figures.push(FigureEntry {
-            id: Uuid::new_v4().to_string(),
-            name: name.to_string(),
-            path: abs_str,
-            kind: kind.to_string(),
-            created_at: chrono_now(),
-            documents: if doc_path.is_empty() {
-                vec![]
-            } else {
-                vec![doc_path]
-            },
-        });
-    }
-    save_figures_registry(&central_dir, &registry);
-}
-
-fn chrono_now() -> String {
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    format!("{}", secs)
 }
 
 #[derive(Debug, serde::Deserialize, Default)]
@@ -216,61 +144,43 @@ pub fn build_initial_state() -> AppState {
         toml.pandoc.unwrap_or_default()
     };
 
-    let render_command = if config_exists {
-        pandoc
-            .render_command
-            .expect("pandoc-preview config is missing pandoc.render_command")
-    } else {
-        pandoc
-            .render_command
-            .unwrap_or_else(|| DEFAULT_RENDER_COMMAND.to_string())
-    };
+    let render_command = require_or_default(
+        pandoc.render_command,
+        config_exists,
+        "pandoc-preview config is missing pandoc.render_command",
+        || DEFAULT_RENDER_COMMAND.to_string(),
+    );
     let parsed_flags = crate::command_flags::parse_render_command(&render_command);
-    let templates_dir = if config_exists {
-        PathBuf::from(
-            pandoc
-                .templates_dir
-                .expect("pandoc-preview config is missing pandoc.templates_dir"),
-        )
-    } else {
-        pandoc
-            .templates_dir
-            .map(PathBuf::from)
-            .unwrap_or_else(default_templates_dir)
-    };
-    let filters_dir = if config_exists {
-        PathBuf::from(
-            pandoc
-                .filters_dir
-                .expect("pandoc-preview config is missing pandoc.filters_dir"),
-        )
-    } else {
-        pandoc
-            .filters_dir
-            .map(PathBuf::from)
-            .unwrap_or_else(default_filters_dir)
-    };
-    let debounce_ms = if config_exists {
-        render
-            .debounce_ms
-            .expect("pandoc-preview config is missing render.debounce_ms")
-    } else {
-        render.debounce_ms.unwrap_or(750)
-    };
-    let timeout_ms = if config_exists {
-        render
-            .timeout_ms
-            .expect("pandoc-preview config is missing render.timeout_ms")
-    } else {
-        render.timeout_ms.unwrap_or(30_000)
-    };
-    let restore_last_file = if config_exists {
-        render
-            .restore_last_file
-            .expect("pandoc-preview config is missing render.restore_last_file")
-    } else {
-        render.restore_last_file.unwrap_or(true)
-    };
+    let templates_dir = PathBuf::from(require_or_default(
+        pandoc.templates_dir,
+        config_exists,
+        "pandoc-preview config is missing pandoc.templates_dir",
+        || default_templates_dir().to_string_lossy().into_owned(),
+    ));
+    let filters_dir = PathBuf::from(require_or_default(
+        pandoc.filters_dir,
+        config_exists,
+        "pandoc-preview config is missing pandoc.filters_dir",
+        || default_filters_dir().to_string_lossy().into_owned(),
+    ));
+    let debounce_ms = require_or_default(
+        render.debounce_ms,
+        config_exists,
+        "pandoc-preview config is missing render.debounce_ms",
+        || 750,
+    );
+    let timeout_ms = require_or_default(
+        render.timeout_ms,
+        config_exists,
+        "pandoc-preview config is missing render.timeout_ms",
+        || 30_000,
+    );
+    let restore_last_file = require_or_default(
+        render.restore_last_file,
+        config_exists,
+        "pandoc-preview config is missing render.restore_last_file",
+        || true,
+    );
 
     let (last_file, is_temp_file) = try_restore_last_file(restore_last_file);
 
@@ -307,12 +217,26 @@ pub fn build_initial_state() -> AppState {
         launcher_command: None,
         recovered_from_backup: false,
         restore_last_file,
-        figures_storage_strategy: FiguresStorageStrategy::Relative,
-        figures_central_directory: None,
         plugins,
         recent_files: vec![],
         file_fingerprints: HashMap::new(),
         tool_state,
+    }
+}
+
+fn require_or_default<T, F>(
+    value: Option<T>,
+    config_exists: bool,
+    missing_message: &'static str,
+    default: F,
+) -> T
+where
+    F: FnOnce() -> T,
+{
+    if config_exists {
+        value.expect(missing_message)
+    } else {
+        value.unwrap_or_else(default)
     }
 }
 

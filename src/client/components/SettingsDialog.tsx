@@ -448,24 +448,18 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
                   </span>
                 </div>
 
-                <div className="flex flex-col gap-1.5 mt-2">
-                  <label
-                    htmlFor="central-figures-directory-input"
-                    className="text-xs font-semibold text-[#8fb8ff] tracking-wider uppercase"
-                  >
-                    Central Figures Directory
-                  </label>
-                  <input
-                    disabled
-                    id="central-figures-directory-input"
-                    className="w-full max-w-md rounded-md border border-[#2b2f38] bg-[#15171d] px-3.5 py-2 text-sm text-[#788190] outline-none transition-colors opacity-55"
-                    type="text"
-                    value="~/.pandoc/figures"
-                  />
-                  <span className="text-[11px] text-[#788190]">
-                    Managed centralized folder for TikZ, TikZ-CD, Xournal++, and
-                    Inkscape vector figures (Phase 3 Integration).
-                  </span>
+                <div className="mt-2 rounded-md border border-[#2b2f38] bg-[#15171d] p-3.5">
+                  <div className="text-xs font-semibold text-[#8fb8ff] tracking-wider uppercase">
+                    Figures Workflow
+                  </div>
+                  <p className="mt-2 text-[11px] leading-5 text-[#788190]">
+                    New diagrams and pasted images are saved beside the active document in
+                    <code className="mx-1 rounded bg-[#101218] px-1.5 py-0.5 text-[#c5cad3]">
+                      ./figures/
+                    </code>
+                    . The Figures Library scans the current workspace for those files so the
+                    app stays aligned with normal editor-relative asset paths.
+                  </p>
                 </div>
               </Tabs.Content>
 

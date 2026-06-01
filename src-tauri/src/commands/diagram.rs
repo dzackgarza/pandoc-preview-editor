@@ -4,9 +4,8 @@ use std::sync::Mutex;
 
 use tauri::State;
 
-use crate::config::{figures_central_dir, register_figure};
 use crate::fs_utils::{normalize_path, path_is_inside};
-use crate::state::{starter_template_for_tool, tool_id_for_ext, AppState, FiguresStorageStrategy};
+use crate::state::{starter_template_for_tool, tool_id_for_ext, AppState};
 
 // ─── diagram proxy ────────────────────────────────────────────────────────────
 
@@ -74,16 +73,7 @@ pub fn create_diagram_file(
     if s.is_temp_file || s.file.is_none() || s.file.as_ref() != Some(&resolved_doc) {
         return Err("save the document before adding figures".into());
     }
-    let is_central = matches!(s.figures_storage_strategy, FiguresStorageStrategy::Central);
-    let figures_dir = if is_central {
-        figures_central_dir(&s)
-    } else {
-        s.file
-            .as_ref()
-            .and_then(|f| f.parent())
-            .unwrap_or(Path::new("."))
-            .join("figures")
-    };
+    let figures_dir = resolved_doc.parent().unwrap_or(Path::new(".")).join("figures");
     let figure_path = normalize_path(&figures_dir.join(&filename));
     if !path_is_inside(&figures_dir, &figure_path) {
         return Err("figure path escapes figures directory".into());
@@ -94,16 +84,7 @@ pub fn create_diagram_file(
     fs::create_dir_all(&figures_dir).map_err(|e| e.to_string())?;
     let template = starter_template_for_tool(&kind);
     fs::write(&figure_path, template).map_err(|e| e.to_string())?;
-
-    if is_central {
-        register_figure(&s, &filename, &figure_path, &kind);
-    }
-
-    let relative_path = if is_central {
-        figure_path.to_string_lossy().into_owned()
-    } else {
-        format!("figures/{}", filename)
-    };
+    let relative_path = format!("figures/{}", filename);
     Ok(serde_json::json!({
         "ok": true,
         "absolutePath": figure_path.to_string_lossy(),

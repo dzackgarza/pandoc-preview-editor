@@ -82,7 +82,7 @@ pub fn should_ignore(workspace_root: &Path, absolute_path: &Path) -> bool {
     let client_path = to_client_path(workspace_root, absolute_path);
     client_path
         .split('/')
-        .any(|part| IGNORE_NAMES.contains(&part))
+        .any(|part| part.starts_with('.') || IGNORE_NAMES.contains(&part))
 }
 
 pub fn is_text_like_file(path: &Path) -> bool {
@@ -257,6 +257,30 @@ mod tests {
             resolve_inside(Path::new("/ws"), "").unwrap(),
             PathBuf::from("/ws")
         );
+    }
+
+    #[test]
+    fn should_ignore_hidden_path_segments() {
+        assert!(should_ignore(
+            Path::new("/ws"),
+            Path::new("/ws/.hidden.md")
+        ));
+        assert!(should_ignore(
+            Path::new("/ws"),
+            Path::new("/ws/nested/.secret/file.md")
+        ));
+    }
+
+    #[test]
+    fn should_ignore_named_debris_directories() {
+        assert!(should_ignore(
+            Path::new("/ws"),
+            Path::new("/ws/node_modules/pkg/index.js")
+        ));
+        assert!(!should_ignore(
+            Path::new("/ws"),
+            Path::new("/ws/nested/file.md")
+        ));
     }
 
     #[test]

@@ -12,56 +12,10 @@ use crate::fs_utils::{
 };
 use crate::state::AppState;
 
-// ─── helpers ──────────────────────────────────────────────────────────────────
-
 pub(crate) fn track_recent(recent: &mut Vec<PathBuf>, path: &Path) {
     recent.retain(|p| p != path);
     recent.insert(0, path.to_path_buf());
     recent.truncate(10);
-}
-
-fn collect_markdown_files(workspace_root: &Path, dir: &Path) -> Vec<serde_json::Value> {
-    let mut results = vec![];
-    let entries = match fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return results,
-    };
-    let mut children: Vec<_> = entries.flatten().collect();
-    children.sort_by_key(|e| e.file_name());
-    for entry in children {
-        let abs = entry.path();
-        if should_ignore(workspace_root, &abs) {
-            continue;
-        }
-        if abs.is_dir() {
-            results.extend(collect_markdown_files(workspace_root, &abs));
-        } else if abs.is_file() && is_markdown_file(&abs) {
-            let path = to_client_path(workspace_root, &abs);
-            let name = abs
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            let dir_part = {
-                let d = path
-                    .rsplit('/')
-                    .skip(1)
-                    .collect::<Vec<_>>()
-                    .into_iter()
-                    .rev()
-                    .collect::<Vec<_>>()
-                    .join("/");
-                d
-            };
-            results.push(serde_json::json!({
-                "path": path,
-                "absolutePath": abs.to_string_lossy(),
-                "name": name,
-                "dir": dir_part,
-                "recent": false,
-            }));
-        }
-    }
-    results
 }
 
 // ─── Tauri commands ───────────────────────────────────────────────────────────
@@ -361,79 +315,6 @@ pub fn list_files(
 }
 
 #[tauri::command]
-pub fn quick_open(
-    q: Option<String>,
-    state: State<'_, Mutex<AppState>>,
-) -> Result<serde_json::Value, String> {
-    let s = state.lock().unwrap();
-    let workspace_root = s.workspace_root();
-    let query = q.unwrap_or_default().trim().to_lowercase();
-
-    let workspace_entries = collect_markdown_files(&workspace_root, &workspace_root);
-
-    let recent_entries: Vec<serde_json::Value> = s
-        .recent_files
-        .iter()
-        .filter(|p| {
-            path_is_inside(&workspace_root, p)
-                && p.exists()
-                && p.is_file()
-                && is_markdown_file(p)
-                && !should_ignore(&workspace_root, p)
-        })
-        .map(|p| {
-            let path = to_client_path(&workspace_root, p);
-            let name = p
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            let dir_part = path
-                .rsplit('/')
-                .skip(1)
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .collect::<Vec<_>>()
-                .join("/");
-            serde_json::json!({
-                "path": path,
-                "absolutePath": p.to_string_lossy(),
-                "name": name,
-                "dir": dir_part,
-                "recent": true,
-            })
-        })
-        .collect();
-
-    let recent_paths: std::collections::HashSet<String> = recent_entries
-        .iter()
-        .filter_map(|e| e["path"].as_str().map(String::from))
-        .collect();
-
-    let matches = |entry: &serde_json::Value| -> bool {
-        if query.is_empty() {
-            return true;
-        }
-        let name = entry["name"].as_str().unwrap_or("").to_lowercase();
-        let path = entry["path"].as_str().unwrap_or("").to_lowercase();
-        name.contains(&query) || path.contains(&query)
-    };
-
-    let mut entries: Vec<serde_json::Value> =
-        recent_entries.into_iter().filter(|e| matches(e)).collect();
-    entries.extend(
-        workspace_entries
-            .into_iter()
-            .filter(|e| !recent_paths.contains(e["path"].as_str().unwrap_or("")) && matches(e)),
-    );
-
-    Ok(serde_json::json!({
-        "root": workspace_root.to_string_lossy(),
-        "entries": entries,
-    }))
-}
-
-#[tauri::command]
 pub fn file_content(
     path: String,
     state: State<'_, Mutex<AppState>>,
@@ -556,9 +437,9 @@ pub async fn quick_open_spawn(
     let cmd = if let Some(c) = launcher_cmd {
         c
     } else {
-        let has_rofi = Path::new("/usr/bin/rofi").exists() || Path::new("/bin/rofi").exists();
-        let has_dmenu = Path::new("/usr/bin/dmenu").exists() || Path::new("/bin/dmenu").exists();
-        let has_fd = Path::new("/usr/bin/fd").exists() || Path::new("/bin/fd").exists();
+        let has_rofi = which::which("rofi").is_ok();
+        let has_dmenu = which::which("dmenu").is_ok();
+        let has_fd = which::which("fd").is_ok();
         let finder = if has_fd {
             "fd -e md -t f"
         } else {
@@ -569,7 +450,7 @@ pub async fn quick_open_spawn(
         } else if has_dmenu {
             format!("{} | dmenu -i -p \"Quick Open:\"", finder)
         } else {
-            format!("{} | dmenu -i -p \"Quick Open:\"", finder)
+            return Err("quick open requires either rofi or dmenu to be installed".into());
         }
     };
 

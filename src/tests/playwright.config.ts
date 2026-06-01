@@ -1,20 +1,26 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 export default defineConfig({
   testDir: './e2e',
-  timeout: 30000,
+  timeout: 120000,
   retries: 0,
   workers: 1,
   fullyParallel: false,
   webServer: {
-    command: 'npx vite',
+    command: 'npx vite --host localhost --port 5173',
+    cwd: repoRoot,
     port: 5173,
-    reuseExistingServer: true,
+    reuseExistingServer: false,
     timeout: 30000,
   },
   projects: [
     {
       name: 'browser-smoke',
+      testMatch: /app\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
         mode: 'browser',
@@ -22,12 +28,14 @@ export default defineConfig({
     },
     {
       name: 'tauri',
+      testMatch: /desktop-.*\.spec\.ts/,
       use: {
         mode: 'tauri',
       } as any,
     },
   ],
   use: {
+    baseURL: 'http://localhost:5173',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },

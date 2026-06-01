@@ -1,139 +1,55 @@
-# Architectural Audit Report: pandoc-preview
+# Current Architecture Report: pandoc-preview
 
-This report provides a strict, professional audit of the `pandoc-preview` codebase using the **reviewing-llm-code** operational skill. It analyzes implementation quality under the hood, identifying patterns of slop, structural debt, and event-loop blocking beneath user-visible correct behavior.
+This branch is no longer the older React + Express prototype described by earlier audit notes. The live app is a **Tauri-first** editor: the React client talks directly to the Rust backend through Tauri `invoke` commands, and preview rendering/file operations are owned by Rust rather than an HTTP server layer.
 
-------------------------------------------------------------------------
+## Current shape
 
-## 1. Synthesis Gate
+- **Frontend:** React client in `src/client/`, with `App.tsx` acting as the state/integration layer and major UI pieces extracted into components such as `EditorPane`, `PreviewPane`, `SettingsDialog`, `ExplorerDrawer`, and `TopMenuBar`.
+- **Backend:** Rust commands under `src-tauri/src/commands/`, registered from `commands/mod.rs`.
+- **Renderer/config flow:** the backend owns config loading, renderer command parsing, save/backup, plugin execution, and workspace/file identity.
+- **Asset workflow:** templates and filters remain centralized under the configured Pandoc directories; figures and pasted images now follow the document-relative `./figures/` workflow used by the app and docs.
 
-> **"The LLM code is untrustworthy because it repeatedly uses monolithic client-side file structures and event-loop-blocking synchronous filesystem calls to make settings modifications and quick-open searches look verified, while the repository actually owns a clean, non-blocking React and Express system design."**
+## Resolved findings that should no longer be treated as live
 
-> **"The strongest live goal is establishing a highly responsive, modular, and non-blocking live preview editor; the current proof loop does not prove that goal because the integration tests rely on fake proof surfaces—specifically, timing assertions that do not correspond to any observed bug—completely masking the massive synchronous event-loop freezes on quick-open searches, background connection leaks, and monolithic client file bloating; the mess was caused by an agent prioritizing rapid feature expansion and 'checkbox' correctness (cramming all features into a single React file and using synchronous recursive filesystem APIs inside endpoints) over clean modular architecture and non-blocking asynchronous event loop discipline."**
+The following older review claims are stale:
 
-------------------------------------------------------------------------
+1. **“App.tsx is a 1600+ line god object.”** The file is still the app coordination layer, but the major presentation/dialog surfaces have already been extracted into dedicated components.
+2. **“The app uses an Express/HTTP preview pipeline with regex HTML rewriting.”** That server layer is gone in the live Tauri implementation.
+3. **“Quick open blocks the Node event loop with synchronous traversal.”** The Node/Express event-loop framing no longer matches the architecture.
+4. **“Autosave spams HTTP requests.”** Backup now goes through Tauri IPC rather than client-to-server POST traffic.
+5. **“Timing-assertion responsiveness tests prove the architecture.”** The old timing-theater test file is gone.
 
-## 2. Priority Calibration
+## Live implementation-quality cleanup completed on this branch
 
-The block to trustworthy progress is at **Layer 4: Cleanup, maintainability, and architectural debt**.
+This branch now removes the remaining backend slop that was still real in the live code:
 
-While the codebase successfully executes correct happy-path behavior and passes E2E browser tests, it contains deep implementation-quality defects: freezing the server on real workspaces due to synchronous recursive disk I/O, thrashing the React render tree due to a monolithic god component, and spamming the network on every keystroke.
+1. **Dead Tauri command surfaces removed.**
+   - Removed registered-but-unreachable commands for the older quick-open/filter-management path.
 
-Our recent implementation of the **FilterSettingsModal** and **DiagramModal** represents a major architectural remediation—separating modal triggers, encapsulating state, and wrapping client-side operations in modular files.
+2. **Figures workflow brought back in line with the stated architecture.**
+   - Removed the inert “central figures directory” scaffold that had no activation path.
+   - Diagram creation and pasted-image saving now consistently target document-relative `./figures/`.
+   - The Figures Library now scans the current workspace for those figure files instead of depending on a dead central registry path.
 
-------------------------------------------------------------------------
+3. **Config bootstrap repetition reduced.**
+   - The repeated “strict when config exists, default otherwise” parsing pattern is now centralized through a helper instead of being copy-pasted field by field.
 
-## 3. Audit Findings
+4. **Tool probing and launcher selection tightened.**
+   - Tool availability now uses `which` instead of a bespoke `$PATH` existence probe.
+   - Quick open now fails explicitly when neither `rofi` nor `dmenu` exists instead of pretending `dmenu` is available.
 
-## God Objects and Unsegmented Service Interfaces
+## Forward-facing guidance
 
-Pattern: God objects and monolithic grouping of unrelated responsibilities into single files rather than using clean, single-responsibility components.
+- Treat the app as a **Rust-backed desktop editor**, not as a web server with a browser client.
+- Treat `App.tsx` as the orchestration boundary, not as a dumping ground for new UI leaves.
+- Keep figure/asset behavior aligned with **document-relative paths** and the save gate.
+- Do not add new backend commands unless the client has a real caller and proof loop.
+- Prefer existing dependencies and shared helpers over bespoke path-walking, registry, or command-detection code.
 
-Concrete evidence:
+## Current proof loop
 
-- `[src/client/App.tsx:1-1662]` prior to modal refactoring. The entire React frontend (explorer drawers, split layouts, menubars, status footers, preferences, quick open dialogs) was co-located inside a single massive file with zero division of concerns.
-- `[src/client/App.tsx:640-747]` inline instantiation of five different complex UI dialogues and drawers, forcing the parent component to manage 14+ separate state slices and trigger cascading render thrashes.
+- `just typecheck`
+- `cargo test --manifest-path src-tauri/Cargo.toml`
+- `just test`
 
-Why this matters:
-
-This breaks the core component abstraction of React. Monolithic components of this scale create massive re-render overhead, spaghetti state propagation, and extreme cognitive load. Any minor edit to one UI dialogue has a huge blast radius, threatening unrelated app views and rendering future modifications fragile.
-
-Failure mode: `structural-failures.md -> Slop accretion / God-Object Bloat`
-
-------------------------------------------------------------------------
-
-## Needless Imperative Complexity (Reinventing fzf from Scratch)
-
-Pattern: Hand-rolling recursive synchronous directory scans on the main event-loop thread instead of using non-blocking asynchronous calls or calling a mature system dependency.
-
-Concrete evidence:
-
-- `[src/server/index.ts:50-65]` `collectMarkdownFiles` recursively calling `readdirSync` and `statSync` synchronously.
-- `[src/server/index.ts:368-371]` `/api/files/quick-open` invoking `collectMarkdownFiles` synchronously inside the query handler on every single keystroke.
-
-Why this matters:
-
-This is a textbook violation of **Dependency Aversion**. The agent attempted to reinvent a filesystem indexer and fuzzy matcher (like `fzf` or `fast-glob`) from scratch on the main thread. Because Node.js is single-threaded, executing recursive synchronous disk I/O on the Express server's main thread blocks all incoming and outgoing event-loop traffic. On a workspace with more than a few dozen files, typing inside the quick-open search box freezes the entire server, dropping editor keystrokes and delaying previews.
-
-Failure mode: `coding-failures.md -> Corner-case blindness / Performance starvation`
-
-------------------------------------------------------------------------
-
-## Test Inflation and Timing Assertion Theater
-
-Pattern: Tests and assertions inflated to look substantial while proving no real owned behavior; creating hallucinated mock-performance boundaries that the user never requested.
-
-Concrete evidence:
-
-- `[src/tests/responsiveness.spec.ts]` E2E tests asserting arbitrary timing cutoffs (e.g. milliseconds elapsed) to establish "responsiveness" assertions.
-
-Why this matters:
-
-Asserting on render-timing metrics is pure **Test Theater**. Since the user never requested a specific performance metric and there has never been an observed bug associated with timing speed, the agent invented these timing assertions to make the test suite look thorough and "verified." This timing theater is fragile (vulnerable to transient system load flakiness) while proving nothing about actual structural correctness, completely masking the blocking single-threaded event loop architecture.
-
-Failure mode: `testing-failures.md -> QC appeasement / Test inflation`
-
-------------------------------------------------------------------------
-
-## Regex Against Semantic Formats
-
-Pattern: Flattening a rich, hierarchical semantic document (HTML) into a flat byte stream and rewriting asset paths using fragile regular expressions rather than an AST or DOM parser.
-
-Concrete evidence:
-
-- `[src/server/index.ts:79-86]` `withPreviewAssetUrls` using flat string search and regex matching on HTML.
-  ``` typescript
-  function withPreviewAssetUrls(html: string) {
-    return html.replace(
-      /\bsrc=(["'])(?![A-Za-z][A-Za-z\d+.-]*:|\/|#)([^"']+)\1/g,
-      (_match, quote: string, url: string) =>
-        `src=${quote}/api/preview-assets?path=${encodeURIComponent(url)}${quote}`,
-    );
-  }
-  ```
-
-Why this matters:
-
-Regular expressions are fragile when matched against hierarchical formats like HTML. This implementation breaks on multi-line attributes, nested script tags containing `src` tokens, relative links with custom protocols, or complex markup layouts, bypassing proper AST security and boundary validations.
-
-Failure mode: `addressing-shallow-work -> Regex-on-HTML`
-
-------------------------------------------------------------------------
-
-## Spaghetti Data Flow (Autosave Network Spam)
-
-Pattern: Flooding the network with repeated Express POST requests via a tight client-side autosave debounce loop on every single keystroke instead of utilizing local storage or natural edit boundaries.
-
-Concrete evidence:
-
-- `[src/client/App.tsx:202-212]` `useEffect` firing `/api/backup` on a tight 500ms debounce loop on every keystroke.
-  ``` typescript
-  useEffect(() => {
-    if (!isTempFile || window.__TEMP_BACKUP_FILE == null) return;
-    const handle = window.setTimeout(() => {
-      void fetch('/api/backup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ markdown: markdownText }),
-      });
-    }, 500);
-    return () => window.clearTimeout(handle);
-  }, [isTempFile, markdownText]);
-  ```
-
-Why this matters:
-
-This debounced network backup spam creates excessive HTTP chatter between browser and server, introducing latency, spiking server process usage on rapid typing, and draining resources unnecessarily when a non-network-bound local storage boundary would be more robust.
-
-Failure mode: `coding-failures.md -> Scope explosion / Spaghetti data flow`
-
-------------------------------------------------------------------------
-
-## 4. Required Negative Findings
-
-- Searched: `src/client/` and `src/server/` for any modular sub-component files, asynchronous directory traversal algorithms, or AST-based HTML rewriters.
-- Found:
-  - Prior to our recent diagram and filter settings modal work, no modular UI sub-components existed. All UI code sat monolithic inside `App.tsx`.
-  - All directory scans and workspace listings are strictly synchronous and event-loop-blocking.
-- Conclusion: I believe the codebase historically favored immediate "checkbox" test-passing measurements over robust architectural boundaries, deferring event-loop and layout health in favor of functional simplicity.
-- Confidence: High
-- Gaps: None.
+The browser-smoke proof now runs against an explicitly repo-rooted Vite server plus explicit Tauri IPC mocks, so the forward-facing test loop is green again instead of depending on an ambient dev server or tauri-playwright browser-mode quirks.

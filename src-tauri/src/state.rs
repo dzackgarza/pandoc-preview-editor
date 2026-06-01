@@ -28,11 +28,6 @@ pub struct FigureEntry {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct FiguresRegistry {
-    pub figures: Vec<FigureEntry>,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FileFingerprint {
     #[serde(rename = "mtimeMs")]
     pub mtime_ms: u64,
@@ -55,18 +50,10 @@ pub struct AppState {
     pub launcher_command: Option<String>,
     pub recovered_from_backup: bool,
     pub restore_last_file: bool,
-    pub figures_storage_strategy: FiguresStorageStrategy,
-    pub figures_central_directory: Option<PathBuf>,
     pub plugins: Vec<PluginManifest>,
     pub recent_files: Vec<PathBuf>,
     pub file_fingerprints: HashMap<String, FileFingerprint>,
     pub tool_state: HashMap<String, ToolEntry>,
-}
-
-#[derive(Debug, Clone)]
-pub enum FiguresStorageStrategy {
-    Relative,
-    Central,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -152,14 +139,6 @@ pub fn probe_tool_state() -> HashMap<String, ToolEntry> {
     map
 }
 
-fn tool_ext(tool_id: &str) -> &str {
-    DIAGRAM_TOOLS
-        .iter()
-        .find(|t| t.id == tool_id)
-        .map(|t| t.ext.as_str())
-        .unwrap_or(".svg")
-}
-
 pub fn tool_id_for_ext(ext: &str) -> &str {
     DIAGRAM_TOOLS
         .iter()
@@ -177,12 +156,5 @@ pub fn starter_template_for_tool(tool_id: &str) -> &str {
 }
 
 fn is_command_available(cmd: &str) -> bool {
-    let path_var = std::env::var("PATH").unwrap_or_default();
-    for dir in path_var.split(':') {
-        let full = PathBuf::from(dir).join(cmd);
-        if full.exists() {
-            return true;
-        }
-    }
-    false
+    which::which(cmd).is_ok()
 }

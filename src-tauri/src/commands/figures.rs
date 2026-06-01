@@ -1,14 +1,16 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::time::UNIX_EPOCH;
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use tauri::State;
 use uuid::Uuid;
+use walkdir::WalkDir;
 
-use crate::config::{figures_central_dir, load_figures_registry, register_figure};
 use crate::fs_utils::{image_extension, normalize_path, path_is_inside, sanitize_figure_filename};
-use crate::state::{AppState, FiguresStorageStrategy};
+use crate::fs_utils::should_ignore;
+use crate::state::{tool_id_for_ext, AppState, FigureEntry};
 
 // ─── figures assets ───────────────────────────────────────────────────────────
 
@@ -33,15 +35,7 @@ pub fn save_figure_asset(
     if s.file.is_none() || s.is_temp_file || s.file.as_ref() != Some(&target_doc) {
         return Err("save the document before adding figures".into());
     }
-    let is_central = matches!(s.figures_storage_strategy, FiguresStorageStrategy::Central);
-    let figures_dir = if is_central {
-        figures_central_dir(&s)
-    } else {
-        target_doc
-            .parent()
-            .unwrap_or(Path::new("."))
-            .join("figures")
-    };
+    let figures_dir = target_doc.parent().unwrap_or(Path::new(".")).join("figures");
     let figure_name = filename
         .as_deref()
         .filter(|n| !n.is_empty())
@@ -57,21 +51,8 @@ pub fn save_figure_asset(
     fs::create_dir_all(&figures_dir).map_err(|e| e.to_string())?;
     let bytes = B64.decode(&content_base64).map_err(|e| e.to_string())?;
     fs::write(&figure_path, &bytes).map_err(|e| e.to_string())?;
-
-    if is_central {
-        register_figure(&s, &figure_name, &figure_path, "clipboard");
-    }
-
-    let relative_path = if is_central {
-        figure_path.to_string_lossy().into_owned()
-    } else {
-        format!("figures/{}", figure_name)
-    };
-    let markdown = if is_central {
-        format!("![]({})", relative_path)
-    } else {
-        format!("![](./{relative_path})")
-    };
+    let relative_path = format!("figures/{}", figure_name);
+    let markdown = format!("![](./{relative_path})");
     Ok(serde_json::json!({
         "ok": true,
         "path": figure_path.to_string_lossy(),
@@ -83,7 +64,68 @@ pub fn save_figure_asset(
 #[tauri::command]
 pub fn figures_registry(state: State<'_, Mutex<AppState>>) -> Result<serde_json::Value, String> {
     let s = state.lock().unwrap();
-    let central_dir = figures_central_dir(&s);
-    let registry = load_figures_registry(&central_dir);
-    Ok(serde_json::to_value(registry).unwrap())
+    let workspace_root = s.workspace_root();
+    drop(s);
+
+    let mut figures: Vec<FigureEntry> = WalkDir::new(&workspace_root)
+        .sort_by_file_name()
+        .into_iter()
+        .filter_entry(|entry| !should_ignore(&workspace_root, entry.path()))
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let path = entry.path();
+            if !path.is_file() || !is_workspace_figure(&workspace_root, path) {
+                return None;
+            }
+            let kind = figure_kind(path)?;
+            let created_at = fs::metadata(path)
+                .ok()
+                .and_then(|meta| meta.modified().ok())
+                .and_then(|mtime| mtime.duration_since(UNIX_EPOCH).ok())
+                .map(|duration| duration.as_millis().to_string())
+                .unwrap_or_else(|| "0".to_string());
+            Some(FigureEntry {
+                id: path.to_string_lossy().into_owned(),
+                name: path.file_name()?.to_string_lossy().into_owned(),
+                path: path.to_string_lossy().into_owned(),
+                kind,
+                created_at,
+                documents: vec![],
+            })
+        })
+        .collect();
+
+    figures.sort_by(|left, right| {
+        right
+            .created_at
+            .cmp(&left.created_at)
+            .then_with(|| left.path.cmp(&right.path))
+    });
+
+    Ok(serde_json::json!({ "figures": figures }))
+}
+
+fn is_workspace_figure(workspace_root: &Path, path: &Path) -> bool {
+    path.strip_prefix(workspace_root)
+        .ok()
+        .map(|relative| {
+            relative
+                .components()
+                .any(|component| component.as_os_str() == "figures")
+                && figure_kind(path).is_some()
+        })
+        .unwrap_or(false)
+}
+
+fn figure_kind(path: &Path) -> Option<String> {
+    let ext = path
+        .extension()
+        .map(|value| format!(".{}", value.to_string_lossy().to_lowercase()))?;
+    match ext.as_str() {
+        ".png" | ".jpg" | ".jpeg" | ".gif" | ".webp" => Some("clipboard".into()),
+        ".svg" | ".tikz" | ".drawio" | ".xoj" | ".xopp" | ".ipe" => {
+            Some(tool_id_for_ext(&ext).to_string())
+        }
+        _ => None,
+    }
 }

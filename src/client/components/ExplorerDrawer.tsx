@@ -35,6 +35,12 @@ interface FigureEntry {
   documents: string[];
 }
 
+function formatFigureDate(value: string): string {
+  const numericValue = Number(value);
+  const date = Number.isFinite(numericValue) ? new Date(numericValue) : new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Unknown date' : date.toLocaleDateString();
+}
+
 export function ExplorerDrawer({
   currentFile,
   onOpenFile,
@@ -174,11 +180,11 @@ export function ExplorerDrawer({
               {figuresLoading ? (
                 <div className="flex h-32 flex-col items-center justify-center gap-2 text-[#788190] text-xs">
                   <Loader2 className="h-5 w-5 animate-spin text-[#3b82f6]" />
-                  <span>Scanning figures database...</span>
+                  <span>Scanning workspace figures...</span>
                 </div>
               ) : filteredFigures.length === 0 ? (
                 <div className="flex h-32 flex-col items-center justify-center text-center text-[#788190] italic text-xs p-4">
-                  No registered figures found.
+                  No figures found under workspace <code>figures/</code> directories.
                 </div>
               ) : (
                 filteredFigures.map((fig) => (
@@ -205,7 +211,7 @@ export function ExplorerDrawer({
                     </div>
                     <div className="flex items-center justify-between mt-2 pt-2 border-t border-[#2b2f38]/30">
                       <span className="text-[9px] text-[#788190] font-medium">
-                        {new Date(fig.createdAt).toLocaleDateString()}
+                        {formatFigureDate(fig.createdAt)}
                       </span>
                       <button
                         type="button"

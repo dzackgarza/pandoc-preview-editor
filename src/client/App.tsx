@@ -844,15 +844,19 @@ export function App() {
             orientation="horizontal"
           >
             <Panel id="editor-pane-panel" minSize="24%" defaultSize="56%">
-              <EditorPane
-                fileName={currentFile ?? ''}
-                markdown={markdownText}
-                onChange={updateMarkdown}
-                onCreateEditor={(view) => {
-                  editorViewRef.current = view;
-                }}
-                onSave={saveCurrent}
-              />
+                <EditorPane
+                  fileName={currentFile ?? ''}
+                  markdown={markdownText}
+                  onChange={updateMarkdown}
+                  onCreateEditor={(view) => {
+                    editorViewRef.current = view;
+                    if ('__PW_ACTIVE__' in window) {
+                      (window as typeof window & { __PANDOC_PREVIEW_EDITOR_VIEW__?: EditorView }).__PANDOC_PREVIEW_EDITOR_VIEW__ =
+                        view;
+                    }
+                  }}
+                  onSave={saveCurrent}
+                />
             </Panel>
             <Separator
               id="editor-preview-separator"
