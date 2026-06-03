@@ -29,7 +29,7 @@ async function ensureExplorerEntryVisible(
   }
 }
 
-async function clickExplorerRow(explorerDrawer: any, label: string) {
+async function clickExplorerRow(explorerDrawer: TauriLocator, label: string) {
   await explorerDrawer.evaluate(`
     (el) => {
       const target = Array.from(el.querySelectorAll('button')).find((button) => {

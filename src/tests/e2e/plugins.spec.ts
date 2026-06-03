@@ -90,7 +90,7 @@ test.describe('plugin API', () => {
       });
       // If it resolves instead of rejecting, ok must be false
       expect(true).toBe(false);
-    } catch (error: any) {
+    } catch (error: unknown) {
       expect(String(error)).toContain('save the document first');
     }
   });

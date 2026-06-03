@@ -65,7 +65,7 @@ test.describe('diagram toolbar and filter workflows', () => {
       });
       // If it resolves, it must indicate failure
       expect(true).toBe(false);
-    } catch (error: any) {
+    } catch (error: unknown) {
       expect(String(error)).toContain('save the document');
     }
   });
