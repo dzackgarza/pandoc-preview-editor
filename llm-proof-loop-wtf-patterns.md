@@ -16,16 +16,14 @@ The recurring failure mode is proof laundering: the agent adds artifacts that ma
 
 ## Required Response
 
-Treat these as evidence that the proof loop is untrustworthy, not as isolated bugs.
-Reconstruct the likely agent move:
+Treat these as evidence that the proof loop is untrustworthy, not as isolated bugs. Reconstruct the likely agent move:
 
 - What user-level outcome was requested?
 - What artifact did the agent create to look responsive?
 - What real boundary does the repository actually need proved?
 - What trivial alternative would prove the boundary directly?
 
-Then triage by restoring the canonical proof surface before touching feature code.
-Do not add more mock tests, prose, status labels, or triage reports until the repo's `just` path proves the real app boundary it claims to prove.
+Then triage by restoring the canonical proof surface before touching feature code. Do not add more mock tests, prose, status labels, or triage reports until the repo's `just` path proves the real app boundary it claims to prove.
 
 ## Verification
 
