@@ -260,4 +260,9 @@ test.afterAll(async () => {
   killOrphanedTauriProcesses();
 });
 
-export const expect = base.expect;
+// @srsholmes/tauri-playwright v0.2.2 does not export the PageLike interface
+// used in its Expect<> matchers (toHaveURL, toHaveTitle). Re-exporting
+// base.expect triggers TS4023 because the inferred type references an
+// unexported symbol. The runtime value is correct; this widens to avoid
+// the declaration-emit blocker.
+export const expect = base.expect as any;
