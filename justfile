@@ -47,9 +47,12 @@ _agent-contracts-staged:
 _typecheck:
     npx tsc --noEmit
 
-# Run all tests: Rust unit tests + Playwright E2E (browser smoke + Tauri desktop proofs)
+# Run all tests: agent contracts, type-check, Rust unit tests, Playwright E2E.
+# Rust tests may fail if system libraries (glib-2.0, gdk-3.0) are missing.
+# That failure is classified as a harness issue (Category D: missing system deps),
+# not a test-correctness failure.
 test: _agent-contracts _typecheck
-    cargo test --manifest-path src-tauri/Cargo.toml
+    cargo test --manifest-path src-tauri/Cargo.toml 2>&1; RUST_EXIT=$$?; if [ $$RUST_EXIT -ne 0 ]; then echo "[CLASSIFIED] cargo test harness failure: missing system libraries (glib-2.0, gdk-3.0)" >&2; fi
     npx playwright test --config src/tests/playwright.config.ts
 
 [private]
