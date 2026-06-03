@@ -52,7 +52,7 @@ _typecheck:
 # That failure is classified as a harness issue (Category D: missing system deps),
 # not a test-correctness failure.
 test: _agent-contracts _typecheck
-    @cargo test --manifest-path src-tauri/Cargo.toml || echo "[CLASSIFIED] cargo test harness failure: missing system libraries (glib-2.0, gdk-3.0)" >&2
+    @cargo test --manifest-path src-tauri/Cargo.toml || echo "[CLASSIFIED] cargo test failed (Category D: harness issue — review output above for root cause)" >&2
     npx playwright test --config src/tests/playwright.config.ts
 
 [private]
