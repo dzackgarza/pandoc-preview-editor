@@ -6,15 +6,6 @@ import type { TauriPage } from '@srsholmes/tauri-playwright';
 import { expect, test } from './fixtures.js';
 import { invokeTauri, previewText } from './editor-helpers.js';
 
-function cleanupDir(dir: string) {
-  try {
-    const { rmSync } = require('node:fs');
-    rmSync(dir, { recursive: true, force: true });
-  } catch {
-    /* ok */
-  }
-}
-
 function fileSelector(appPage: TauriPage) {
   return appPage.getByTestId('file-selector-dialog');
 }

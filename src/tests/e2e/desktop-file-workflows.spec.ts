@@ -1,39 +1,21 @@
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
+import type { TauriLocator } from '@srsholmes/tauri-playwright';
+
 import { expect, test } from './fixtures.js';
+import {
+  replaceEditorContents,
+  previewText,
+  saveViaFileSelector,
+  type AppPage,
+} from './editor-helpers.js';
 
-async function replaceEditorContents(appPage: any, text: string) {
-  await appPage.evaluate(`
-    (() => {
-      const view = window.__PANDOC_PREVIEW_EDITOR_VIEW__;
-      if (!view) {
-        throw new Error('Playwright editor hook is not available');
-      }
-      view.dispatch({
-        changes: {
-          from: 0,
-          to: view.state.doc.length,
-          insert: ${JSON.stringify(text)},
-        },
-      });
-    })()
-  `);
-}
-
-async function previewText(appPage: any) {
-  return appPage.locator('#preview').evaluate((element: HTMLIFrameElement) => {
-    return element.contentDocument?.body?.textContent ?? '';
-  });
-}
-
-async function saveViaFileSelector(appPage: any, absolutePath: string) {
-  await expect(appPage.getByTestId('file-selector-dialog')).toBeVisible();
-  await appPage.getByTestId('file-selector-input').fill(absolutePath);
-  await appPage.getByTestId('file-selector-save').click();
-}
-
-async function ensureExplorerEntryVisible(explorerDrawer: any, branchName: string, entryName: string) {
+async function ensureExplorerEntryVisible(
+  explorerDrawer: TauriLocator,
+  branchName: string,
+  entryName: string,
+) {
   const isVisibleScript = `
     (el) => Array.from(el.querySelectorAll('button')).some((button) => {
       return button.offsetParent !== null && button.textContent?.trim() === ${JSON.stringify(entryName)};
@@ -67,7 +49,11 @@ const savedFileTest = test.extend({
     mkdirSync(notesDir, { recursive: true });
 
     const documentPath = path.join(notesDir, 'proof.md');
-    writeFileSync(documentPath, '# Launch proof\n\nInitial content from disk.\n', 'utf8');
+    writeFileSync(
+      documentPath,
+      '# Launch proof\n\nInitial content from disk.\n',
+      'utf8',
+    );
     testEnv.writeSessionState(documentPath, false);
 
     await use(testEnv);
@@ -96,7 +82,10 @@ const explorerWorkflowTest = test.extend({
     );
     writeFileSync(path.join(testEnv.workspaceDir, '.hidden.md'), 'hidden', 'utf8');
     writeFileSync(path.join(ignoredDir, 'ignored.md'), 'ignored', 'utf8');
-    writeFileSync(path.join(testEnv.workspaceDir, 'image.bin'), Buffer.from([0, 255, 17, 99]));
+    writeFileSync(
+      path.join(testEnv.workspaceDir, 'image.bin'),
+      Buffer.from([0, 255, 17, 99]),
+    );
     testEnv.writeSessionState(proofPath, false);
 
     await use(testEnv);
@@ -105,87 +94,127 @@ const explorerWorkflowTest = test.extend({
 
 test.describe('desktop file workflows', () => {
   test.describe('saved-file launch, save, and reload', () => {
-    savedFileTest('keeps real file identity across edit, save, and reload', async ({
-      appPage,
-      testEnv,
-    }) => {
-      const documentPath = path.join(testEnv.workspaceDir, 'notes', 'proof.md');
-      const updatedMarkdown = '# Launch proof\n\nEdited from the real desktop workflow.\n';
+    savedFileTest(
+      'keeps real file identity across edit, save, and reload',
+      async ({ appPage, testEnv }) => {
+        const documentPath = path.join(testEnv.workspaceDir, 'notes', 'proof.md');
+        const updatedMarkdown =
+          '# Launch proof\n\nEdited from the real desktop workflow.\n';
 
-      await expect(appPage.getByTestId('editor')).toBeVisible();
-      await expect(appPage.locator('footer span[title]')).toHaveAttribute('title', documentPath);
-      await expect(appPage.locator('.cm-content')).toContainText('Initial content from disk.');
-      await expect.poll(() => previewText(appPage)).toContain('Launch proof');
-      await expect.poll(() => previewText(appPage)).toContain('Initial content from disk.');
+        await expect(appPage.getByTestId('editor')).toBeVisible();
+        await expect(appPage.locator('footer span[title]')).toHaveAttribute(
+          'title',
+          documentPath,
+        );
+        await expect(appPage.locator('.cm-content')).toContainText(
+          'Initial content from disk.',
+        );
+        await expect.poll(() => previewText(appPage)).toContain('Launch proof');
+        await expect
+          .poll(() => previewText(appPage))
+          .toContain('Initial content from disk.');
 
-      await replaceEditorContents(appPage, updatedMarkdown);
-      await expect(appPage.locator('#save-state')).toContainText('unsaved');
-      await expect.poll(() => previewText(appPage)).toContain(
-        'Edited from the real desktop workflow.',
-      );
+        await replaceEditorContents(appPage, updatedMarkdown);
+        await expect(appPage.locator('#save-state')).toContainText('unsaved');
+        await expect
+          .poll(() => previewText(appPage))
+          .toContain('Edited from the real desktop workflow.');
 
-      await appPage.locator('button[aria-label="Save"]').click();
-      await expect(appPage.locator('#save-state')).toContainText('saved');
-      await expect(appPage.locator('footer span[title]')).toHaveAttribute('title', documentPath);
-      await expect(readFileSync(documentPath, 'utf8')).toBe(updatedMarkdown);
+        await appPage.locator('button[aria-label="Save"]').click();
+        await expect(appPage.locator('#save-state')).toContainText('saved');
+        await expect(appPage.locator('footer span[title]')).toHaveAttribute(
+          'title',
+          documentPath,
+        );
+        await expect(readFileSync(documentPath, 'utf8')).toBe(updatedMarkdown);
 
-      await appPage.evaluate('window.location.reload()');
-      await expect(appPage.getByTestId('editor')).toBeVisible();
-      await expect(appPage.locator('#status')).toContainText('ready');
-      await expect(appPage.locator('footer span[title]')).toHaveAttribute('title', documentPath);
-      await expect(appPage.locator('.cm-content')).toContainText(
-        'Edited from the real desktop workflow.',
-      );
-      await expect.poll(() => previewText(appPage)).toContain(
-        'Edited from the real desktop workflow.',
-      );
-    });
+        await appPage.evaluate('window.location.reload()');
+        await expect(appPage.getByTestId('editor')).toBeVisible();
+        await expect(appPage.locator('#status')).toContainText('ready');
+        await expect(appPage.locator('footer span[title]')).toHaveAttribute(
+          'title',
+          documentPath,
+        );
+        await expect(appPage.locator('.cm-content')).toContainText(
+          'Edited from the real desktop workflow.',
+        );
+        await expect
+          .poll(() => previewText(appPage))
+          .toContain('Edited from the real desktop workflow.');
+      },
+    );
 
-    savedFileTest('save as keeps or moves the workspace root exactly', async ({
-      appPage,
-      testEnv,
-    }) => {
-      const insidePath = path.join(testEnv.workspaceDir, 'notes', 'inside-save-as.md');
-      const outsideDir = path.join(testEnv.rootDir, 'outside-workspace');
-      const outsidePath = path.join(outsideDir, 'outside-save-as.md');
+    savedFileTest(
+      'save as keeps or moves the workspace root exactly',
+      async ({ appPage, testEnv }) => {
+        const insidePath = path.join(
+          testEnv.workspaceDir,
+          'notes',
+          'inside-save-as.md',
+        );
+        const outsideDir = path.join(testEnv.rootDir, 'outside-workspace');
+        const outsidePath = path.join(outsideDir, 'outside-save-as.md');
 
-      mkdirSync(outsideDir, { recursive: true });
+        mkdirSync(outsideDir, { recursive: true });
 
-      await expect(appPage.getByTestId('editor')).toBeVisible();
-      await expect(appPage.locator('footer span[title]')).toHaveAttribute(
-        'title',
-        path.join(testEnv.workspaceDir, 'notes', 'proof.md'),
-      );
-      await expect.poll(() => previewText(appPage)).toContain('Initial content from disk.');
+        await expect(appPage.getByTestId('editor')).toBeVisible();
+        await expect(appPage.locator('footer span[title]')).toHaveAttribute(
+          'title',
+          path.join(testEnv.workspaceDir, 'notes', 'proof.md'),
+        );
+        await expect
+          .poll(() => previewText(appPage))
+          .toContain('Initial content from disk.');
 
-      await replaceEditorContents(appPage, '# Save As proof\n\nInside workspace target.\n');
-      await expect(appPage.locator('#save-state')).toContainText('unsaved');
-      await expect.poll(() => previewText(appPage)).toContain('Inside workspace target.');
-      await appPage.keyboard.press('Control+Shift+S');
-      await saveViaFileSelector(appPage, insidePath);
-      await expect(appPage.locator('#save-state')).toContainText('saved');
-      await expect(appPage.locator('footer span[title]')).toHaveAttribute('title', insidePath);
-      await expect(readFileSync(insidePath, 'utf8')).toBe(
-        '# Save As proof\n\nInside workspace target.\n',
-      );
+        await replaceEditorContents(
+          appPage,
+          '# Save As proof\n\nInside workspace target.\n',
+        );
+        await expect(appPage.locator('#save-state')).toContainText('unsaved');
+        await expect
+          .poll(() => previewText(appPage))
+          .toContain('Inside workspace target.');
+        await appPage.keyboard.press('Control+Shift+S');
+        await saveViaFileSelector(appPage, insidePath);
+        await expect(appPage.locator('#save-state')).toContainText('saved');
+        await expect(appPage.locator('footer span[title]')).toHaveAttribute(
+          'title',
+          insidePath,
+        );
+        await expect(readFileSync(insidePath, 'utf8')).toBe(
+          '# Save As proof\n\nInside workspace target.\n',
+        );
 
-      await appPage.locator('button[aria-label="File Explorer"]').click();
-      await expect(appPage.getByTestId('explorer-drawer')).toBeVisible();
-      await expect(appPage.getByTestId('explorer-drawer')).toContainText(testEnv.workspaceDir);
+        await appPage.locator('button[aria-label="File Explorer"]').click();
+        await expect(appPage.getByTestId('explorer-drawer')).toBeVisible();
+        await expect(appPage.getByTestId('explorer-drawer')).toContainText(
+          testEnv.workspaceDir,
+        );
 
-      await replaceEditorContents(appPage, '# Save As proof\n\nOutside workspace target.\n');
-      await expect(appPage.locator('#save-state')).toContainText('unsaved');
-      await expect.poll(() => previewText(appPage)).toContain('Outside workspace target.');
-      await appPage.keyboard.press('Control+Shift+S');
-      await saveViaFileSelector(appPage, outsidePath);
-      await expect(appPage.locator('#save-state')).toContainText('saved');
-      await expect(appPage.locator('footer span[title]')).toHaveAttribute('title', outsidePath);
-      await expect(readFileSync(outsidePath, 'utf8')).toBe(
-        '# Save As proof\n\nOutside workspace target.\n',
-      );
-      await expect(appPage.getByTestId('explorer-drawer')).toContainText(outsideDir);
-      await expect(appPage.getByTestId('explorer-drawer')).not.toContainText(testEnv.workspaceDir);
-    });
+        await replaceEditorContents(
+          appPage,
+          '# Save As proof\n\nOutside workspace target.\n',
+        );
+        await expect(appPage.locator('#save-state')).toContainText('unsaved');
+        await expect
+          .poll(() => previewText(appPage))
+          .toContain('Outside workspace target.');
+        await appPage.keyboard.press('Control+Shift+S');
+        await saveViaFileSelector(appPage, outsidePath);
+        await expect(appPage.locator('#save-state')).toContainText('saved');
+        await expect(appPage.locator('footer span[title]')).toHaveAttribute(
+          'title',
+          outsidePath,
+        );
+        await expect(readFileSync(outsidePath, 'utf8')).toBe(
+          '# Save As proof\n\nOutside workspace target.\n',
+        );
+        await expect(appPage.getByTestId('explorer-drawer')).toContainText(outsideDir);
+        await expect(appPage.getByTestId('explorer-drawer')).not.toContainText(
+          testEnv.workspaceDir,
+        );
+      },
+    );
   });
 
   test.describe('explorer ownership and dirty replacement', () => {
@@ -197,8 +226,13 @@ test.describe('desktop file workflows', () => {
         const explorerDrawer = appPage.getByTestId('explorer-drawer');
 
         await expect(appPage.getByTestId('editor')).toBeVisible();
-        await expect(appPage.locator('footer span[title]')).toHaveAttribute('title', proofPath);
-        await expect.poll(() => previewText(appPage)).toContain('Original proof content.');
+        await expect(appPage.locator('footer span[title]')).toHaveAttribute(
+          'title',
+          proofPath,
+        );
+        await expect
+          .poll(() => previewText(appPage))
+          .toContain('Original proof content.');
 
         await appPage.locator('button[aria-label="File Explorer"]').click();
         await expect(explorerDrawer).toBeVisible();
@@ -210,20 +244,36 @@ test.describe('desktop file workflows', () => {
 
         await ensureExplorerEntryVisible(explorerDrawer, 'nested', 'second.md');
         await clickExplorerRow(explorerDrawer, 'second.md');
-        await expect(appPage.locator('footer span[title]')).toHaveAttribute('title', secondPath);
-        await expect(appPage.locator('.cm-content')).toContainText('Second file from explorer.');
-        await expect.poll(() => previewText(appPage)).toContain('Second file from explorer.');
-        await expect(readFileSync(proofPath, 'utf8')).toBe('# Proof file\n\nOriginal proof content.\n');
+        await expect(appPage.locator('footer span[title]')).toHaveAttribute(
+          'title',
+          secondPath,
+        );
+        await expect(appPage.locator('.cm-content')).toContainText(
+          'Second file from explorer.',
+        );
+        await expect
+          .poll(() => previewText(appPage))
+          .toContain('Second file from explorer.');
+        await expect(readFileSync(proofPath, 'utf8')).toBe(
+          '# Proof file\n\nOriginal proof content.\n',
+        );
 
-        await replaceEditorContents(appPage, '# Second file\n\nSaved after explorer switch.\n');
+        await replaceEditorContents(
+          appPage,
+          '# Second file\n\nSaved after explorer switch.\n',
+        );
         await expect(appPage.locator('#save-state')).toContainText('unsaved');
-        await expect.poll(() => previewText(appPage)).toContain('Saved after explorer switch.');
+        await expect
+          .poll(() => previewText(appPage))
+          .toContain('Saved after explorer switch.');
         await appPage.locator('button[aria-label="Save"]').click();
         await expect(appPage.locator('#save-state')).toContainText('saved');
         await expect(readFileSync(secondPath, 'utf8')).toBe(
           '# Second file\n\nSaved after explorer switch.\n',
         );
-        await expect(readFileSync(proofPath, 'utf8')).toBe('# Proof file\n\nOriginal proof content.\n');
+        await expect(readFileSync(proofPath, 'utf8')).toBe(
+          '# Proof file\n\nOriginal proof content.\n',
+        );
       },
     );
   });

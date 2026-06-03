@@ -93,12 +93,21 @@ test.describe('Bug fixes TDD', () => {
         timeout: 5000,
       });
 
-      await appPage
-        .locator('button')
-        .filter({ hasText: /doc2\.md/ })
-        .first()
-        .click();
+      // Helper: click a button by text content using native click (evaluate)
+      // Workaround for Playwright click not triggering React events inside the
+      // motion-animated explorer drawer in the Tauri webview.
+      const nativeClickFile = async (name: string) => {
+        await appPage.evaluate(`(() => {
+          const btns = Array.from(document.querySelectorAll('button'));
+          const btn = btns.find(b => b.textContent?.includes('${name}'));
+          if (btn) btn.click();
+        })()`);
+      };
 
+      // Open doc2.md — triggers UnsavedChanges dialog
+      await nativeClickFile('doc2.md');
+
+      // Dialog: Cancel — preserve dirty buffer
       const unsavedModal = appPage.locator('h2').filter({ hasText: 'Unsaved Changes' });
       await expect(unsavedModal).toBeVisible({ timeout: 5000 });
 
@@ -108,51 +117,52 @@ test.describe('Bug fixes TDD', () => {
         .filter({ hasText: 'Cancel' })
         .click();
 
-      await expect(unsavedModal).not.toBeVisible();
+      await expect(
+        appPage.locator('h2').filter({ hasText: 'Unsaved Changes' }),
+      ).not.toBeVisible();
       await expect
         .poll(() => getEditorContents(appPage))
         .toBe('# Document 1\nmodified');
       await expect(appPage.locator('#save-state')).toContainText('unsaved');
 
-      await appPage
-        .locator('button')
-        .filter({ hasText: /doc2\.md/ })
-        .first()
-        .click();
-      await expect(unsavedModal).toBeVisible();
+      // Try again — Discard this time
+      await nativeClickFile('doc2.md');
+      await expect(
+        appPage.locator('h2').filter({ hasText: 'Unsaved Changes' }),
+      ).toBeVisible();
       await appPage
         .locator('.fixed.inset-0')
         .locator('button')
         .filter({ hasText: 'Discard' })
         .click();
 
-      await expect(unsavedModal).not.toBeVisible();
+      await expect(
+        appPage.locator('h2').filter({ hasText: 'Unsaved Changes' }),
+      ).not.toBeVisible();
       await expect.poll(() => previewText(appPage)).toContain('Document 2');
       await expect(readFileSync(doc1Path, 'utf-8')).toBe('# Document 1\n');
 
-      await appPage
-        .locator('button')
-        .filter({ hasText: /doc1\.md/ })
-        .first()
-        .click();
+      // Switch to doc1.md (no dialog — not dirty)
+      await nativeClickFile('doc1.md');
       await expect.poll(() => previewText(appPage)).toContain('Document 1');
 
+      // Make dirty again, try Save this time
       await replaceEditorContents(appPage, '# Document 1\nmodified again');
       await expect(appPage.locator('#save-state')).toContainText('unsaved');
 
-      await appPage
-        .locator('button')
-        .filter({ hasText: /doc2\.md/ })
-        .first()
-        .click();
-      await expect(unsavedModal).toBeVisible();
+      await nativeClickFile('doc2.md');
+      await expect(
+        appPage.locator('h2').filter({ hasText: 'Unsaved Changes' }),
+      ).toBeVisible();
       await appPage
         .locator('.fixed.inset-0')
         .locator('button')
         .filter({ hasText: 'Save' })
         .click();
 
-      await expect(unsavedModal).not.toBeVisible();
+      await expect(
+        appPage.locator('h2').filter({ hasText: 'Unsaved Changes' }),
+      ).not.toBeVisible();
       await expect.poll(() => previewText(appPage)).toContain('Document 2');
       await expect(readFileSync(doc1Path, 'utf-8')).toBe(
         '# Document 1\nmodified again',

@@ -61,7 +61,7 @@ test.describe('Command parsing via Tauri IPC', () => {
 
       expect(parsedFlags.standalone).toBe(true);
       expect(parsedFlags.citeproc).toBe(true);
-      expect(parsedFlags.math_engine).toBe('MathJax');
+      expect(parsedFlags.math_engine).toBe('mathjax');
       expect(Array.isArray(parsedFlags.filters)).toBe(true);
     },
   );
@@ -75,12 +75,12 @@ test.describe('Command parsing via Tauri IPC', () => {
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
 
       const result = await invokeTauri(appPage, 'set_config', {
-        templates_dir: templatesDir,
-        filters_dir: filtersDir,
-        debounce_ms: 100,
-        timeout_ms: 30000,
-        render_command: 'pandoc --standalone -t html5',
-        restore_last_file: true,
+        templatesDir,
+        filtersDir,
+        debounceMs: 100,
+        timeoutMs: 30000,
+        renderCommand: 'pandoc --standalone -t html5',
+        restoreLastFile: true,
       });
       expect(result).toEqual({ ok: true });
 
@@ -111,12 +111,12 @@ test.describe('Command parsing via Tauri IPC', () => {
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
 
       const result = await invokeTauri(appPage, 'set_config', {
-        templates_dir: templatesDir,
-        filters_dir: filtersDir,
-        debounce_ms: 100,
-        timeout_ms: 30000,
-        render_command: `pandoc --standalone --lua-filter=${filterPath}`,
-        restore_last_file: true,
+        templatesDir,
+        filtersDir,
+        debounceMs: 100,
+        timeoutMs: 30000,
+        renderCommand: `pandoc --standalone --lua-filter=${filterPath}`,
+        restoreLastFile: true,
       });
       expect(result).toEqual({ ok: true });
 
@@ -142,12 +142,12 @@ test.describe('Command parsing via Tauri IPC', () => {
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
 
       const result = await invokeTauri(appPage, 'set_config', {
-        templates_dir: templatesDir,
-        filters_dir: filtersDir,
-        debounce_ms: 100,
-        timeout_ms: 30000,
-        render_command: `pandoc --standalone --filter ${filterPath}`,
-        restore_last_file: true,
+        templatesDir,
+        filtersDir,
+        debounceMs: 100,
+        timeoutMs: 30000,
+        renderCommand: `pandoc --standalone --filter ${filterPath}`,
+        restoreLastFile: true,
       });
       expect(result).toEqual({ ok: true });
 
@@ -172,12 +172,12 @@ test.describe('Command parsing via Tauri IPC', () => {
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
 
       const result = await invokeTauri(appPage, 'set_config', {
-        templates_dir: templatesDir,
-        filters_dir: filtersDir,
-        debounce_ms: 100,
-        timeout_ms: 30000,
-        render_command: `pandoc --standalone --template=${templatePath}`,
-        restore_last_file: true,
+        templatesDir,
+        filtersDir,
+        debounceMs: 100,
+        timeoutMs: 30000,
+        renderCommand: `pandoc --standalone --template=${templatePath}`,
+        restoreLastFile: true,
       });
       expect(result).toEqual({ ok: true });
 
@@ -199,13 +199,24 @@ test.describe('Command parsing via Settings dialog', () => {
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
       await expect.poll(() => previewText(appPage)).toContain('Document');
 
-      const dialog = appPage.getByRole('dialog');
+      const dialog = appPage.locator('[role="dialog"]');
 
-      await appPage.getByRole('menuitem', { name: 'File' }).click();
-      await appPage.getByRole('menuitem', { name: 'Preferences...' }).click();
+      await appPage
+        .locator('[role="menuitem"]')
+        .filter({ hasText: 'File' })
+        .first()
+        .click();
+      await appPage
+        .locator('[role="menuitem"]')
+        .filter({ hasText: 'Preferences' })
+        .last()
+        .click();
       await expect(dialog).toBeVisible();
 
-      await dialog.getByRole('tab', { name: 'Pandoc Configuration' }).click();
+      await dialog
+        .locator('[role="tab"]')
+        .filter({ hasText: 'Pandoc Configuration' })
+        .click();
       const standaloneCheckbox = dialog.locator('input[aria-label="Standalone"]');
       await expect(standaloneCheckbox).toBeChecked();
 
@@ -215,16 +226,19 @@ test.describe('Command parsing via Settings dialog', () => {
       await citeprocCheckbox.click();
       await expect(citeprocCheckbox).not.toBeChecked();
 
-      await dialog.getByRole('tab', { name: 'Raw Command' }).click();
+      await dialog.locator('[role="tab"]').filter({ hasText: 'Raw Command' }).click();
       const argsTextarea = dialog.locator('textarea[aria-label="Render Command"]');
       await expect(argsTextarea).toHaveValue(/--standalone/);
       await expect(argsTextarea).not.toHaveValue(/--citeproc/);
 
-      await dialog.getByRole('tab', { name: 'Pandoc Configuration' }).click();
+      await dialog
+        .locator('[role="tab"]')
+        .filter({ hasText: 'Pandoc Configuration' })
+        .click();
       await expect(standaloneCheckbox).toBeChecked();
       await expect(citeprocCheckbox).not.toBeChecked();
 
-      await appPage.getByRole('button', { name: 'Apply Settings' }).click();
+      await appPage.locator('button').filter({ hasText: 'Apply Settings' }).click();
       await expect(dialog).not.toBeVisible();
 
       const savedTomlContent = readFileSync(tomlPath, 'utf-8');
@@ -242,13 +256,21 @@ test.describe('Command parsing via Settings dialog', () => {
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
       await expect.poll(() => previewText(appPage)).toContain('Document');
 
-      const dialog = appPage.getByRole('dialog');
+      const dialog = appPage.locator('[role="dialog"]');
 
-      await appPage.getByRole('menuitem', { name: 'File' }).click();
-      await appPage.getByRole('menuitem', { name: 'Preferences...' }).click();
+      await appPage
+        .locator('[role="menuitem"]')
+        .filter({ hasText: 'File' })
+        .first()
+        .click();
+      await appPage
+        .locator('[role="menuitem"]')
+        .filter({ hasText: 'Preferences' })
+        .last()
+        .click();
       await expect(dialog).toBeVisible();
 
-      await dialog.getByRole('tab', { name: 'Lua Filters' }).click();
+      await dialog.locator('[role="tab"]').filter({ hasText: 'Lua Filters' }).click();
       await expect(dialog.locator('[aria-label="Filters Directory"]')).toHaveValue(
         filtersDir,
       );
@@ -259,11 +281,11 @@ test.describe('Command parsing via Settings dialog', () => {
       await myFilterCheckbox.click();
       await expect(myFilterCheckbox).toBeChecked();
 
-      await dialog.getByRole('tab', { name: 'Raw Command' }).click();
+      await dialog.locator('[role="tab"]').filter({ hasText: 'Raw Command' }).click();
       const argsTextarea = dialog.locator('textarea[aria-label="Render Command"]');
       await expect(argsTextarea).toHaveValue(/my-filter\.lua/);
 
-      await appPage.getByRole('button', { name: 'Apply Settings' }).click();
+      await appPage.locator('button').filter({ hasText: 'Apply Settings' }).click();
       await expect(dialog).not.toBeVisible();
 
       const savedTomlContent = readFileSync(testEnv.configPath, 'utf-8');
@@ -281,23 +303,31 @@ test.describe('Command parsing via Settings dialog', () => {
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
 
       await invokeTauri(appPage, 'set_config', {
-        templates_dir: templatesDir,
-        filters_dir: filtersDir,
-        debounce_ms: 100,
-        timeout_ms: 30000,
-        render_command:
+        templatesDir,
+        filtersDir,
+        debounceMs: 100,
+        timeoutMs: 30000,
+        renderCommand:
           'pandoc --standalone --citeproc --mathjax --lua-filter=' +
           path.join(filtersDir, 'my-filter.lua'),
-        restore_last_file: true,
+        restoreLastFile: true,
       });
 
-      const dialog = appPage.getByRole('dialog');
+      const dialog = appPage.locator('[role="dialog"]');
 
-      await appPage.getByRole('menuitem', { name: 'File' }).click();
-      await appPage.getByRole('menuitem', { name: 'Preferences...' }).click();
+      await appPage
+        .locator('[role="menuitem"]')
+        .filter({ hasText: 'File' })
+        .first()
+        .click();
+      await appPage
+        .locator('[role="menuitem"]')
+        .filter({ hasText: 'Preferences' })
+        .last()
+        .click();
       await expect(dialog).toBeVisible();
 
-      await dialog.getByRole('tab', { name: 'Lua Filters' }).click();
+      await dialog.locator('[role="tab"]').filter({ hasText: 'Lua Filters' }).click();
       const myFilterCheckbox = dialog.locator('input[type="checkbox"]').filter({
         hasText: 'my-filter.lua',
       });
@@ -306,13 +336,13 @@ test.describe('Command parsing via Settings dialog', () => {
       await myFilterCheckbox.click();
       await expect(myFilterCheckbox).not.toBeChecked();
 
-      await dialog.getByRole('tab', { name: 'Raw Command' }).click();
+      await dialog.locator('[role="tab"]').filter({ hasText: 'Raw Command' }).click();
       const argsTextarea = dialog.locator('textarea[aria-label="Render Command"]');
       await expect(argsTextarea).toHaveValue(/--standalone/);
       await expect(argsTextarea).toHaveValue(/--citeproc/);
       await expect(argsTextarea).not.toHaveValue(/my-filter\.lua/);
 
-      await appPage.getByRole('button', { name: 'Cancel' }).click();
+      await appPage.locator('button').filter({ hasText: 'Cancel' }).click();
       await expect(dialog).not.toBeVisible();
     },
   );

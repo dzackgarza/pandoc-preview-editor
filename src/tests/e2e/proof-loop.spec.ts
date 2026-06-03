@@ -61,8 +61,7 @@ proofTest.describe('proof loop: markdown → pandoc HTML', () => {
 
       // Verify refresh preserves content
       const refreshBtn = appPage
-        .getByRole('button')
-        .filter({ hasText: /refresh/i })
+        .locator('button[aria-label="Refresh Preview"]')
         .first();
       if (await refreshBtn.isVisible()) {
         await refreshBtn.click();

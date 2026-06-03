@@ -1,28 +1,14 @@
-# Feature: TikZJax Rendering in Preview
+# Retired Feature: TikZJax Rendering in Preview
 
-## User Outcome
+## Status
 
-`` ```tikz `` code blocks in markdown render as SVG diagrams in the preview, without a
-LaTeX toolchain on the server.
-Same as the [Obsidian TikZJax plugin](https://github.com/artisticat1/obsidian-tikzjax).
+Retired.
+Do not implement this plan.
 
-## Integration
+AGENTS.md forbids in-browser TikZ rendering.
+TikZ diagrams must render to SVG through server-side Pandoc, using user-controlled templates, filters, macros, and style files under the configured Pandoc asset directories.
 
-The code already exists.
-Two pieces:
+## Replacement Outcome
 
-1. **Include `@jhuix/tikzjax`** as a dependency.
-   It compiles TikZ → SVG in-browser via WebAssembly.
-   Import and call `TikZJax.tex2svg(source)`.
-2. **Run it in the preview iframe** — after pandoc renders the HTML, pass any
-   `` ```tikz `` code blocks through `tex2svg()` and replace them with the returned SVG.
-
-The Obsidian plugin's `main.ts` shows the pattern:
-- Register a postprocessor for `` ```tikz `` blocks
-- Tidy the source (strip `&nbsp;`, trim lines, remove empties)
-- Call `TikZJax.tex2svg(source)` → get SVG
-- Post-process (dark mode color inversion, SVGO optimization)
-- Replace the code block element with the SVG
-
-For this app, the same logic runs as a script in the pandoc HTML template (after the
-preview loads). Or it can be injected into the iframe from the app's render handler.
+Markdown containing TikZ should render as static SVG in the preview through the same renderer command the app already owns.
+The proof belongs in the Tauri Playwright suite: enter or open a real document, run the configured renderer, and assert that preview content contains the expected SVG output without TikZJax or client-side script injection.

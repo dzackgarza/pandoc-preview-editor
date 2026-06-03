@@ -1,4 +1,3 @@
-// @ts-nocheck — tauri-playwright 0.2.2 fixture/types are intentionally loose
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -7,26 +6,22 @@ import {
   replaceEditorContents,
   previewText,
   previewInnerHTML,
+  saveViaFileSelector,
+  type AppPage,
 } from './editor-helpers.js';
 
-async function getEditorContents(appPage) {
+async function getEditorContents(appPage: AppPage): Promise<string> {
   return appPage.evaluate(
     `(() => { const view = window.__PANDOC_PREVIEW_EDITOR_VIEW__; if (!view) throw new Error('Playwright editor hook is not available'); return view.state.doc.toString(); })()`,
   );
 }
 
-async function openMenu(appPage, name) {
-  await appPage.getByRole('menuitem', { name }).click();
+async function openMenu(appPage: AppPage, name: string): Promise<void> {
+  await appPage.locator('[role="menuitem"]').filter({ hasText: name }).first().click();
 }
 
-async function clickMenuItem(appPage, name) {
-  await appPage.getByRole('menuitem', { name, exact: true }).click();
-}
-
-async function saveViaFileSelector(appPage, absolutePath) {
-  await expect(appPage.getByTestId('file-selector-dialog')).toBeVisible();
-  await appPage.getByTestId('file-selector-input').fill(absolutePath);
-  await appPage.getByTestId('file-selector-save').click();
+async function clickMenuItem(appPage: AppPage, name: string): Promise<void> {
+  await appPage.locator('[role="menuitem"]').filter({ hasText: name }).last().click();
 }
 
 const workSessionTest = test.extend({
@@ -88,8 +83,8 @@ test.describe('user workflows', () => {
       await expect.poll(() => getEditorContents(appPage)).toBe(content);
 
       await expect
-        .poll(() => previewText(appPage))
-        .toContain('Work Session', { timeout: 5000 });
+        .poll(() => previewText(appPage), { timeout: 5000 })
+        .toContain('Work Session');
       await expect.poll(() => previewText(appPage)).toContain('line three');
       await expect(appPage.locator('footer')).toContainText('4 lines');
 
@@ -107,10 +102,12 @@ test.describe('user workflows', () => {
         .toBe(content);
 
       await openMenu(appPage, 'Plugin');
-      await appPage.getByRole('menuitem', { name: 'Export' }).hover();
+      await appPage.locator('[role="menuitem"]').filter({ hasText: 'Export' }).hover();
 
-      const exportItem = appPage.getByRole('menuitem', { name: 'Export to HTML' });
-      if (await exportItem.isVisible({ timeout: 2000 })) {
+      const exportItem = appPage
+        .locator('[role="menuitem"]')
+        .filter({ hasText: 'Export to HTML' });
+      if (await exportItem.isVisible()) {
         await exportItem.click();
         await expect(appPage.locator('#plugin-state')).toContainText('idle', {
           timeout: 10000,
@@ -129,8 +126,8 @@ test.describe('user workflows', () => {
         timeout: 10000,
       });
       await expect
-        .poll(() => previewText(appPage))
-        .toContain('Work Session', { timeout: 5000 });
+        .poll(() => previewText(appPage), { timeout: 5000 })
+        .toContain('Work Session');
     },
   );
 
@@ -148,8 +145,8 @@ test.describe('user workflows', () => {
         })
         .toBe('# Typed Live\n\nKeystroke by keystroke.');
       await expect
-        .poll(() => previewText(appPage))
-        .toContain('Typed Live', { timeout: 5000 });
+        .poll(() => previewText(appPage), { timeout: 5000 })
+        .toContain('Typed Live');
       await expect
         .poll(() => previewText(appPage))
         .toContain('Keystroke by keystroke.');
@@ -179,8 +176,8 @@ test.describe('user workflows', () => {
         });
       }
       await expect
-        .poll(() => previewText(appPage))
-        .toContain('Rapid 8', { timeout: 15000 });
+        .poll(() => previewText(appPage), { timeout: 15000 })
+        .toContain('Rapid 8');
       await expect.poll(() => previewText(appPage)).toContain('Final candidate 8.');
 
       const longDocument = Array.from(
@@ -192,11 +189,9 @@ test.describe('user workflows', () => {
       await expect(appPage.locator('footer')).toContainText('120 lines');
 
       const scroller = appPage.locator('#editor .cm-scroller');
-      await scroller.evaluate((el) => {
-        el.scrollTop = 700;
-      });
+      await scroller.evaluate('(el) => { el.scrollTop = 700; }');
       await expect
-        .poll(() => scroller.evaluate((el) => el.scrollTop), {
+        .poll(() => scroller.evaluate('(el) => el.scrollTop'), {
           timeout: 3000,
           intervals: [100, 200],
         })
@@ -213,8 +208,8 @@ test.describe('user workflows', () => {
 
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
       await expect
-        .poll(() => previewText(appPage))
-        .toContain('Original', { timeout: 5000 });
+        .poll(() => previewText(appPage), { timeout: 5000 })
+        .toContain('Original');
       await expect(appPage.locator('footer span[title]')).toHaveAttribute(
         'title',
         original,
@@ -232,20 +227,27 @@ test.describe('user workflows', () => {
       await expect(explorerDrawer).not.toContainText('ignored.md');
       await expect(explorerDrawer).not.toContainText('image.png');
 
-      await appPage.getByRole('button', { name: /nested/ }).click();
-      await appPage.getByRole('button', { name: /chapter\.md/ }).click();
+      await appPage
+        .locator('button')
+        .filter({ hasText: /nested/ })
+        .click();
+      await appPage
+        .locator('button')
+        .filter({ hasText: /chapter\.md/ })
+        .click();
 
-      const unsavedModal = appPage.getByRole('heading', { name: 'Unsaved Changes' });
-      if (await unsavedModal.isVisible({ timeout: 3000 })) {
+      const unsavedModal = appPage.locator('h2').filter({ hasText: 'Unsaved Changes' });
+      if (await unsavedModal.isVisible()) {
         await appPage
           .locator('.fixed.inset-0')
-          .getByRole('button', { name: 'Discard' })
+          .locator('button')
+          .filter({ hasText: 'Discard' })
           .click();
       }
 
       await expect
-        .poll(() => previewText(appPage))
-        .toContain('Initial chapter', { timeout: 5000 });
+        .poll(() => previewText(appPage), { timeout: 5000 })
+        .toContain('Initial chapter');
       await expect(appPage.locator('footer span[title]')).toHaveAttribute(
         'title',
         chapter,
@@ -259,17 +261,21 @@ test.describe('user workflows', () => {
         timeout: 3000,
       });
 
-      await appPage.getByRole('button', { name: /original\.md/ }).click();
-      if (await unsavedModal.isVisible({ timeout: 3000 })) {
+      await appPage
+        .locator('button')
+        .filter({ hasText: /original\.md/ })
+        .click();
+      if (await unsavedModal.isVisible()) {
         await appPage
           .locator('.fixed.inset-0')
-          .getByRole('button', { name: 'Save' })
+          .locator('button')
+          .filter({ hasText: 'Save' })
           .click();
       }
 
       await expect
-        .poll(() => previewText(appPage))
-        .toContain('Original', { timeout: 5000 });
+        .poll(() => previewText(appPage), { timeout: 5000 })
+        .toContain('Original');
       await expect
         .poll(() => readFileSync(chapter, 'utf-8'), {
           timeout: 5000,
@@ -290,8 +296,8 @@ test.describe('user workflows', () => {
 
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
       await expect
-        .poll(() => previewText(appPage))
-        .toContain('Paste Test', { timeout: 5000 });
+        .poll(() => previewText(appPage), { timeout: 5000 })
+        .toContain('Paste Test');
 
       // Create a tiny PNG and dispatch a paste event with it
       const pngBytes = await appPage.evaluate(`
@@ -355,12 +361,12 @@ test.describe('user workflows', () => {
         .poll(() => existsSync(figurePath), { timeout: 5000, intervals: [100, 200] })
         .toBe(true);
 
-      const expectedPng = Buffer.from(pngBytes);
+      const expectedPng = Buffer.from(pngBytes as number[]);
       expect(readFileSync(figurePath)).toEqual(expectedPng);
 
       await expect
-        .poll(() => previewInnerHTML(appPage))
-        .toContain('<img', { timeout: 5000 });
+        .poll(() => previewInnerHTML(appPage), { timeout: 5000 })
+        .toContain('<img');
     },
   );
 });

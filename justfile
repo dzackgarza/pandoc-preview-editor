@@ -10,6 +10,7 @@ install:
 setup: install build-client
     #!/usr/bin/env bash
     set -euo pipefail
+    git config core.hooksPath .githooks
     XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
     TARGET_DIR="$XDG_CONFIG_HOME/pandoc-preview"
     TARGET_FILE="$TARGET_DIR/config.toml"
@@ -34,20 +35,27 @@ run:
 build-tauri:
     npx tauri build
 
-# Type-check the project
-typecheck:
+[private]
+_agent-contracts:
+    node scripts/check-agent-contracts.mjs --all
+
+[private]
+_agent-contracts-staged:
+    node scripts/check-agent-contracts.mjs --staged
+
+[private]
+_typecheck:
     npx tsc --noEmit
 
 # Run all tests: Rust unit tests + Playwright E2E (browser smoke + Tauri desktop proofs)
-test:
+test: _agent-contracts _typecheck
     cargo test --manifest-path src-tauri/Cargo.toml
     npx playwright test --config src/tests/playwright.config.ts
 
-# Run only Rust tests
-test-rust:
+[private]
+_test-rust:
     cargo test --manifest-path src-tauri/Cargo.toml
 
-# Run Rust tests with output
-test-verbose:
+[private]
+_test-rust-verbose:
     cargo test --manifest-path src-tauri/Cargo.toml -- --show-output
-

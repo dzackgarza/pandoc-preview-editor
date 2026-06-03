@@ -2,6 +2,16 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
 
+/**
+ * tauri-playwright custom project option.
+ * Augment here so project `use` blocks type-check without `as any`.
+ */
+declare module '@playwright/test' {
+  interface PlaywrightTestOptions {
+    mode?: 'browser' | 'tauri' | 'cdp';
+  }
+}
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 export default defineConfig({
@@ -24,7 +34,7 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         mode: 'browser',
-      } as any,
+      },
     },
     {
       name: 'tauri',
@@ -32,7 +42,7 @@ export default defineConfig({
         /(desktop-.*|proof-loop|renderer-diagnostics|editor-height|file-integrity|settings|plugins|diagram-workflow|tikz-filter|config-loading|session-persistence|mime-types|architectural-regression|command-parsing|bug-fixes|file-selector|user-behaviors)\.spec\.ts/,
       use: {
         mode: 'tauri',
-      } as any,
+      },
     },
   ],
   use: {

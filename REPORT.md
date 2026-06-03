@@ -1,6 +1,7 @@
 # Current Architecture Report: pandoc-preview
 
-This branch is no longer the older React + Express prototype described by earlier audit notes. The live app is a **Tauri-first** editor: the React client talks directly to the Rust backend through Tauri `invoke` commands, and preview rendering/file operations are owned by Rust rather than an HTTP server layer.
+This branch is no longer the older React + Express prototype described by earlier audit notes.
+The live app is a **Tauri-first** editor: the React client talks directly to the Rust backend through Tauri `invoke` commands, and preview rendering/file operations are owned by Rust rather than an HTTP server layer.
 
 ## Current shape
 
@@ -46,10 +47,16 @@ This branch now removes the remaining backend slop that was still real in the li
 - Do not add new backend commands unless the client has a real caller and proof loop.
 - Prefer existing dependencies and shared helpers over bespoke path-walking, registry, or command-detection code.
 
-## Current proof loop
+## Testing Sequence
 
-- `just typecheck`
-- `cargo test --manifest-path src-tauri/Cargo.toml`
-- `just test`
+There are separate testing questions:
 
-The browser-smoke proof now runs against an explicitly repo-rooted Vite server plus explicit Tauri IPC mocks, so the forward-facing test loop is green again instead of depending on an ambient dev server or tauri-playwright browser-mode quirks.
+- **Migration:** `.agents/plans/port-e2e-tests-from-main.md` tracks whether the old Express E2E suite has been ported or correctly replaced for Tauri.
+- **Proof burden:** `docs/testing-proof-obligations.md` defines what the suite must prove about real app behavior.
+- **Suite repair:** `.agents/plans/port-e2e-tests-from-main.md` now requires concrete fixes before pass/fail testing: make E2E tests type-check as ordinary test code, remove type escapes and suppressions, use the real Tauri Playwright adapter surface, replace loose known-payload casts, and fix current noncompliant specs.
+- **Suite correctness:** the migrated tests must use real objects, type-check, use the Tauri Playwright plugin properly, avoid mock-only feature proofs, and be vetted so a green run would actually prove the claimed behavior.
+- **App satisfaction:** `just test` is meaningful only after the suite is correct and complete against that proof burden.
+
+The browser-smoke test remains a harness check because it uses explicit Tauri IPC mocks.
+It proves only the mocked shell boundary.
+It is not evidence that the migrated suite is complete, and it is not evidence that the app satisfies the full behavior burden.

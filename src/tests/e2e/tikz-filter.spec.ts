@@ -87,26 +87,20 @@ test.describe('Server-side TikZ Lua Filter E2E', () => {
     async ({ appPage, testEnv }) => {
       const { execSync } = await import('node:child_process');
 
-      let pdflatexAvailable = false;
       try {
         execSync('pdflatex --version', { stdio: 'ignore' });
-        pdflatexAvailable = true;
       } catch {
-        pdflatexAvailable = false;
+        throw new Error(
+          'pdflatex is required for the pdf_tex overlay test but is not available',
+        );
       }
-
-      test.skip(!pdflatexAvailable, 'pdflatex not available');
 
       const pdfTexPath = path.join(testEnv.workspaceDir, 'my-fig.pdf_tex');
 
-      try {
-        execSync(
-          'pdflatex -interaction=nonstopmode -jobname=my-fig "\\documentclass[tikz]{standalone}\\begin{document}\\begin{tikzpicture}\\draw(0,0) circle (20pt);\\end{tikzpicture}\\end{document}"',
-          { cwd: testEnv.workspaceDir, stdio: 'ignore' },
-        );
-      } catch {
-        test.skip(true, 'pdflatex failed to produce test fixture');
-      }
+      execSync(
+        'pdflatex -interaction=nonstopmode -jobname=my-fig "\\documentclass[tikz]{standalone}\\begin{document}\\begin{tikzpicture}\\draw(0,0) circle (20pt);\\end{tikzpicture}\\end{document}"',
+        { cwd: testEnv.workspaceDir, stdio: 'ignore' },
+      );
 
       const pdfTexContent = [
         '\\begingroup',

@@ -110,10 +110,15 @@ test.describe('Architectural Slop Regression Tests', () => {
 
       await replaceEditorContents(appPage, markdown);
 
-      const innerHtml = await previewInnerHTML(appPage);
-      expect(innerHtml).toContain('Heading');
-      expect(innerHtml).toContain('figure.png');
-      expect(innerHtml).toContain('Paragraph text here');
+      await expect
+        .poll(async () => previewInnerHTML(appPage), { timeout: 10000 })
+        .toContain('Heading');
+      await expect
+        .poll(async () => previewInnerHTML(appPage), { timeout: 10000 })
+        .toContain('figure.png');
+      await expect
+        .poll(async () => previewInnerHTML(appPage), { timeout: 10000 })
+        .toContain('Paragraph text here');
     },
   );
 });
