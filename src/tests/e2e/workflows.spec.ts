@@ -106,6 +106,12 @@ test.describe('canonical desktop workflows', () => {
       const saveAsPath = path.join(testEnv.workspaceDir, 'nested', 'saved-as.md');
 
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
+      await expect(appPage.getByTestId('preview-pane')).toBeVisible({
+        timeout: 15000,
+      });
+      await expect(appPage.locator('#status')).toContainText('ready', {
+        timeout: 15000,
+      });
       await expect(appPage.locator('footer span[title]')).toHaveAttribute(
         'title',
         documentPath,
