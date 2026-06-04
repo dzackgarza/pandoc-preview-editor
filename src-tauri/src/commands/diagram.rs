@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::time::Duration;
 
 use tauri::State;
 
@@ -19,7 +20,11 @@ pub async fn diagram_proxy(url: String) -> Result<serde_json::Value, String> {
         return Err("proxy host not allowed".into());
     }
 
-    let response = reqwest::get(&url).await.map_err(|e| e.to_string())?;
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let response = client.get(&url).send().await.map_err(|e| e.to_string())?;
     if !response.status().is_success() {
         return Err(format!("proxy failed with status {}", response.status()));
     }

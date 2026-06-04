@@ -47,10 +47,10 @@ _agent-contracts-staged:
 _typecheck:
     npx tsc --noEmit
 
-# Run all tests: agent contracts, type-check, Rust unit tests, Playwright E2E.
+# Run all tests: agent contracts, type-check, Rust unit tests, canonical workflow E2E.
 test: _agent-contracts _typecheck
     cargo test --manifest-path src-tauri/Cargo.toml
-    npx playwright test --config src/tests/playwright.config.ts
+    npx playwright test --config src/tests/playwright.config.ts --max-failures=1
 
 [private]
 _test-rust:

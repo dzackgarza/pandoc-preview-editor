@@ -17,6 +17,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 export default defineConfig({
   testDir: './e2e',
   timeout: 300000,
+  maxFailures: 1,
   retries: 0,
   workers: 1,
   fullyParallel: false,
@@ -38,8 +39,7 @@ export default defineConfig({
     },
     {
       name: 'tauri',
-      testMatch:
-        /(desktop-.*|proof-loop|renderer-diagnostics|editor-height|file-integrity|settings|plugins|diagram-workflow|tikz-filter|config-loading|session-persistence|mime-types|architectural-regression|command-parsing|bug-fixes|file-selector|user-behaviors)\.spec\.ts/,
+      testMatch: '**/workflows.spec.ts',
       use: {
         mode: 'tauri',
       },

@@ -4,8 +4,10 @@ set -euo pipefail
 script_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 original_home="${HOME:-$script_dir/home}"
 export HOME="${PANDOC_PREVIEW_TEST_HOME:-$original_home}"
-export CARGO_HOME="${CARGO_HOME}"
-export RUSTUP_HOME="${RUSTUP_HOME}"
+: "${CARGO_HOME:=${HOME}/.cargo}"
+: "${RUSTUP_HOME:=${HOME}/.rustup}"
+export CARGO_HOME
+export RUSTUP_HOME
 export XDG_CONFIG_HOME="${PANDOC_PREVIEW_TEST_XDG_CONFIG_HOME:-${XDG_CONFIG_HOME:-$script_dir/xdg-config}}"
 export XDG_STATE_HOME="${PANDOC_PREVIEW_TEST_XDG_STATE_HOME:-${XDG_STATE_HOME:-$script_dir/xdg-state}}"
 

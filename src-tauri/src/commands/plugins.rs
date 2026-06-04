@@ -88,20 +88,20 @@ pub async fn run_plugin(
         .map(|o| interpolate_plugin_arg(o, &file_path));
     let plugin_timeout = plugin.timeout_ms.unwrap_or(timeout_ms);
     let cwd = file_path.parent().unwrap_or(Path::new(".")).to_path_buf();
+    let timeout = std::time::Duration::from_millis(plugin_timeout);
+    let mut command = tokio::process::Command::new(&plugin.command);
+    command.kill_on_drop(true);
+    command
+        .args(&args)
+        .current_dir(&cwd)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
-    let output = tokio::time::timeout(
-        std::time::Duration::from_millis(plugin_timeout),
-        tokio::process::Command::new(&plugin.command)
-            .args(&args)
-            .current_dir(&cwd)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output(),
-    )
-    .await
-    .map_err(|_| format!("plugin timed out after {}ms", plugin_timeout))?
-    .map_err(|e| e.to_string())?;
+    let output = tokio::time::timeout(timeout, command.output())
+        .await
+        .map_err(|_| format!("plugin timed out after {}ms", plugin_timeout))?
+        .map_err(|e| e.to_string())?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
@@ -116,4 +116,3 @@ pub async fn run_plugin(
         "outputPath": output_path,
     }))
 }
-

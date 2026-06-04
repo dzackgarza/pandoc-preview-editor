@@ -1,12 +1,24 @@
 import { expect, test } from '@playwright/test';
 
 const workspaceRoot = process.cwd();
+let consoleErrors: string[] = [];
+let pageErrors: string[] = [];
 
 test.beforeEach(async ({ page }, testInfo) => {
-  test.skip(
-    testInfo.project.name !== 'browser-smoke',
-    'This smoke test runs against the browser boundary with explicit Tauri IPC mocks.',
-  );
+  if (testInfo.project.name !== 'browser-smoke') {
+    throw new Error('app.spec.ts must run only in the browser-smoke project');
+  }
+
+  consoleErrors = [];
+  pageErrors = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') {
+      consoleErrors.push(message.text());
+    }
+  });
+  page.on('pageerror', (error) => {
+    pageErrors.push(error.stack ?? error.message);
+  });
 
   await page.addInitScript(
     ({ cwd }) => {
@@ -65,6 +77,11 @@ test.beforeEach(async ({ page }, testInfo) => {
   );
 
   await page.goto('/index.html', { waitUntil: 'networkidle' });
+});
+
+test.afterEach(async () => {
+  expect(consoleErrors).toEqual([]);
+  expect(pageErrors).toEqual([]);
 });
 
 test('renders the editor shell through the selected app boundary', async ({ page }) => {

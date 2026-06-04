@@ -1,5 +1,5 @@
-import { createTauriTest } from '@srsholmes/tauri-playwright';
-import { execFileSync } from 'node:child_process';
+import { createTauriTest, tauriExpect } from '@srsholmes/tauri-playwright';
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -22,12 +22,95 @@ function killOrphanedTauriProcesses() {
   // the kill to only processes launched by this test suite (not user dev servers).
   const testHome = process.env.PANDOC_PREVIEW_TEST_HOME;
   if (testHome) {
-    try {
-      execFileSync('pkill', ['-f', testHome], { stdio: 'pipe' });
-    } catch {
-      // No matching processes — nothing to clean up.
+    const result = spawnSync('pkill', ['-f', testHome], {
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+    if (result.error) {
+      throw result.error;
+    }
+    if (result.status === 1) {
+      return;
+    }
+    if (result.status !== 0) {
+      const detail =
+        result.stderr.trim() || result.stdout.trim() || `exit code ${result.status}`;
+      throw new Error(`pkill -f ${testHome} failed: ${detail}`);
     }
   }
+}
+
+type FrontendErrorBuffer = {
+  consoleErrors: string[];
+  pageErrors: string[];
+};
+
+async function installFrontendErrorCapture(
+  page: import('@srsholmes/tauri-playwright').TauriPage,
+) {
+  await page.evaluate(`
+    (() => {
+      const w = window;
+      const key = '__PW_FRONTEND_ERRORS__';
+      const existing = w[key];
+      if (existing?.installed) {
+        existing.consoleErrors.length = 0;
+        existing.pageErrors.length = 0;
+        return;
+      }
+
+      const stringify = (value) => {
+        if (typeof value === 'string') return value;
+        try {
+          return JSON.stringify(value);
+        } catch {
+          return String(value);
+        }
+      };
+
+      const store = {
+        installed: true,
+        consoleErrors: [],
+        pageErrors: [],
+      };
+
+      const originalConsoleError = console.error.bind(console);
+      console.error = (...args) => {
+        store.consoleErrors.push(args.map(stringify).join(' '));
+        return originalConsoleError(...args);
+      };
+
+      window.addEventListener('error', (event) => {
+        const message =
+          event.error?.stack ?? event.error?.message ?? event.message ?? 'unknown page error';
+        store.pageErrors.push(String(message));
+      });
+
+      window.addEventListener('unhandledrejection', (event) => {
+        const reason = event.reason?.stack ?? event.reason?.message ?? event.reason ?? 'unknown rejection';
+        store.pageErrors.push(String(reason));
+      });
+
+      w[key] = store;
+    })()
+  `);
+}
+
+async function readFrontendErrors(
+  page: import('@srsholmes/tauri-playwright').TauriPage,
+): Promise<FrontendErrorBuffer> {
+  return page.evaluate(`
+    (() => {
+      const store = window.__PW_FRONTEND_ERRORS__;
+      if (!store) {
+        return { consoleErrors: [], pageErrors: [] };
+      }
+      return {
+        consoleErrors: [...store.consoleErrors],
+        pageErrors: [...store.pageErrors],
+      };
+    })()
+  `);
 }
 
 const repoRoot = process.cwd();
@@ -204,7 +287,7 @@ export const test = base.test.extend<{
       rmSync(rootDir, { recursive: true, force: true });
     }
   },
-  appPage: async ({ testEnv, tauriPage }, use) => {
+  appPage: async ({ tauriPage }, use) => {
     const startupDeadline = Date.now() + 30_000;
     let lastStartupError: unknown;
 
@@ -249,7 +332,26 @@ export const test = base.test.extend<{
       );
     }
 
-    await use(tauriPage as import('@srsholmes/tauri-playwright').TauriPage);
+    await installFrontendErrorCapture(
+      tauriPage as import('@srsholmes/tauri-playwright').TauriPage,
+    );
+
+    try {
+      await use(tauriPage as import('@srsholmes/tauri-playwright').TauriPage);
+    } finally {
+      const frontendErrors = await readFrontendErrors(
+        tauriPage as import('@srsholmes/tauri-playwright').TauriPage,
+      );
+      if (frontendErrors.consoleErrors.length || frontendErrors.pageErrors.length) {
+        throw new Error(
+          [
+            'Frontend errors detected during E2E test.',
+            `console.error: ${JSON.stringify(frontendErrors.consoleErrors)}`,
+            `page errors: ${JSON.stringify(frontendErrors.pageErrors)}`,
+          ].join('\n'),
+        );
+      }
+    }
   },
 });
 
@@ -260,9 +362,6 @@ test.afterAll(async () => {
   killOrphanedTauriProcesses();
 });
 
-// @srsholmes/tauri-playwright v0.2.2 does not export the PageLike interface
-// used in its Expect<> matchers (toHaveURL, toHaveTitle). Re-exporting
-// base.expect triggers TS4023 because the inferred type references an
-// unexported symbol. The runtime value is correct; this widens to avoid
-// the declaration-emit blocker.
-export const expect = base.expect as any;
+// Anchor the exported value to the package's named tauriExpect type surface
+// instead of widening through `any`.
+export const expect: typeof tauriExpect = base.expect;

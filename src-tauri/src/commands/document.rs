@@ -18,6 +18,14 @@ pub(crate) fn track_recent(recent: &mut Vec<PathBuf>, path: &Path) {
     recent.truncate(10);
 }
 
+fn remove_file_if_present(path: &Path) -> Result<(), String> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
 // ─── Tauri commands ───────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -82,7 +90,7 @@ pub fn save(
             .get(&target_path.to_string_lossy().into_owned())
         {
             if let Some(disk_fp) = get_file_fingerprint(&target_path) {
-                if disk_fp.mtime_ms != registered.mtime_ms && disk_fp.hash != registered.hash {
+                if disk_fp.hash != registered.hash {
                     return Err("The file has been modified externally.".into());
                 }
             }
@@ -123,10 +131,10 @@ pub fn save(
     // Clean up old backup
     if let Some(ref old) = old_path {
         let old_backup = get_backup_path(old);
-        let _ = fs::remove_file(&old_backup);
+        remove_file_if_present(&old_backup)?;
     }
     let target_backup = get_backup_path(&target_path);
-    let _ = fs::remove_file(&target_backup);
+    remove_file_if_present(&target_backup)?;
 
     save_session_state(&target_path, s.is_temp_file);
 
@@ -202,23 +210,21 @@ pub fn browse(dir: String) -> Result<serde_json::Value, String> {
     }
 
     const BROWSE_IGNORE: &[&str] = IGNORE_NAMES;
-    let mut entries: Vec<serde_json::Value> = fs::read_dir(&target_dir)
-        .map_err(|e| e.to_string())?
-        .flatten()
-        .filter_map(|entry| {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if name.starts_with('.') || BROWSE_IGNORE.contains(&name.as_str()) {
-                return None;
-            }
-            let abs = entry.path();
-            let kind = if abs.is_dir() { "directory" } else { "file" };
-            Some(serde_json::json!({
-                "name": name,
-                "absolutePath": abs.to_string_lossy(),
-                "kind": kind,
-            }))
-        })
-        .collect();
+    let mut entries: Vec<serde_json::Value> = vec![];
+    for entry in fs::read_dir(&target_dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.') || BROWSE_IGNORE.contains(&name.as_str()) {
+            continue;
+        }
+        let abs = entry.path();
+        let kind = if abs.is_dir() { "directory" } else { "file" };
+        entries.push(serde_json::json!({
+            "name": name,
+            "absolutePath": abs.to_string_lossy(),
+            "kind": kind,
+        }));
+    }
     entries.sort_by(|a, b| {
         let ka = a["kind"].as_str().unwrap_or("");
         let kb = b["kind"].as_str().unwrap_or("");
@@ -265,33 +271,31 @@ pub fn list_files(
         return Err("dir must reference a directory".into());
     }
 
-    let mut entries: Vec<serde_json::Value> = fs::read_dir(&target_dir)
-        .map_err(|e| e.to_string())?
-        .flatten()
-        .filter_map(|entry| {
-            let abs = entry.path();
-            let name = entry.file_name().to_string_lossy().into_owned();
-            let client_path = to_client_path(&workspace_root, &abs);
-            if should_ignore(&workspace_root, &abs) {
-                return None;
-            }
-            if abs.is_dir() {
-                return Some(serde_json::json!({
-                    "name": name,
-                    "path": client_path,
-                    "kind": "directory",
-                }));
-            }
-            if abs.is_file() && is_text_like_file(&abs) {
-                return Some(serde_json::json!({
-                    "name": name,
-                    "path": client_path,
-                    "kind": "file",
-                }));
-            }
-            None
-        })
-        .collect();
+    let mut entries: Vec<serde_json::Value> = vec![];
+    for entry in fs::read_dir(&target_dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let abs = entry.path();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let client_path = to_client_path(&workspace_root, &abs);
+        if should_ignore(&workspace_root, &abs) {
+            continue;
+        }
+        if abs.is_dir() {
+            entries.push(serde_json::json!({
+                "name": name,
+                "path": client_path,
+                "kind": "directory",
+            }));
+            continue;
+        }
+        if abs.is_file() && is_text_like_file(&abs) {
+            entries.push(serde_json::json!({
+                "name": name,
+                "path": client_path,
+                "kind": "file",
+            }));
+        }
+    }
     entries.sort_by(|a, b| {
         let ka = a["kind"].as_str().unwrap_or("");
         let kb = b["kind"].as_str().unwrap_or("");

@@ -60,15 +60,25 @@ export function DiagramModal({
       : 'https://homepages.inf.ed.ac.uk/cheunen/freetikz/freetikz.html';
 
   useEffect(() => {
+    let active = true;
     if (open && activeTab === 'web') {
       setProxyLoading(true);
       invoke<{ html: string }>('diagram_proxy', { url: webToolUrl })
         .then((data) => {
-          setProxyHtml(data.html);
+          if (active) {
+            setProxyHtml(data.html);
+          }
         })
         .catch(console.error)
-        .finally(() => setProxyLoading(false));
+        .finally(() => {
+          if (active) {
+            setProxyLoading(false);
+          }
+        });
     }
+    return () => {
+      active = false;
+    };
   }, [open, activeTab, webToolUrl]);
 
   // Clipboard preview state

@@ -26,9 +26,11 @@ pub async fn execute_render(
     doc_path: Option<&Path>,
 ) -> Result<RenderResult, String> {
     let started = std::time::Instant::now();
+    let timeout = std::time::Duration::from_millis(timeout_ms);
 
     let mut cmd = tokio::process::Command::new("zsh");
     cmd.arg("-c").arg(command);
+    cmd.kill_on_drop(true);
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -44,13 +46,10 @@ pub async fn execute_render(
             .map_err(|e| e.to_string())?;
     }
 
-    let output = tokio::time::timeout(
-        std::time::Duration::from_millis(timeout_ms),
-        child.wait_with_output(),
-    )
-    .await
-    .map_err(|_| format!("renderer timed out after {}ms", timeout_ms))?
-    .map_err(|e| e.to_string())?;
+    let output = tokio::time::timeout(timeout, child.wait_with_output())
+        .await
+        .map_err(|_| format!("renderer timed out after {}ms", timeout_ms))?
+        .map_err(|e| e.to_string())?;
 
     let duration_ms = started.elapsed().as_millis() as u64;
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
@@ -86,4 +85,3 @@ pub async fn render(
     let doc_path_ref = doc_path.as_deref();
     execute_render(&markdown, &command, timeout_ms, doc_path_ref).await
 }
-
