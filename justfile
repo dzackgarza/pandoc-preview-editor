@@ -48,11 +48,9 @@ _typecheck:
     npx tsc --noEmit
 
 # Run all tests: agent contracts, type-check, Rust unit tests, Playwright E2E.
-# Rust tests may fail if system libraries (glib-2.0, gdk-3.0) are missing.
-# That failure is classified as a harness issue (Category D: missing system deps),
-# not a test-correctness failure.
+# Cargo test failures are classified per .agents/audits/debugging-framework.md.
 test: _agent-contracts _typecheck
-    @cargo test --manifest-path src-tauri/Cargo.toml || echo "[CLASSIFIED] cargo test failed (Category D: harness issue — review output above for root cause)" >&2
+    @cargo test --manifest-path src-tauri/Cargo.toml || echo "cargo test failed — classify per .agents/audits/debugging-framework.md" >&2
     npx playwright test --config src/tests/playwright.config.ts
 
 [private]
