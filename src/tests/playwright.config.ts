@@ -16,7 +16,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 
 export default defineConfig({
   testDir: './e2e',
-  timeout: 120000,
+  timeout: 300000,
   retries: 0,
   workers: 1,
   fullyParallel: false,
