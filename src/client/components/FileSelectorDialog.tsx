@@ -126,8 +126,9 @@ export function FileSelectorDialog({
           );
           if (!confirmOverwrite) return;
         }
-      } catch {
-        // Proceed on failure
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : String(err));
+        return;
       }
     }
 

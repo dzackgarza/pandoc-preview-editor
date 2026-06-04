@@ -88,9 +88,11 @@ export function ExplorerDrawer({
       setFiguresLoading(true);
       invoke<{ figures: FigureEntry[] }>('figures_registry')
         .then((data) => {
-          setFigures(data.figures || []);
+          setFigures(data.figures);
         })
-        .catch(console.error)
+        .catch((err: unknown) => {
+          setExplorerError(err instanceof Error ? err.message : String(err));
+        })
         .finally(() => setFiguresLoading(false));
     }
   }, [view, loadDirectory]);
@@ -116,7 +118,9 @@ export function ExplorerDrawer({
   );
 
   const handleEditFigure = (path: string, type: string) => {
-    invoke('launch_diagram', { absolutePath: path, kind: type }).catch(console.error);
+    invoke('launch_diagram', { absolutePath: path, kind: type }).catch((err: unknown) => {
+      setExplorerError(err instanceof Error ? err.message : String(err));
+    });
   };
 
   const filteredFigures = figures.filter((f) =>

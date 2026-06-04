@@ -28,9 +28,8 @@ export function DiagramModal({
   // is the source of truth for which ids exist and what they mean.
   const [desktopTool, setDesktopTool] = useState<string>(DIAGRAM_TOOLS[0].id);
   const [filename, setFilename] = useState('');
-  // Optimistic defaults: treat every tool as available until the server says otherwise.
   const [availableTools, setAvailableTools] = useState<Record<string, boolean>>(
-    Object.fromEntries(DIAGRAM_TOOLS.map((t: DiagramTool) => [t.id, true])),
+    Object.fromEntries(DIAGRAM_TOOLS.map((t: DiagramTool) => [t.id, false])),
   );
 
   useEffect(() => {
@@ -45,7 +44,9 @@ export function DiagramModal({
             }
           }
         })
-        .catch(console.error);
+        .catch((err: unknown) => {
+          setError(err instanceof Error ? err.message : String(err));
+        });
     }
   }, [open]);
 
@@ -69,7 +70,11 @@ export function DiagramModal({
             setProxyHtml(data.html);
           }
         })
-        .catch(console.error)
+        .catch((err: unknown) => {
+          if (active) {
+            setError(err instanceof Error ? err.message : String(err));
+          }
+        })
         .finally(() => {
           if (active) {
             setProxyLoading(false);
@@ -127,8 +132,8 @@ export function DiagramModal({
       }
       setClipboardImage(null);
       setClipboardBlob(null);
-    } catch {
-      // Clipboard read API blocked or empty
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
       setClipboardImage(null);
       setClipboardBlob(null);
     }
@@ -174,8 +179,8 @@ export function DiagramModal({
       }
       insertTextAtCursor(`\n${data.markdown}\n`);
       onClose();
-    } catch (err: any) {
-      setError(err.message || 'Clipboard save failed');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
@@ -231,8 +236,8 @@ export function DiagramModal({
 
       insertTextAtCursor(`\n${markdownRef}\n`);
       onClose();
-    } catch (err: any) {
-      setError(err.message || 'Desktop launching failed');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }

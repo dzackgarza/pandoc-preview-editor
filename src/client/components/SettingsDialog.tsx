@@ -3,6 +3,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import * as Tabs from '@radix-ui/react-tabs';
 import { X, Settings, Cpu, FolderOpen, Terminal, Filter, Plug } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
+import { toast } from '../lib/toast.js';
 import {
   ParsedFlags,
   fromRustParsedFlags,
@@ -16,8 +17,8 @@ interface SettingsData {
   debounceMs: number;
   timeoutMs: number;
   renderCommand: string;
-  restoreLastFile?: boolean;
-  parsedFlags?: RustParsedFlags;
+  restoreLastFile: boolean;
+  parsedFlags: RustParsedFlags;
 }
 
 interface PluginMetadata {
@@ -77,26 +78,48 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
           setFiltersDir(data.filtersDir);
           setDebounceMs(data.debounceMs);
           setTimeoutMs(data.timeoutMs);
-          setRawArgsText(data.renderCommand || 'pandoc');
-          setRestoreLastFile(data.restoreLastFile !== false);
-          if (data.parsedFlags) {
-            setParsedFlags(fromRustParsedFlags(data.parsedFlags));
-          }
+          setRawArgsText(data.renderCommand);
+          setRestoreLastFile(data.restoreLastFile);
+          setParsedFlags(fromRustParsedFlags(data.parsedFlags));
         })
-        .catch(console.error);
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          setValidationError(message);
+          toast({
+            title: 'Settings failed to load',
+            description: message,
+            variant: 'destructive',
+          });
+        });
 
       invoke<{ templates: string[]; filters: string[] }>('pandoc_assets')
         .then((data) => {
-          setAvailableTemplates(data.templates || []);
-          setAvailableFilters(data.filters || []);
+          setAvailableTemplates(data.templates);
+          setAvailableFilters(data.filters);
         })
-        .catch(console.error);
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          setValidationError(message);
+          toast({
+            title: 'Pandoc assets failed to load',
+            description: message,
+            variant: 'destructive',
+          });
+        });
 
       invoke<{ plugins: PluginMetadata[] }>('list_plugins')
         .then((data) => {
-          setPlugins(data.plugins || []);
+          setPlugins(data.plugins);
         })
-        .catch(console.error);
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          setValidationError(message);
+          toast({
+            title: 'Plugins failed to load',
+            description: message,
+            variant: 'destructive',
+          });
+        });
     }
   }, [open]);
 

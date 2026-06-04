@@ -1,9 +1,12 @@
 import * as React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { PaneHeader } from './PaneHeader.jsx';
+import { toast } from '../lib/toast.js';
 
 export function PreviewPane({ html }: { html: string }) {
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
+  const forwardedWindowsRef = React.useRef<WeakSet<Window>>(new WeakSet());
+  const hoverAttachedElementsRef = React.useRef<WeakSet<Element>>(new WeakSet());
 
   React.useEffect(() => {
     const iframe = iframeRef.current;
@@ -15,8 +18,8 @@ export function PreviewPane({ html }: { html: string }) {
 
       // Forward keydown events from the iframe to the parent window so keyboard shortcuts work uniformly.
       const win = doc.defaultView;
-      if (win && !(win as any).__KEY_FORWARDING_ATTACHED__) {
-        (win as any).__KEY_FORWARDING_ATTACHED__ = true;
+      if (win && !forwardedWindowsRef.current.has(win)) {
+        forwardedWindowsRef.current.add(win);
         win.addEventListener(
           'keydown',
           (e: KeyboardEvent) => {
@@ -66,11 +69,11 @@ export function PreviewPane({ html }: { html: string }) {
           if (!figurePath) return;
 
           // Ensure we don't attach multiple times
-          if ((el as any).__HOVER_EDIT_ATTACHED__) return;
-          (el as any).__HOVER_EDIT_ATTACHED__ = true;
+          if (hoverAttachedElementsRef.current.has(el)) return;
+          hoverAttachedElementsRef.current.add(el);
 
           let activeOverlay: HTMLDivElement | null = null;
-          let removeTimeout: any = null;
+          let removeTimeout: ReturnType<typeof setTimeout> | null = null;
 
           const createOverlay = () => {
             if (activeOverlay) return;
@@ -124,9 +127,13 @@ export function PreviewPane({ html }: { html: string }) {
 
             overlay.addEventListener('click', (e) => {
               e.stopPropagation();
-              invoke('launch_diagram', { absolutePath: figurePath }).catch(
-                console.error,
-              );
+              invoke('launch_diagram', { absolutePath: figurePath }).catch((err: unknown) => {
+                toast({
+                  title: 'Open figure failed',
+                  description: err instanceof Error ? err.message : String(err),
+                  variant: 'destructive',
+                });
+              });
             });
 
             doc.body.appendChild(overlay);
