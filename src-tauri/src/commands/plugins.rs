@@ -10,19 +10,25 @@ use crate::state::AppState;
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
-fn interpolate_plugin_arg(arg: &str, file_path: &Path) -> String {
+fn interpolate_plugin_arg(arg: &str, file_path: &Path) -> Result<String, String> {
     let file_str = file_path.to_string_lossy();
     let stem = file_path
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_default();
+        .ok_or_else(|| format!("plugin target has no file stem: {}", file_path.display()))?;
     let dir = file_path
         .parent()
         .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    arg.replace("${FILE}", &file_str)
+        .ok_or_else(|| {
+            format!(
+                "plugin target has no parent directory: {}",
+                file_path.display()
+            )
+        })?;
+    Ok(arg
+        .replace("${FILE}", &file_str)
         .replace("${FILE_STEM}", &stem)
-        .replace("${FILE_DIR}", &dir)
+        .replace("${FILE_DIR}", &dir))
 }
 
 // ─── plugins ──────────────────────────────────────────────────────────────────
@@ -81,13 +87,22 @@ pub async fn run_plugin(
         .args
         .iter()
         .map(|a| interpolate_plugin_arg(a, &file_path))
-        .collect();
+        .collect::<Result<Vec<_>, _>>()?;
     let output_path = plugin
         .output
         .as_deref()
-        .map(|o| interpolate_plugin_arg(o, &file_path));
+        .map(|o| interpolate_plugin_arg(o, &file_path))
+        .transpose()?;
     let plugin_timeout = plugin.timeout_ms.unwrap_or(timeout_ms);
-    let cwd = file_path.parent().unwrap_or(Path::new(".")).to_path_buf();
+    let cwd = file_path
+        .parent()
+        .ok_or_else(|| {
+            format!(
+                "plugin target has no parent directory: {}",
+                file_path.display()
+            )
+        })?
+        .to_path_buf();
     let timeout = std::time::Duration::from_millis(plugin_timeout);
     let mut command = tokio::process::Command::new(&plugin.command);
     command.kill_on_drop(true);

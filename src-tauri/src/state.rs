@@ -86,21 +86,19 @@ impl AppState {
         self.workspace_root()
     }
 
-    pub fn current_file_content(&self) -> String {
+    pub fn current_file_content(&self) -> Result<String, String> {
         if let Some(ref path) = self.file {
             let backup = crate::config::get_backup_path(path);
             if backup.exists() {
-                if let Ok(content) = fs::read_to_string(&backup) {
-                    return content;
-                }
+                return fs::read_to_string(&backup)
+                    .map_err(|e| format!("failed to read backup {}: {e}", backup.display()));
             }
             if path.exists() {
-                if let Ok(content) = fs::read_to_string(path) {
-                    return content;
-                }
+                return fs::read_to_string(path)
+                    .map_err(|e| format!("failed to read active file {}: {e}", path.display()));
             }
         }
-        self.file_content.clone().unwrap_or_default()
+        Ok(self.file_content.clone().unwrap_or_default())
     }
 }
 
@@ -139,20 +137,19 @@ pub fn probe_tool_state() -> HashMap<String, ToolEntry> {
     map
 }
 
-pub fn tool_id_for_ext(ext: &str) -> &str {
+pub fn tool_id_for_ext(ext: &str) -> Option<&str> {
     DIAGRAM_TOOLS
         .iter()
         .find(|t| t.ext == ext)
         .map(|t| t.id.as_str())
-        .unwrap_or("inkscape")
 }
 
-pub fn starter_template_for_tool(tool_id: &str) -> &str {
+pub fn starter_template_for_tool(tool_id: &str) -> Result<&str, String> {
     DIAGRAM_TOOLS
         .iter()
         .find(|t| t.id == tool_id)
         .map(|t| t.starter_template.as_str())
-        .unwrap_or("")
+        .ok_or_else(|| format!("unknown diagram tool: {tool_id}"))
 }
 
 fn is_command_available(cmd: &str) -> bool {

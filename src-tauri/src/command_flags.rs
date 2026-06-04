@@ -85,21 +85,11 @@ impl ParsedCommandFlags {
 /// Parse a render command string into structured flags.
 /// Uses `shell_words` for tokenization — the same tokenizer as the existing
 /// Rust-side filter extraction.
-pub fn parse_render_command(command: &str) -> ParsedCommandFlags {
-    let tokens: Vec<String> = shell_words::split(command).unwrap_or_default();
+pub fn parse_render_command(command: &str) -> Result<ParsedCommandFlags, String> {
+    let tokens: Vec<String> =
+        shell_words::split(command).map_err(|e| format!("invalid render command: {e}"))?;
     if tokens.is_empty() {
-        return ParsedCommandFlags {
-            command_name: "pandoc".into(),
-            standalone: false,
-            citeproc: false,
-            toc: false,
-            number_sections: false,
-            embed_resources: false,
-            math_engine: MathEngine::None,
-            template: None,
-            filters: vec![],
-            other_args: vec![],
-        };
+        return Err("render command must not be empty".into());
     }
 
     let command_name = tokens[0].clone();
@@ -202,7 +192,7 @@ pub fn parse_render_command(command: &str) -> ParsedCommandFlags {
         other_args.push(arg.clone());
     }
 
-    ParsedCommandFlags {
+    Ok(ParsedCommandFlags {
         command_name,
         standalone,
         citeproc,
@@ -213,5 +203,5 @@ pub fn parse_render_command(command: &str) -> ParsedCommandFlags {
         template,
         filters,
         other_args,
-    }
+    })
 }

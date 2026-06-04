@@ -46,24 +46,24 @@ pub fn save_session_state(last_file: &Path, is_temp_file: bool) {
     );
 }
 
-#[derive(Debug, serde::Deserialize, Default)]
+#[derive(Debug, serde::Deserialize)]
 pub struct TomlConfig {
-    pub render: Option<TomlRenderSection>,
-    pub pandoc: Option<TomlPandocSection>,
+    pub render: TomlRenderSection,
+    pub pandoc: TomlPandocSection,
 }
 
-#[derive(Debug, serde::Deserialize, Default)]
+#[derive(Debug, serde::Deserialize)]
 pub struct TomlRenderSection {
-    pub debounce_ms: Option<u64>,
-    pub timeout_ms: Option<u64>,
-    pub restore_last_file: Option<bool>,
+    pub debounce_ms: u64,
+    pub timeout_ms: u64,
+    pub restore_last_file: bool,
 }
 
-#[derive(Debug, serde::Deserialize, Default)]
+#[derive(Debug, serde::Deserialize)]
 pub struct TomlPandocSection {
-    pub render_command: Option<String>,
-    pub templates_dir: Option<String>,
-    pub filters_dir: Option<String>,
+    pub render_command: String,
+    pub templates_dir: String,
+    pub filters_dir: String,
 }
 
 pub fn write_config_toml(
@@ -87,7 +87,10 @@ pub fn write_config_toml(
 
 pub fn load_config_from_toml(config_path: &Path) -> Result<TomlConfig, String> {
     if !config_path.exists() {
-        return Ok(TomlConfig::default());
+        return Err(format!(
+            "pandoc-preview config does not exist: {}. Run `just setup` to create it.",
+            config_path.display()
+        ));
     }
     let content = fs::read_to_string(config_path)
         .map_err(|e| format!("failed to read config {}: {}", config_path.display(), e))?;
@@ -95,107 +98,54 @@ pub fn load_config_from_toml(config_path: &Path) -> Result<TomlConfig, String> {
         .map_err(|e| format!("failed to parse config {}: {}", config_path.display(), e))
 }
 
-pub fn discover_config_path() -> Option<PathBuf> {
+pub fn discover_config_path() -> PathBuf {
     let base = std::env::var("XDG_CONFIG_HOME")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            dirs::home_dir()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join(".config")
-        });
-    let path = base.join("pandoc-preview/config.toml");
-    Some(path)
+        .unwrap_or_else(|_| dirs::home_dir().expect("HOME must be set").join(".config"));
+    base.join("pandoc-preview/config.toml")
 }
-
-pub fn default_templates_dir() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".pandoc/templates")
-}
-
-pub fn default_filters_dir() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".pandoc/filters")
-}
-
-pub const DEFAULT_RENDER_COMMAND: &str =
-    "pandoc -f markdown+tex_math_dollars+citations --standalone --to=html5";
 
 pub fn build_initial_state() -> Result<AppState, String> {
     let config_path = discover_config_path();
-    build_initial_state_from_config_path(config_path.as_deref())
+    build_initial_state_from_config_path(&config_path)
 }
 
-pub fn build_initial_state_from_config_path(
-    config_path: Option<&Path>,
-) -> Result<AppState, String> {
-    let config_path_buf = config_path.map(Path::to_path_buf);
-    let config_exists = config_path.map(Path::exists).unwrap_or(false);
-    let toml = match config_path {
-        Some(path) => load_config_from_toml(path)?,
-        None => TomlConfig::default(),
-    };
+pub fn build_initial_state_from_config_path(config_path: &Path) -> Result<AppState, String> {
+    let toml = load_config_from_toml(config_path)?;
+    let render = toml.render;
+    let pandoc = toml.pandoc;
 
-    let render = require_section(toml.render, config_exists, "[render]")?;
-    let pandoc = require_section(toml.pandoc, config_exists, "[pandoc]")?;
+    if pandoc.render_command.trim().is_empty() {
+        return Err("pandoc-preview config render_command must not be empty".into());
+    }
 
-    let render_command = require_or_default(
-        pandoc.render_command,
-        config_exists,
-        "pandoc-preview config is missing pandoc.render_command",
-        || DEFAULT_RENDER_COMMAND.to_string(),
-    )?;
-    let parsed_flags = crate::command_flags::parse_render_command(&render_command);
-    let templates_dir = PathBuf::from(require_or_default(
-        pandoc.templates_dir,
-        config_exists,
-        "pandoc-preview config is missing pandoc.templates_dir",
-        || default_templates_dir().to_string_lossy().into_owned(),
-    )?);
-    let filters_dir = PathBuf::from(require_or_default(
-        pandoc.filters_dir,
-        config_exists,
-        "pandoc-preview config is missing pandoc.filters_dir",
-        || default_filters_dir().to_string_lossy().into_owned(),
-    )?);
-    let debounce_ms = require_or_default(
-        render.debounce_ms,
-        config_exists,
-        "pandoc-preview config is missing render.debounce_ms",
-        || 750,
-    )?;
-    let timeout_ms = require_or_default(
-        render.timeout_ms,
-        config_exists,
-        "pandoc-preview config is missing render.timeout_ms",
-        || 30_000,
-    )?;
-    let restore_last_file = require_or_default(
-        render.restore_last_file,
-        config_exists,
-        "pandoc-preview config is missing render.restore_last_file",
-        || true,
-    )?;
+    let render_command = pandoc.render_command;
+    let parsed_flags = crate::command_flags::parse_render_command(&render_command)?;
+    let templates_dir = PathBuf::from(pandoc.templates_dir);
+    let filters_dir = PathBuf::from(pandoc.filters_dir);
+    let debounce_ms = render.debounce_ms;
+    let timeout_ms = render.timeout_ms;
+    let restore_last_file = render.restore_last_file;
 
-    let (last_file, is_temp_file) = try_restore_last_file(restore_last_file);
+    let (last_file, is_temp_file) = try_restore_last_file(restore_last_file)?;
 
     let plugin_dir = {
         let candidates = [
             PathBuf::from("src/server/plugins"),
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../src/server/plugins"),
             std::env::current_exe()
-                .unwrap_or_default()
+                .map_err(|e| format!("failed to resolve current executable: {e}"))?
                 .parent()
-                .unwrap_or(Path::new("."))
+                .ok_or("current executable has no parent directory")?
                 .join("../server/plugins"),
         ];
         candidates
             .iter()
             .find(|p| p.exists())
             .cloned()
-            .unwrap_or_else(|| PathBuf::from("src/server/plugins"))
+            .ok_or("bundled plugin directory not found")?
     };
-    let plugins = load_bundled_plugins(&plugin_dir);
+    let plugins = load_bundled_plugins(&plugin_dir)?;
     let tool_state = crate::state::probe_tool_state();
 
     Ok(AppState {
@@ -206,7 +156,7 @@ pub fn build_initial_state_from_config_path(
         file_content: None,
         workspace_root: None,
         is_temp_file,
-        config_path: config_path_buf,
+        config_path: Some(config_path.to_path_buf()),
         templates_dir,
         filters_dir,
         debounce_ms,
@@ -220,88 +170,70 @@ pub fn build_initial_state_from_config_path(
     })
 }
 
-fn require_section<T>(
-    value: Option<T>,
-    config_exists: bool,
-    section_name: &str,
-) -> Result<T, String>
-where
-    T: Default,
-{
-    if config_exists {
-        value.ok_or_else(|| {
-            format!("pandoc-preview config is missing required {section_name} section")
-        })
-    } else {
-        Ok(value.unwrap_or_default())
-    }
-}
-
-fn require_or_default<T, F>(
-    value: Option<T>,
-    config_exists: bool,
-    missing_message: &'static str,
-    default: F,
-) -> Result<T, String>
-where
-    F: FnOnce() -> T,
-{
-    if config_exists {
-        value.ok_or_else(|| missing_message.to_string())
-    } else {
-        Ok(value.unwrap_or_else(default))
-    }
-}
-
-fn try_restore_last_file(restore: bool) -> (Option<PathBuf>, bool) {
+fn try_restore_last_file(restore: bool) -> Result<(Option<PathBuf>, bool), String> {
     if !restore {
-        return (None, false);
+        return Ok((None, false));
     }
     let path = state_file_path();
     if !path.exists() {
-        return (None, false);
+        return Ok((None, false));
     }
-    let content = match fs::read_to_string(&path) {
-        Ok(c) => c,
-        Err(_) => return (None, false),
-    };
-    let v: serde_json::Value = match serde_json::from_str(&content) {
-        Ok(v) => v,
-        Err(_) => return (None, false),
-    };
-    let last_file = v["last_file"].as_str().map(PathBuf::from);
-    let is_temp = v["is_temp_file"].as_bool().unwrap_or(false);
+    let content = fs::read_to_string(&path)
+        .map_err(|e| format!("failed to read session state {}: {e}", path.display()))?;
+    let v: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| format!("failed to parse session state {}: {e}", path.display()))?;
+    let last_file = v
+        .get("last_file")
+        .and_then(serde_json::Value::as_str)
+        .map(PathBuf::from);
+    let is_temp = v
+        .get("is_temp_file")
+        .and_then(serde_json::Value::as_bool)
+        .ok_or_else(|| format!("session state {} is missing is_temp_file", path.display()))?;
     if let Some(ref f) = last_file {
         if !f.exists() {
-            return (None, false);
+            return Err(format!(
+                "session state {} references missing file {}",
+                path.display(),
+                f.display()
+            ));
         }
     }
-    (last_file, is_temp)
+    Ok((last_file, is_temp))
 }
 
-pub fn load_bundled_plugins(plugin_dir: &Path) -> Vec<crate::state::PluginManifest> {
+pub fn load_bundled_plugins(
+    plugin_dir: &Path,
+) -> Result<Vec<crate::state::PluginManifest>, String> {
     if !plugin_dir.exists() {
-        return vec![];
+        return Err(format!(
+            "bundled plugin directory does not exist: {}",
+            plugin_dir.display()
+        ));
     }
     let mut manifests = vec![];
-    if let Ok(entries) = std::fs::read_dir(plugin_dir) {
-        let mut names: Vec<_> = entries
-            .flatten()
-            .filter(|e| e.path().extension().map(|x| x == "toml").unwrap_or(false))
-            .map(|e| e.path())
-            .collect();
-        names.sort();
-        for path in names {
-            if let Ok(content) = std::fs::read_to_string(&path) {
-                if let Ok(manifest) =
-                    toml_edit::de::from_str::<crate::state::PluginManifest>(&content)
-                {
-                    manifests.push(manifest);
-                }
-            }
+    let mut names = vec![];
+    for entry in std::fs::read_dir(plugin_dir).map_err(|e| {
+        format!(
+            "failed to read plugin directory {}: {e}",
+            plugin_dir.display()
+        )
+    })? {
+        let entry = entry.map_err(|e| format!("failed to read plugin directory entry: {e}"))?;
+        let path = entry.path();
+        if path.extension().map(|x| x == "toml").unwrap_or(false) {
+            names.push(path);
         }
     }
-    manifests
+    names.sort();
+    for path in names {
+        let content = std::fs::read_to_string(&path)
+            .map_err(|e| format!("failed to read plugin manifest {}: {e}", path.display()))?;
+        let manifest = toml_edit::de::from_str::<crate::state::PluginManifest>(&content)
+            .map_err(|e| format!("failed to parse plugin manifest {}: {e}", path.display()))?;
+        manifests.push(manifest);
+    }
+    Ok(manifests)
 }
 
 #[cfg(test)]
@@ -309,17 +241,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn no_config_file_builds_default_initial_state() {
+    fn missing_config_file_fails_loudly() {
         let dir = tempfile::tempdir().expect("tempdir must be available");
         let config_path = dir.path().join("config.toml");
 
-        let state = build_initial_state_from_config_path(Some(&config_path)).unwrap();
+        let error = build_initial_state_from_config_path(&config_path).unwrap_err();
 
-        assert_eq!(state.config_path, Some(config_path));
-        assert_eq!(state.render_command, DEFAULT_RENDER_COMMAND);
-        assert_eq!(state.debounce_ms, 750);
-        assert_eq!(state.timeout_ms, 30_000);
-        assert!(state.restore_last_file);
+        assert!(error.contains("config does not exist"));
+        assert!(error.contains(&config_path.display().to_string()));
     }
 
     #[test]
@@ -337,9 +266,9 @@ filters_dir = "/tmp/filters"
         )
         .expect("test config must be writable");
 
-        let error = build_initial_state_from_config_path(Some(&config_path)).unwrap_err();
+        let error = build_initial_state_from_config_path(&config_path).unwrap_err();
 
-        assert!(error.contains("missing required [render] section"));
+        assert!(error.contains("missing field `render`"));
     }
 
     #[test]
@@ -361,9 +290,9 @@ filters_dir = "/tmp/filters"
         )
         .expect("test config must be writable");
 
-        let error = build_initial_state_from_config_path(Some(&config_path)).unwrap_err();
+        let error = build_initial_state_from_config_path(&config_path).unwrap_err();
 
-        assert!(error.contains("pandoc.render_command"));
+        assert!(error.contains("missing field `render_command`"));
     }
 
     #[test]
@@ -372,7 +301,7 @@ filters_dir = "/tmp/filters"
         let config_path = dir.path().join("config.toml");
         fs::write(&config_path, "[render\n").expect("test config must be writable");
 
-        let error = build_initial_state_from_config_path(Some(&config_path)).unwrap_err();
+        let error = build_initial_state_from_config_path(&config_path).unwrap_err();
 
         assert!(error.contains("failed to parse config"));
         assert!(error.contains(&config_path.display().to_string()));
@@ -398,7 +327,7 @@ filters_dir = "/tmp/filters"
         )
         .expect("test config must be writable");
 
-        let state = build_initial_state_from_config_path(Some(&config_path)).unwrap();
+        let state = build_initial_state_from_config_path(&config_path).unwrap();
 
         assert_eq!(state.render_command, "pandoc --standalone -t html5");
         assert_eq!(state.debounce_ms, 125);

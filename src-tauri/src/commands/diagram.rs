@@ -80,7 +80,7 @@ pub fn create_diagram_file(
     }
     let figures_dir = resolved_doc
         .parent()
-        .unwrap_or(Path::new("."))
+        .ok_or_else(|| format!("document path has no parent: {}", resolved_doc.display()))?
         .join("figures");
     let figure_path = normalize_path(&figures_dir.join(&filename));
     if !path_is_inside(&figures_dir, &figure_path) {
@@ -90,7 +90,7 @@ pub fn create_diagram_file(
         return Err("figure already exists".into());
     }
     fs::create_dir_all(&figures_dir).map_err(|e| e.to_string())?;
-    let template = starter_template_for_tool(&kind);
+    let template = starter_template_for_tool(&kind)?;
     fs::write(&figure_path, template).map_err(|e| e.to_string())?;
     let relative_path = format!("figures/{}", filename);
     Ok(serde_json::json!({
@@ -107,13 +107,18 @@ pub fn launch_diagram(
     state: State<'_, Mutex<AppState>>,
 ) -> Result<serde_json::Value, String> {
     let s = state.lock().unwrap();
-    let tool_type = kind.unwrap_or_else(|| {
-        let ext = Path::new(&absolute_path)
-            .extension()
-            .map(|e| format!(".{}", e.to_string_lossy().to_lowercase()))
-            .unwrap_or_default();
-        tool_id_for_ext(&ext).to_string()
-    });
+    let tool_type = match kind {
+        Some(kind) => kind,
+        None => {
+            let ext = Path::new(&absolute_path)
+                .extension()
+                .map(|e| format!(".{}", e.to_string_lossy().to_lowercase()))
+                .ok_or_else(|| format!("diagram path has no extension: {absolute_path}"))?;
+            tool_id_for_ext(&ext)
+                .ok_or_else(|| format!("unknown diagram extension: {ext}"))?
+                .to_string()
+        }
+    };
     let entry = s
         .tool_state
         .get(&tool_type)
@@ -127,7 +132,9 @@ pub fn launch_diagram(
     let resolved = if Path::new(&absolute_path).is_absolute() {
         PathBuf::from(&absolute_path)
     } else if let Some(ref file) = s.file {
-        file.parent().unwrap_or(Path::new(".")).join(&absolute_path)
+        file.parent()
+            .ok_or_else(|| format!("active file has no parent directory: {}", file.display()))?
+            .join(&absolute_path)
     } else {
         PathBuf::from(&absolute_path)
     };

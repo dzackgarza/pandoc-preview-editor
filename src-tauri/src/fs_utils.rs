@@ -85,30 +85,29 @@ pub fn should_ignore(workspace_root: &Path, absolute_path: &Path) -> bool {
         .any(|part| part.starts_with('.') || IGNORE_NAMES.contains(&part))
 }
 
-pub fn is_text_like_file(path: &Path) -> bool {
+pub fn is_text_like_file(path: &Path) -> Result<bool, String> {
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().to_lowercase())
         .unwrap_or_default();
     if name == "justfile" {
-        return true;
+        return Ok(true);
     }
     let ext = path
         .extension()
         .map(|e| format!(".{}", e.to_string_lossy().to_lowercase()))
         .unwrap_or_default();
     if BINARY_EXTENSIONS.contains(&ext.as_str()) {
-        return false;
+        return Ok(false);
     }
     if TEXT_EXTENSIONS.contains(&ext.as_str()) {
-        return true;
+        return Ok(true);
     }
     // Sniff for null bytes
-    if let Ok(bytes) = fs::read(path) {
-        let sample = &bytes[..bytes.len().min(1024)];
-        return !sample.contains(&0u8);
-    }
-    false
+    let bytes = fs::read(path)
+        .map_err(|e| format!("failed to read file type sample {}: {e}", path.display()))?;
+    let sample = &bytes[..bytes.len().min(1024)];
+    Ok(!sample.contains(&0u8))
 }
 
 pub fn is_markdown_file(path: &Path) -> bool {
@@ -121,22 +120,24 @@ pub fn is_markdown_file(path: &Path) -> bool {
 
 // ─── fingerprint ─────────────────────────────────────────────────────────────
 
-pub fn get_file_fingerprint(path: &Path) -> Option<FileFingerprint> {
-    let meta = fs::metadata(path).ok()?;
+pub fn get_file_fingerprint(path: &Path) -> Result<Option<FileFingerprint>, String> {
+    let meta = fs::metadata(path)
+        .map_err(|e| format!("failed to read metadata for {}: {e}", path.display()))?;
     if !meta.is_file() {
-        return None;
+        return Ok(None);
     }
-    let content = fs::read_to_string(path).ok()?;
+    let content =
+        fs::read_to_string(path).map_err(|e| format!("failed to read {}: {e}", path.display()))?;
     let mut hasher = Sha256::new();
     hasher.update(content.as_bytes());
     let hash = hex::encode(hasher.finalize());
     let mtime_ms = meta
         .modified()
-        .ok()
-        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
-    Some(FileFingerprint { mtime_ms, hash })
+        .map_err(|e| format!("failed to read modified time for {}: {e}", path.display()))?
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| format!("invalid modified time for {}: {e}", path.display()))?
+        .as_millis() as u64;
+    Ok(Some(FileFingerprint { mtime_ms, hash }))
 }
 
 // ─── atomic write ─────────────────────────────────────────────────────────────

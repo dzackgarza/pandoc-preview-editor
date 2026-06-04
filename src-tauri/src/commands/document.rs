@@ -29,21 +29,21 @@ fn remove_file_if_present(path: &Path) -> Result<(), String> {
 // ─── Tauri commands ───────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn get_initial_state(state: State<'_, Mutex<AppState>>) -> serde_json::Value {
+pub fn get_initial_state(state: State<'_, Mutex<AppState>>) -> Result<serde_json::Value, String> {
     let s = state.lock().unwrap();
     let has_backup = if let Some(ref file) = s.file {
         s.recovered_from_backup || get_backup_path(file).exists()
     } else {
         false
     };
-    serde_json::json!({
-        "content": s.current_file_content(),
+    Ok(serde_json::json!({
+        "content": s.current_file_content()?,
         "file": s.file.as_ref().filter(|_| !s.is_temp_file).map(|p| p.to_string_lossy()),
         "tempBackupFile": if s.is_temp_file { s.file.as_ref().map(|p| p.to_string_lossy().into_owned()) } else { None },
         "workspaceRoot": s.workspace_root().to_string_lossy(),
         "isTempFile": s.is_temp_file,
         "recoveredFromBackup": has_backup,
-    })
+    }))
 }
 
 // ─── save ─────────────────────────────────────────────────────────────────────
@@ -89,7 +89,7 @@ pub fn save(
             .file_fingerprints
             .get(&target_path.to_string_lossy().into_owned())
         {
-            if let Some(disk_fp) = get_file_fingerprint(&target_path) {
+            if let Some(disk_fp) = get_file_fingerprint(&target_path)? {
                 if disk_fp.hash != registered.hash {
                     return Err("The file has been modified externally.".into());
                 }
@@ -104,7 +104,7 @@ pub fn save(
     write_file_atomic(&target_path, &markdown)?;
 
     // Update fingerprint
-    if let Some(fp) = get_file_fingerprint(&target_path) {
+    if let Some(fp) = get_file_fingerprint(&target_path)? {
         s.file_fingerprints
             .insert(target_path.to_string_lossy().into_owned(), fp);
     }
@@ -118,7 +118,10 @@ pub fn save(
             let new_ws = if path_is_inside(&workspace_root, &target_path) {
                 workspace_root.clone()
             } else {
-                target_path.parent().unwrap_or(&target_path).to_path_buf()
+                target_path
+                    .parent()
+                    .ok_or_else(|| format!("save target has no parent: {}", target_path.display()))?
+                    .to_path_buf()
             };
             s.file = Some(target_path.clone());
             s.is_temp_file = false;
@@ -288,7 +291,7 @@ pub fn list_files(
             }));
             continue;
         }
-        if abs.is_file() && is_text_like_file(&abs) {
+        if abs.is_file() && is_text_like_file(&abs)? {
             entries.push(serde_json::json!({
                 "name": name,
                 "path": client_path,
@@ -330,12 +333,12 @@ pub fn file_content(
     if !meta.is_file() {
         return Err("path must reference a file".into());
     }
-    if !is_text_like_file(&target_path) {
+    if !is_text_like_file(&target_path)? {
         return Err("file does not look like text".into());
     }
     let content = fs::read_to_string(&target_path).map_err(|e| e.to_string())?;
 
-    if let Some(fp) = get_file_fingerprint(&target_path) {
+    if let Some(fp) = get_file_fingerprint(&target_path)? {
         s.file_fingerprints
             .insert(target_path.to_string_lossy().into_owned(), fp);
     }
@@ -395,7 +398,12 @@ pub fn new_file(
     s.file = Some(target_path.clone());
     s.file_content = Some(String::new());
     s.is_temp_file = false;
-    s.workspace_root = Some(target_path.parent().unwrap_or(&target_path).to_path_buf());
+    s.workspace_root = Some(
+        target_path
+            .parent()
+            .ok_or_else(|| format!("new file target has no parent: {}", target_path.display()))?
+            .to_path_buf(),
+    );
     save_session_state(&target_path, false);
 
     Ok(serde_json::json!({
@@ -466,7 +474,10 @@ pub async fn quick_open_spawn(
         .await
         .map_err(|e| e.to_string())?;
 
-    let code = output.status.code().unwrap_or(0);
+    let code = output
+        .status
+        .code()
+        .ok_or("quick open launcher terminated without an exit code")?;
     if code == 130 || code == 1 {
         return Ok(serde_json::json!({ "ok": false, "cancelled": true }));
     }
@@ -478,16 +489,16 @@ pub async fn quick_open_spawn(
 
     let target_path = resolve_inside(&workspace_root, &trimmed)?;
     if !target_path.exists() || !target_path.is_file() {
-        return Ok(serde_json::json!({
-            "ok": false,
-            "error": format!("Selected path \"{}\" does not exist or is not a file.", trimmed),
-        }));
+        return Err(format!(
+            "Selected path \"{}\" does not exist or is not a file.",
+            trimmed
+        ));
     }
     if !is_markdown_file(&target_path) {
-        return Ok(serde_json::json!({
-            "ok": false,
-            "error": format!("Selected path \"{}\" is not a markdown file.", trimmed),
-        }));
+        return Err(format!(
+            "Selected path \"{}\" is not a markdown file.",
+            trimmed
+        ));
     }
 
     let content = fs::read_to_string(&target_path).map_err(|e| e.to_string())?;
@@ -495,7 +506,7 @@ pub async fn quick_open_spawn(
 
     {
         let mut s = state.lock().unwrap();
-        if let Some(fp) = get_file_fingerprint(&target_path) {
+        if let Some(fp) = get_file_fingerprint(&target_path)? {
             s.file_fingerprints
                 .insert(target_path.to_string_lossy().into_owned(), fp);
         }

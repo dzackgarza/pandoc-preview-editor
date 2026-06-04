@@ -10,10 +10,11 @@ use crate::state::AppState;
 // ─── config ───────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn get_config(state: State<'_, Mutex<AppState>>) -> serde_json::Value {
+pub fn get_config(state: State<'_, Mutex<AppState>>) -> Result<serde_json::Value, String> {
     let s = state.lock().unwrap();
-    let parsed = serde_json::to_value(&s.parsed_flags).unwrap_or(serde_json::Value::Null);
-    serde_json::json!({
+    let parsed = serde_json::to_value(&s.parsed_flags)
+        .map_err(|e| format!("failed to serialize parsed command flags: {e}"))?;
+    Ok(serde_json::json!({
         "templatesDir": s.templates_dir.to_string_lossy(),
         "filtersDir": s.filters_dir.to_string_lossy(),
         "debounceMs": s.debounce_ms,
@@ -21,7 +22,7 @@ pub fn get_config(state: State<'_, Mutex<AppState>>) -> serde_json::Value {
         "renderCommand": s.render_command,
         "restoreLastFile": s.restore_last_file,
         "parsedFlags": parsed,
-    })
+    }))
 }
 
 #[tauri::command]
@@ -31,7 +32,7 @@ pub fn set_config(
     debounce_ms: u64,
     timeout_ms: u64,
     render_command: String,
-    restore_last_file: Option<bool>,
+    restore_last_file: bool,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<serde_json::Value, String> {
     if render_command.trim().is_empty() {
@@ -46,15 +47,15 @@ pub fn set_config(
     s.debounce_ms = debounce_ms;
     s.timeout_ms = timeout_ms;
     s.render_command = render_command.clone();
-    s.parsed_flags = command_flags::parse_render_command(&render_command);
-    s.restore_last_file = restore_last_file.unwrap_or(true);
+    s.parsed_flags = command_flags::parse_render_command(&render_command)?;
+    s.restore_last_file = restore_last_file;
 
     if let Some(ref config_path) = s.config_path {
         write_config_toml(
             config_path,
             debounce_ms,
             timeout_ms,
-            restore_last_file.unwrap_or(true),
+            restore_last_file,
             &render_command,
             &templates_dir,
             &filters_dir,

@@ -37,7 +37,7 @@ pub fn save_figure_asset(
     }
     let figures_dir = target_doc
         .parent()
-        .unwrap_or(Path::new("."))
+        .ok_or_else(|| format!("document path has no parent: {}", target_doc.display()))?
         .join("figures");
     let figure_name = filename
         .as_deref()
@@ -70,33 +70,47 @@ pub fn figures_registry(state: State<'_, Mutex<AppState>>) -> Result<serde_json:
     let workspace_root = s.workspace_root();
     drop(s);
 
-    let mut figures: Vec<FigureEntry> = WalkDir::new(&workspace_root)
+    let mut figures: Vec<FigureEntry> = vec![];
+    for entry in WalkDir::new(&workspace_root)
         .sort_by_file_name()
         .into_iter()
         .filter_entry(|entry| !should_ignore(&workspace_root, entry.path()))
-        .filter_map(Result::ok)
-        .filter_map(|entry| {
-            let path = entry.path();
-            if !path.is_file() || !is_workspace_figure(&workspace_root, path) {
-                return None;
-            }
-            let kind = figure_kind(path)?;
-            let created_at = fs::metadata(path)
-                .ok()
-                .and_then(|meta| meta.modified().ok())
-                .and_then(|mtime| mtime.duration_since(UNIX_EPOCH).ok())
-                .map(|duration| duration.as_millis().to_string())
-                .unwrap_or_else(|| "0".to_string());
-            Some(FigureEntry {
-                id: path.to_string_lossy().into_owned(),
-                name: path.file_name()?.to_string_lossy().into_owned(),
-                path: path.to_string_lossy().into_owned(),
-                kind,
-                created_at,
-                documents: vec![],
-            })
-        })
-        .collect();
+    {
+        let entry = entry.map_err(|e| format!("failed to walk figures registry: {e}"))?;
+        let path = entry.path();
+        if !path.is_file() || !is_workspace_figure(&workspace_root, path)? {
+            continue;
+        }
+        let Some(kind) = figure_kind(path) else {
+            continue;
+        };
+        let created_at = fs::metadata(path)
+            .map_err(|e| format!("failed to read figure metadata {}: {e}", path.display()))?
+            .modified()
+            .map_err(|e| {
+                format!(
+                    "failed to read figure modified time {}: {e}",
+                    path.display()
+                )
+            })?
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| format!("invalid figure modified time {}: {e}", path.display()))?
+            .as_millis()
+            .to_string();
+        let name = path
+            .file_name()
+            .ok_or_else(|| format!("figure path has no file name: {}", path.display()))?
+            .to_string_lossy()
+            .into_owned();
+        figures.push(FigureEntry {
+            id: path.to_string_lossy().into_owned(),
+            name,
+            path: path.to_string_lossy().into_owned(),
+            kind,
+            created_at,
+            documents: vec![],
+        });
+    }
 
     figures.sort_by(|left, right| {
         right
@@ -108,16 +122,18 @@ pub fn figures_registry(state: State<'_, Mutex<AppState>>) -> Result<serde_json:
     Ok(serde_json::json!({ "figures": figures }))
 }
 
-fn is_workspace_figure(workspace_root: &Path, path: &Path) -> bool {
-    path.strip_prefix(workspace_root)
-        .ok()
-        .map(|relative| {
-            relative
-                .components()
-                .any(|component| component.as_os_str() == "figures")
-                && figure_kind(path).is_some()
-        })
-        .unwrap_or(false)
+fn is_workspace_figure(workspace_root: &Path, path: &Path) -> Result<bool, String> {
+    let relative = path.strip_prefix(workspace_root).map_err(|e| {
+        format!(
+            "walked figure path {} is outside workspace {}: {e}",
+            path.display(),
+            workspace_root.display()
+        )
+    })?;
+    Ok(relative
+        .components()
+        .any(|component| component.as_os_str() == "figures")
+        && figure_kind(path).is_some())
 }
 
 fn figure_kind(path: &Path) -> Option<String> {
@@ -127,7 +143,7 @@ fn figure_kind(path: &Path) -> Option<String> {
     match ext.as_str() {
         ".png" | ".jpg" | ".jpeg" | ".gif" | ".webp" => Some("clipboard".into()),
         ".svg" | ".tikz" | ".drawio" | ".xoj" | ".xopp" | ".ipe" => {
-            Some(tool_id_for_ext(&ext).to_string())
+            tool_id_for_ext(&ext).map(str::to_string)
         }
         _ => None,
     }
