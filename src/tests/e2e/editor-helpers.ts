@@ -2,30 +2,6 @@ import path from 'node:path';
 import type { TauriPage } from '@srsholmes/tauri-playwright';
 import { expect } from './fixtures.js';
 
-import { load as parseTomlRaw } from 'js-toml';
-
-/**
- * Parse TOML content into a typed record.
- * js-toml's load() returns `unknown` — this wrapper narrows to Record<string, unknown>
- * for property access. All call sites use exact assertions on the result.
- */
-export function parseToml(content: string): Record<string, any> {
-  return parseTomlRaw(content) as Record<string, unknown>;
-}
-
-/**
- * Extract filters from a pandoc_assets IPC result.
- * Tauri IPC returns untyped JSON — this narrows to the known shape.
- */
-export function getPandocFilters(assets: unknown): string[] {
-  const a = assets as Record<string, unknown>;
-  const filters = a.filters;
-  if (!Array.isArray(filters)) {
-    throw new Error('pandoc_assets: expected filters array');
-  }
-  return filters as string[];
-}
-
 /** The TauriPage adapter — always TauriPage in E2E desktop mode. */
 export type AppPage = TauriPage;
 

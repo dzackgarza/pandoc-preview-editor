@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { expect, test } from './fixtures.js';
 import { invokeTauri, replaceEditorContents, previewText } from './editor-helpers.js';
-import { parseToml } from './editor-helpers.js';
+import { load } from 'js-toml';
 
 const settingsTest = test.extend({
   testEnv: async ({ testEnv }, use) => {
@@ -89,7 +89,7 @@ test.describe('Settings and Preferences (Tauri)', () => {
       await expect(dialog).not.toBeVisible();
 
       const savedTomlContent = readFileSync(tomlPath, 'utf-8');
-      const parsedToml = parseToml(savedTomlContent);
+      const parsedToml = load(savedTomlContent) as any;
       expect(parsedToml.pandoc.render_command).toContain('--standalone');
       expect(parsedToml.pandoc.render_command).not.toContain('--citeproc');
 
@@ -204,7 +204,7 @@ test.describe('Settings and Preferences (Tauri)', () => {
       expect(result).toEqual({ ok: true });
 
       const savedTomlContent = readFileSync(tomlPath, 'utf-8');
-      const parsedToml = parseToml(savedTomlContent);
+      const parsedToml = load(savedTomlContent) as any;
       expect(parsedToml.pandoc.render_command).toContain('--mathjax');
       expect(parsedToml.pandoc.render_command).not.toContain('--citeproc');
     },

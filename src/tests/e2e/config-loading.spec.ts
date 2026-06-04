@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { expect, test } from './fixtures.js';
 import { invokeTauri } from './editor-helpers.js';
-import { parseToml } from './editor-helpers.js';
+import { load } from 'js-toml';
 
 const defaultConfigTest = test.extend({
   testEnv: async ({ testEnv }, use) => {
@@ -134,7 +134,7 @@ test.describe('Centralized TOML Configuration (Tauri)', () => {
       expect(result).toEqual({ ok: true });
 
       const savedContent = readFileSync(testEnv.configPath, 'utf-8');
-      const parsedToml = parseToml(savedContent);
+      const parsedToml = load(savedContent) as any;
       expect(parsedToml.render.debounce_ms).toBe(200);
       expect(parsedToml.render.timeout_ms).toBe(15000);
       expect(parsedToml.pandoc.render_command).toContain('--mathjax');

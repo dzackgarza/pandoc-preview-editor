@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { expect, test } from './fixtures.js';
 import { invokeTauri, previewText } from './editor-helpers.js';
-import { parseToml, getPandocFilters } from './editor-helpers.js';
+import { load } from 'js-toml';
 
 const commandParsingTest = test.extend({
   testEnv: async ({ testEnv }, use) => {
@@ -43,7 +43,7 @@ test.describe('Command parsing via Tauri IPC', () => {
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
 
       const assets = await invokeTauri(appPage, 'pandoc_assets', {});
-      const filters = getPandocFilters(assets);
+      const filters = (assets as any).filters as string[];
 
       expect(filters).toContain('my-filter.lua');
       expect(filters).toContain('another.lua');
@@ -95,7 +95,7 @@ test.describe('Command parsing via Tauri IPC', () => {
       expect(c.renderCommand).not.toContain('--citeproc');
 
       const tomlContent = readFileSync(testEnv.configPath, 'utf-8');
-      const parsedToml = parseToml(tomlContent);
+      const parsedToml = load(tomlContent) as any;
       expect(parsedToml.pandoc.render_command).toContain('--standalone');
       expect(parsedToml.pandoc.render_command).not.toContain('--citeproc');
     },
@@ -242,7 +242,7 @@ test.describe('Command parsing via Settings dialog', () => {
       await expect(dialog).not.toBeVisible();
 
       const savedTomlContent = readFileSync(tomlPath, 'utf-8');
-      const parsedToml = parseToml(savedTomlContent);
+      const parsedToml = load(savedTomlContent) as any;
       expect(parsedToml.pandoc.render_command).toContain('--standalone');
       expect(parsedToml.pandoc.render_command).not.toContain('--citeproc');
     },
@@ -289,7 +289,7 @@ test.describe('Command parsing via Settings dialog', () => {
       await expect(dialog).not.toBeVisible();
 
       const savedTomlContent = readFileSync(testEnv.configPath, 'utf-8');
-      const parsedToml = parseToml(savedTomlContent);
+      const parsedToml = load(savedTomlContent) as any;
       expect(parsedToml.pandoc.render_command).toContain('my-filter.lua');
     },
   );
