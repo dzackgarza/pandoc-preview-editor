@@ -14,18 +14,30 @@ Typed wrappers in `editor-helpers.ts` (`parseToml`, `getPandocFilters`) eliminat
 - **Justification:** `@srsholmes/tauri-playwright` v0.2.2 does not export the `PageLike` interface used in its `Expect<>` matchers (`toHaveURL`, `toHaveTitle`). Re-exporting `base.expect` triggers TS4023. The runtime value is correct; `as any` widens to avoid the declaration-emit blocker.
 - **Status:** Documented. Upstream package defect.
 
+### `src/tests/e2e/command-parsing.spec.ts:46`
+- **Pattern:** `(assets as any).filters`
+- **Justification:** Tauri IPC `pandoc_assets` response is untyped JSON. Narrow cast to access known `.filters` array.
+- **Status:** Library type gap.
+
+### `src/tests/e2e/command-parsing.spec.ts:98,245,292`
+- **Pattern:** `load(tomlContent) as any`
+- **Justification:** `js-toml` library `load()` returns `unknown`. Narrow cast to access TOML properties.
+- **Status:** Library type gap.
+
+### `src/tests/e2e/config-loading.spec.ts:137`
+- **Pattern:** `load(savedContent) as any`
+- **Justification:** Same library gap — `js-toml` `load()` returns `unknown`.
+- **Status:** Library type gap.
+
+### `src/tests/e2e/settings.spec.ts:92,207`
+- **Pattern:** `load(savedTomlContent) as any`
+- **Justification:** Same library gap — `js-toml` `load()` returns `unknown`.
+- **Status:** Library type gap.
+
 ### `src/tests/e2e/app.spec.ts:6`
 - **Pattern:** `test.skip(`
 - **Justification:** Intentional browser-smoke gate — runs exclusively in the `browser-smoke` Playwright project where IPC is mocked.
 - **Status:** Acceptable. The only `test.skip` in the suite.
-
-## Resolved (consolidated into typed wrappers)
-
-These `as any` instances in spec files were eliminated by moving library-gap casts into shared typed wrappers in `editor-helpers.ts`:
-
-- `command-parsing.spec.ts` — 4 `load() as any` + 1 `(assets as any)` → `parseToml()` + `getPandocFilters()`
-- `config-loading.spec.ts` — 1 `load() as any` → `parseToml()`
-- `settings.spec.ts` — 2 `load() as any` → `parseToml()`
 
 ## Patterns confirmed absent
 
