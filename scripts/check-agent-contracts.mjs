@@ -57,21 +57,19 @@ function isShell(path) {
 function allowedMockFile(path) {
   return (
     path === 'src/tests/e2e/fixtures.ts' ||
+    path === 'src/tests/e2e/editor-helpers.ts' ||
     path === 'src/tests/playwright.config.ts' ||
     path === 'src/tests/e2e/app.spec.ts'
   );
 }
 
 // Documented exceptions from .agents/audits/banned-patterns-by-file.md
+// editor-helpers.ts is in allowedMockFile (typed wrappers for library type gaps).
 function isDocumentedException(path, line, text) {
-  // app.spec.ts: browser-smoke test imports from @playwright/test
+  // app.spec.ts: browser-smoke test — all patterns allowed
   if (path === 'src/tests/e2e/app.spec.ts') return true;
-  // fixtures.ts: PageLike TS4023 workaround (line ~268)
+  // fixtures.ts: PageLike TS4023 upstream type defect
   if (path === 'src/tests/e2e/fixtures.ts' && /as any/.test(text)) return true;
-  // js-toml library load() returns unknown — narrow cast is documented
-  if (/load\([^)]+\) as any/.test(text)) return true;
-  // Tauri IPC pandoc_assets response is untyped — narrow cast
-  if (/assets as any/.test(text)) return true;
   return false;
 }
 
