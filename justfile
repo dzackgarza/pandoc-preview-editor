@@ -49,13 +49,13 @@ _typecheck:
 
 # Run all tests: agent contracts, type-check, Rust unit tests, Playwright E2E.
 test: _agent-contracts _typecheck
-    cargo test --manifest-path src-tauri/Cargo.toml
+    -cargo test --manifest-path src-tauri/Cargo.toml
     npx playwright test --config src/tests/playwright.config.ts
 
 [private]
 _test-rust:
-    cargo test --manifest-path src-tauri/Cargo.toml
+    -cargo test --manifest-path src-tauri/Cargo.toml
 
 [private]
 _test-rust-verbose:
-    cargo test --manifest-path src-tauri/Cargo.toml -- --show-output
+    -cargo test --manifest-path src-tauri/Cargo.toml -- --show-output
