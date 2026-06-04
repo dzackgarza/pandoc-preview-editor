@@ -37,7 +37,7 @@ kill_tree() {
 trap kill_tree EXIT
 set -m
 
-npx tauri dev --config "$script_dir/tauri.e2e.conf.json" --no-watch "$@" &
+xvfb-run --auto-servernum npx tauri dev --config "$script_dir/tauri.e2e.conf.json" --no-watch "$@" &
 child_pid=$!
 
 # Wait for the Tauri process. When Playwright sends SIGTERM to this script,
