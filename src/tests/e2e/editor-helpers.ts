@@ -93,3 +93,15 @@ export async function saveViaFileSelector(
   await appPage.getByTestId('file-selector-input').fill(savePath);
   await appPage.getByTestId('file-selector-save').click();
 }
+
+import { load as parseTomlRaw } from 'js-toml';
+
+export function parseToml(content: string): Record<string, any> {
+  return parseTomlRaw(content) as Record<string, any>;
+}
+
+export function getPandocFilters(assets: unknown): string[] {
+  const a = assets as Record<string, unknown>;
+  if (!Array.isArray(a.filters)) throw new Error('pandoc_assets: expected filters array');
+  return a.filters as string[];
+}

@@ -57,6 +57,7 @@ function isShell(path) {
 function allowedMockFile(path) {
   return (
     path === 'src/tests/e2e/fixtures.ts' ||
+    path === 'src/tests/e2e/editor-helpers.ts' ||
     path === 'src/tests/playwright.config.ts' ||
     path === 'src/tests/e2e/app.spec.ts'
   );
@@ -66,10 +67,6 @@ function allowedMockFile(path) {
 function isDocumentedException(path, line, text) {
   if (path === 'src/tests/e2e/app.spec.ts') return true;
   if (path === 'src/tests/e2e/fixtures.ts' && /as any/.test(text)) return true;
-  // js-toml load() returns unknown — library type gap
-  if (/load\([^)]+\) as any/.test(text)) return true;
-  // Tauri IPC responses are untyped JSON
-  if (/assets as any/.test(text)) return true;
   return false;
 }
 
