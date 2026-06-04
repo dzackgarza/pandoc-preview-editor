@@ -4,9 +4,6 @@
  * This is the core boundary test. It runs against the live Tauri IPC backend,
  * not mocked. The test proves that user text entered in the editor arrives in
  * the preview as real pandoc-rendered HTML.
- *
- * There is also a browser-smoke project that runs with mocked IPC to verify
- * the UI shell renders. That test lives in the browser-smoke project below.
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';

@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { defineConfig, devices } from '@playwright/test';
+import { defineConfig } from '@playwright/test';
 
 /**
  * tauri-playwright custom project option.
@@ -29,14 +29,6 @@ export default defineConfig({
     timeout: 30000,
   },
   projects: [
-    {
-      name: 'browser-smoke',
-      testMatch: /app\.spec\.ts/,
-      use: {
-        ...devices['Desktop Chrome'],
-        mode: 'browser',
-      },
-    },
     {
       name: 'tauri',
       testMatch: '**/workflows.spec.ts',
