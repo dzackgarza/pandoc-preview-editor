@@ -122,65 +122,54 @@ pub fn default_filters_dir() -> PathBuf {
 pub const DEFAULT_RENDER_COMMAND: &str =
     "pandoc -f markdown+tex_math_dollars+citations --standalone --to=html5";
 
-pub fn build_initial_state() -> AppState {
+pub fn build_initial_state() -> Result<AppState, String> {
     let config_path = discover_config_path();
     let config_exists = config_path.as_deref().map(Path::exists).unwrap_or(false);
     let toml = match config_path.as_deref() {
-        Some(path) => load_config_from_toml(path)
-            .unwrap_or_else(|e| panic!("pandoc-preview config load failed: {}", e)),
+        Some(path) => load_config_from_toml(path)?,
         None => TomlConfig::default(),
     };
 
-    let render = if config_exists {
-        toml.render
-            .expect("pandoc-preview config is missing required [render] section")
-    } else {
-        toml.render.unwrap_or_default()
-    };
-    let pandoc = if config_exists {
-        toml.pandoc
-            .expect("pandoc-preview config is missing required [pandoc] section")
-    } else {
-        toml.pandoc.unwrap_or_default()
-    };
+    let render = require_section(toml.render, config_exists, "[render]")?;
+    let pandoc = require_section(toml.pandoc, config_exists, "[pandoc]")?;
 
     let render_command = require_or_default(
         pandoc.render_command,
         config_exists,
         "pandoc-preview config is missing pandoc.render_command",
         || DEFAULT_RENDER_COMMAND.to_string(),
-    );
+    )?;
     let parsed_flags = crate::command_flags::parse_render_command(&render_command);
     let templates_dir = PathBuf::from(require_or_default(
         pandoc.templates_dir,
         config_exists,
         "pandoc-preview config is missing pandoc.templates_dir",
         || default_templates_dir().to_string_lossy().into_owned(),
-    ));
+    )?);
     let filters_dir = PathBuf::from(require_or_default(
         pandoc.filters_dir,
         config_exists,
         "pandoc-preview config is missing pandoc.filters_dir",
         || default_filters_dir().to_string_lossy().into_owned(),
-    ));
+    )?);
     let debounce_ms = require_or_default(
         render.debounce_ms,
         config_exists,
         "pandoc-preview config is missing render.debounce_ms",
         || 750,
-    );
+    )?;
     let timeout_ms = require_or_default(
         render.timeout_ms,
         config_exists,
         "pandoc-preview config is missing render.timeout_ms",
         || 30_000,
-    );
+    )?;
     let restore_last_file = require_or_default(
         render.restore_last_file,
         config_exists,
         "pandoc-preview config is missing render.restore_last_file",
         || true,
-    );
+    )?;
 
     let (last_file, is_temp_file) = try_restore_last_file(restore_last_file);
 
@@ -202,7 +191,7 @@ pub fn build_initial_state() -> AppState {
     let plugins = load_bundled_plugins(&plugin_dir);
     let tool_state = crate::state::probe_tool_state();
 
-    AppState {
+    Ok(AppState {
         render_command,
         parsed_flags,
         timeout_ms,
@@ -221,6 +210,19 @@ pub fn build_initial_state() -> AppState {
         recent_files: vec![],
         file_fingerprints: HashMap::new(),
         tool_state,
+    })
+}
+
+fn require_section<T>(value: Option<T>, config_exists: bool, section_name: &str) -> Result<T, String>
+where
+    T: Default,
+{
+    if config_exists {
+        value.ok_or_else(|| {
+            format!("pandoc-preview config is missing required {section_name} section")
+        })
+    } else {
+        Ok(value.unwrap_or_default())
     }
 }
 
@@ -229,14 +231,14 @@ fn require_or_default<T, F>(
     config_exists: bool,
     missing_message: &'static str,
     default: F,
-) -> T
+) -> Result<T, String>
 where
     F: FnOnce() -> T,
 {
     if config_exists {
-        value.expect(missing_message)
+        value.ok_or_else(|| missing_message.to_string())
     } else {
-        value.unwrap_or_else(default)
+        Ok(value.unwrap_or_else(default))
     }
 }
 
@@ -289,4 +291,54 @@ pub fn load_bundled_plugins(plugin_dir: &Path) -> Vec<crate::state::PluginManife
         }
     }
     manifests
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn malformed_config_returns_parse_diagnostic() {
+        let dir = tempfile::tempdir().expect("tempdir must be available");
+        let config_path = dir.path().join("config.toml");
+        fs::write(&config_path, "[render\n").expect("test config must be writable");
+
+        let error = load_config_from_toml(&config_path).unwrap_err();
+
+        assert!(error.contains("failed to parse config"));
+        assert!(error.contains(&config_path.display().to_string()));
+    }
+
+    #[test]
+    fn existing_config_requires_render_section() {
+        let error = require_section::<TomlRenderSection>(None, true, "[render]").unwrap_err();
+
+        assert_eq!(
+            error,
+            "pandoc-preview config is missing required [render] section"
+        );
+    }
+
+    #[test]
+    fn existing_config_requires_explicit_values() {
+        let error = require_or_default::<String, _>(
+            None,
+            true,
+            "pandoc-preview config is missing pandoc.render_command",
+            || DEFAULT_RENDER_COMMAND.to_string(),
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            "pandoc-preview config is missing pandoc.render_command"
+        );
+    }
+
+    #[test]
+    fn absent_config_uses_defaults() {
+        let value = require_or_default(None, false, "must not be used", || 750).unwrap();
+
+        assert_eq!(value, 750);
+    }
 }

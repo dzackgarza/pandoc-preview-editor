@@ -9,7 +9,9 @@ use std::sync::Mutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let initial_state = config::build_initial_state();
+    let initial_state = config::build_initial_state().unwrap_or_else(|error| {
+        panic!("pandoc-preview fatal startup error: {}", error);
+    });
 
     commands::register_commands(
         tauri::Builder::default()
