@@ -9,7 +9,7 @@ Each row maps a banned pattern class to its verification result. Rationale and f
 | Pattern | Status | Exception |
 |---|---|---|
 | `@ts-nocheck` / `@ts-ignore` | Zero | — |
-| `as any` / `: any` | 8 instances (4 files) | Library type gaps: `js-toml` `load()` returns `unknown`, `pandoc_assets` IPC is untyped, `PageLike` unexported |
+| `as any` / `: any` | 1 instance (`fixtures.ts:268`) | `PageLike` TS4023 upstream defect. Library-gap casts isolated in `editor-helpers.ts` typed wrappers. |
 | `Record<string, unknown>` shape-only assertions | Zero (exact values asserted after every IPC call) | — |
 | CJS `require()` in ESM | Zero | — |
 | Empty `catch` blocks | Zero | — |
