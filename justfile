@@ -48,9 +48,8 @@ _typecheck:
     npx tsc --noEmit
 
 # Run all tests: agent contracts, type-check, Rust unit tests, Playwright E2E.
-# Cargo test failures are classified per .agents/audits/debugging-framework.md.
 test: _agent-contracts _typecheck
-    @cargo test --manifest-path src-tauri/Cargo.toml || echo "cargo test failed — classify per .agents/audits/debugging-framework.md" >&2
+    cargo test --manifest-path src-tauri/Cargo.toml
     npx playwright test --config src/tests/playwright.config.ts
 
 [private]
