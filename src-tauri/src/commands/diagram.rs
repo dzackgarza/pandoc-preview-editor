@@ -78,7 +78,10 @@ pub fn create_diagram_file(
     if s.is_temp_file || s.file.is_none() || s.file.as_ref() != Some(&resolved_doc) {
         return Err("save the document before adding figures".into());
     }
-    let figures_dir = resolved_doc.parent().unwrap_or(Path::new(".")).join("figures");
+    let figures_dir = resolved_doc
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join("figures");
     let figure_path = normalize_path(&figures_dir.join(&filename));
     if !path_is_inside(&figures_dir, &figure_path) {
         return Err("figure path escapes figures directory".into());

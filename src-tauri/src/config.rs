@@ -124,8 +124,15 @@ pub const DEFAULT_RENDER_COMMAND: &str =
 
 pub fn build_initial_state() -> Result<AppState, String> {
     let config_path = discover_config_path();
-    let config_exists = config_path.as_deref().map(Path::exists).unwrap_or(false);
-    let toml = match config_path.as_deref() {
+    build_initial_state_from_config_path(config_path.as_deref())
+}
+
+pub fn build_initial_state_from_config_path(
+    config_path: Option<&Path>,
+) -> Result<AppState, String> {
+    let config_path_buf = config_path.map(Path::to_path_buf);
+    let config_exists = config_path.map(Path::exists).unwrap_or(false);
+    let toml = match config_path {
         Some(path) => load_config_from_toml(path)?,
         None => TomlConfig::default(),
     };
@@ -199,7 +206,7 @@ pub fn build_initial_state() -> Result<AppState, String> {
         file_content: None,
         workspace_root: None,
         is_temp_file,
-        config_path,
+        config_path: config_path_buf,
         templates_dir,
         filters_dir,
         debounce_ms,
@@ -213,7 +220,11 @@ pub fn build_initial_state() -> Result<AppState, String> {
     })
 }
 
-fn require_section<T>(value: Option<T>, config_exists: bool, section_name: &str) -> Result<T, String>
+fn require_section<T>(
+    value: Option<T>,
+    config_exists: bool,
+    section_name: &str,
+) -> Result<T, String>
 where
     T: Default,
 {
@@ -298,47 +309,102 @@ mod tests {
     use super::*;
 
     #[test]
-    fn malformed_config_returns_parse_diagnostic() {
+    fn no_config_file_builds_default_initial_state() {
+        let dir = tempfile::tempdir().expect("tempdir must be available");
+        let config_path = dir.path().join("config.toml");
+
+        let state = build_initial_state_from_config_path(Some(&config_path)).unwrap();
+
+        assert_eq!(state.config_path, Some(config_path));
+        assert_eq!(state.render_command, DEFAULT_RENDER_COMMAND);
+        assert_eq!(state.debounce_ms, 750);
+        assert_eq!(state.timeout_ms, 30_000);
+        assert!(state.restore_last_file);
+    }
+
+    #[test]
+    fn existing_config_missing_render_section_fails_loudly() {
+        let dir = tempfile::tempdir().expect("tempdir must be available");
+        let config_path = dir.path().join("config.toml");
+        fs::write(
+            &config_path,
+            r#"
+[pandoc]
+render_command = "pandoc -t html5"
+templates_dir = "/tmp/templates"
+filters_dir = "/tmp/filters"
+"#,
+        )
+        .expect("test config must be writable");
+
+        let error = build_initial_state_from_config_path(Some(&config_path)).unwrap_err();
+
+        assert!(error.contains("missing required [render] section"));
+    }
+
+    #[test]
+    fn existing_config_missing_render_command_fails_loudly() {
+        let dir = tempfile::tempdir().expect("tempdir must be available");
+        let config_path = dir.path().join("config.toml");
+        fs::write(
+            &config_path,
+            r#"
+[render]
+debounce_ms = 100
+timeout_ms = 20000
+restore_last_file = true
+
+[pandoc]
+templates_dir = "/tmp/templates"
+filters_dir = "/tmp/filters"
+"#,
+        )
+        .expect("test config must be writable");
+
+        let error = build_initial_state_from_config_path(Some(&config_path)).unwrap_err();
+
+        assert!(error.contains("pandoc.render_command"));
+    }
+
+    #[test]
+    fn malformed_existing_config_fails_loudly() {
         let dir = tempfile::tempdir().expect("tempdir must be available");
         let config_path = dir.path().join("config.toml");
         fs::write(&config_path, "[render\n").expect("test config must be writable");
 
-        let error = load_config_from_toml(&config_path).unwrap_err();
+        let error = build_initial_state_from_config_path(Some(&config_path)).unwrap_err();
 
         assert!(error.contains("failed to parse config"));
         assert!(error.contains(&config_path.display().to_string()));
     }
 
     #[test]
-    fn existing_config_requires_render_section() {
-        let error = require_section::<TomlRenderSection>(None, true, "[render]").unwrap_err();
+    fn complete_existing_config_builds_configured_initial_state() {
+        let dir = tempfile::tempdir().expect("tempdir must be available");
+        let config_path = dir.path().join("config.toml");
+        fs::write(
+            &config_path,
+            r#"
+[render]
+debounce_ms = 125
+timeout_ms = 45000
+restore_last_file = false
 
-        assert_eq!(
-            error,
-            "pandoc-preview config is missing required [render] section"
-        );
-    }
-
-    #[test]
-    fn existing_config_requires_explicit_values() {
-        let error = require_or_default::<String, _>(
-            None,
-            true,
-            "pandoc-preview config is missing pandoc.render_command",
-            || DEFAULT_RENDER_COMMAND.to_string(),
+[pandoc]
+render_command = "pandoc --standalone -t html5"
+templates_dir = "/tmp/templates"
+filters_dir = "/tmp/filters"
+"#,
         )
-        .unwrap_err();
+        .expect("test config must be writable");
 
-        assert_eq!(
-            error,
-            "pandoc-preview config is missing pandoc.render_command"
-        );
-    }
+        let state = build_initial_state_from_config_path(Some(&config_path)).unwrap();
 
-    #[test]
-    fn absent_config_uses_defaults() {
-        let value = require_or_default(None, false, "must not be used", || 750).unwrap();
-
-        assert_eq!(value, 750);
+        assert_eq!(state.render_command, "pandoc --standalone -t html5");
+        assert_eq!(state.debounce_ms, 125);
+        assert_eq!(state.timeout_ms, 45_000);
+        assert!(!state.restore_last_file);
+        assert_eq!(state.templates_dir, PathBuf::from("/tmp/templates"));
+        assert_eq!(state.filters_dir, PathBuf::from("/tmp/filters"));
     }
 }

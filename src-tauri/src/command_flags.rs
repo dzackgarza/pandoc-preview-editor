@@ -215,4 +215,3 @@ pub fn parse_render_command(command: &str) -> ParsedCommandFlags {
         other_args,
     }
 }
-

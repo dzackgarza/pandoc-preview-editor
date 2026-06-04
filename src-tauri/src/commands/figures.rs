@@ -8,8 +8,8 @@ use tauri::State;
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-use crate::fs_utils::{image_extension, normalize_path, path_is_inside, sanitize_figure_filename};
 use crate::fs_utils::should_ignore;
+use crate::fs_utils::{image_extension, normalize_path, path_is_inside, sanitize_figure_filename};
 use crate::state::{tool_id_for_ext, AppState, FigureEntry};
 
 // ─── figures assets ───────────────────────────────────────────────────────────
@@ -35,7 +35,10 @@ pub fn save_figure_asset(
     if s.file.is_none() || s.is_temp_file || s.file.as_ref() != Some(&target_doc) {
         return Err("save the document before adding figures".into());
     }
-    let figures_dir = target_doc.parent().unwrap_or(Path::new(".")).join("figures");
+    let figures_dir = target_doc
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join("figures");
     let figure_name = filename
         .as_deref()
         .filter(|n| !n.is_empty())
