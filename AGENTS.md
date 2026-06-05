@@ -10,7 +10,7 @@
 > 3. Inspection and maintenance of the requirements authority.
 >
 > All existing docs (including this one), TODOs, plans, and code are now **evidence only**.
-> The normative authority is established in `REQUIREMENTS.md`.
+> The normative authority is established in `.agents/memories/REQUIREMENTS.md`.
 
 Read this file before editing this repository. Then read `.agents/plans/FEATURE-EVALUATION-FRAMEWORK.md` and `docs/feature-evaluation-philosophy.md`.
 
@@ -42,7 +42,9 @@ Read this file before editing this repository. Then read `.agents/plans/FEATURE-
 - Performance tracking (e.g., render duration) is diagnostic metadata only. It must never be part of an operation's core success/failure contract.
 - Any functionality a mature dependency already provides must be delegated to that dependency. Writing bespoke helpers for file-type detection (sniffing), path sanitization, shell parsing, or TOML serialization is a design error. Use mature crates (e.g., `infer`, `path-sanitize`) to handle these solved problems with high precision.
 - App state logic must never mask configuration or state errors with "safe" defaults (e.g., defaulting to the current directory or an empty string). If a workspace root or file content is required but missing, the system must fail loudly and propagate the error to the UI.
-- `App.tsx` is an orchestration-only boundary. It coordinates between major UI sections but does not own feature-level state or logic. All state and effects must be factored into domain-specific custom hooks (e.g., `useFileManager`, `useRenderer`) to minimize re-render blast-radius and maintain context-window hygiene.
+- **Reject Enterprise Security Theater**: This is a single-user local tool. Do not implement XSS prevention, input sanitization, or execution sandboxing for local data or tool output (e.g., `stderr`). Use standard framework features (like React text interpolation) for simplicity and reliability, not for imagined threat mitigation.
+- `App.tsx` is an orchestration-only boundary.
+ It coordinates between major UI sections but does not own feature-level state or logic. All state and effects must be factored into domain-specific custom hooks (e.g., `useFileManager`, `useRenderer`) to minimize re-render blast-radius and maintain context-window hygiene.
 - "Hover-to-Edit" and similar preview-interactive features are content-layer responsibilities. The implementation must reside in the Pandoc template/filter layer (e.g., a modular JS library included in the template, coupled to filters that provide semantic hooks like data-attributes). The React layer's role is restricted to a minor integration that listens for edit commands and dispatches them to the backend.
 - Do not add app-owned config keys for renderer-specific flags. The `render_command` string in config is the single source of truth for the renderer invocation. The canonical workflow is: develop and verify a Pandoc command in the terminal first, then paste it into the app config. The app consumes the working command; it is not a Pandoc flag builder. UI convenience controls are an ephemeral view layer that helps *manage* the resulting long command string — they parse the string on read and reconstruct it on write, never persisting independent flag fields to config.
 - Do not copy project-local template/filter paths into the app. Keep Pandoc-specific assets centralized under `~/.pandoc`.
