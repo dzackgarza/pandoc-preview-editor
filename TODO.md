@@ -47,6 +47,7 @@
   - **Sync QC Back**: Push the updated global QC rules back into this repository to surface such violations automatically in the future.
 - **Systemic Audit of Silent Defaults & Dead Code** — Investigate and burn "fail-open" patterns and abandoned code in the Rust backend:
   - **Burn unwrap_or* Pervasiveness**: Audit all 26+ instances of `unwrap_or`, `unwrap_or_default`, and `unwrap_or_else` in `src-tauri/src/`. Replace "soft" defaults (like `unwrap_or("")` or `unwrap_or_default()`) with explicit error propagation (`?`) or loud assertions (`expect`).
+    - [x] **Harden Backup Path Resolution**: Refactor `get_backup_path` in `config.rs` to return a `Result` and remove the silent canonicalization fallback.
   - [x] **Fix State Logic Errors**: Specifically fix `src-tauri/src/state.rs`:
     - [x] `current_file_content`: Return a proper error instead of an empty string default when no file/content is present.
     - [x] `workspace_root`: Fail loudly if `current_dir()` cannot be determined instead of defaulting to `.`.
@@ -57,7 +58,6 @@
 - **Remediate Templates-as-Code Slop** — Remove embedded template content from application JSON/code:
   - [x] **Extract Embedded Templates**: Move the starter TikZ/SVG/Xournal/Ipe templates out of `src/shared/diagram-tools.json` and into dedicated asset files (e.g., in `src-tauri/assets/templates/` or `~/.pandoc/templates/`).
   - [x] **Adhere to AGENTS.md**: Ensure that app code only references these templates by path or resource ID, never embedding the content itself.
-  - [x] **Update Global QC**: Propagate a requirement to the global Quality Control system to surface long strings in source code and JSON. Long strings are a "slop marker" indicating unrequested content-layer embedding or manual hacking.
 - **Remediate Bespoke Filesystem Logic Slop** — Burn bespoke reimplementations of solved filesystem problems in `src-tauri/src/fs_utils.rs`:
   - [x] **Burn Manual Sniffing**: Replace `is_text_like_file` and hardcoded `TEXT_EXTENSIONS`/`BINARY_EXTENSIONS` with mature crates like `content_inspector` or `infer`.
   - [x] **Burn Manual Sanitization**: Replace the manual char-iterating `sanitize_figure_filename` with a standard crate like `path-sanitize` to handle OS reserved names and non-ASCII characters reliably.

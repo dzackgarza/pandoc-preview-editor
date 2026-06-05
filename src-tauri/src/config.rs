@@ -23,14 +23,14 @@ fn state_file_path() -> PathBuf {
     xdg_state_dir().join("state.json")
 }
 
-pub fn get_backup_path(document_path: &Path) -> PathBuf {
+pub fn get_backup_path(document_path: &Path) -> Result<PathBuf, String> {
     let canonical = document_path
         .canonicalize()
-        .unwrap_or_else(|_| document_path.to_path_buf());
+        .map_err(|e| format!("failed to canonicalize document path {}: {}", document_path.display(), e))?;
     let mut hasher = Sha256::new();
     hasher.update(canonical.to_string_lossy().as_bytes());
     let hash = hex::encode(hasher.finalize());
-    backup_dir().join(format!("{}.md", hash))
+    Ok(backup_dir().join(format!("{}.md", hash)))
 }
 
 pub fn save_session_state(last_file: &Path, is_temp_file: bool) {

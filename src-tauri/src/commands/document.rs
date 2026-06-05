@@ -49,7 +49,7 @@ pub struct RecentFile {
 pub fn get_initial_state(state: State<'_, Mutex<AppState>>) -> Result<serde_json::Value, String> {
     let s = state.lock().unwrap();
     let has_backup = if let Some(ref file) = s.file {
-        s.recovered_from_backup || get_backup_path(file).exists()
+        s.recovered_from_backup || get_backup_path(file)?.exists()
     } else {
         false
     };
@@ -170,10 +170,10 @@ pub fn save(
 
     // Clean up old backup
     if let Some(ref old) = old_path {
-        let old_backup = get_backup_path(old);
+        let old_backup = get_backup_path(old)?;
         remove_file_if_present(&old_backup)?;
     }
-    let target_backup = get_backup_path(&target_path);
+    let target_backup = get_backup_path(&target_path)?;
     remove_file_if_present(&target_backup)?;
 
     save_session_state(&target_path, s.is_temp_file);
@@ -214,7 +214,7 @@ pub fn backup(
             .ok_or("No active file or path provided for backup")?
     };
 
-    let backup_path = get_backup_path(&doc_path);
+    let backup_path = get_backup_path(&doc_path)?;
     if let Some(parent) = backup_path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }

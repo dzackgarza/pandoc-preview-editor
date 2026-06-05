@@ -77,7 +77,7 @@ impl AppState {
 
     pub fn current_file_content(&self) -> Result<String, String> {
         if let Some(ref path) = self.file {
-            let backup = crate::config::get_backup_path(path);
+            let backup = crate::config::get_backup_path(path)?;
             if backup.exists() {
                 return fs::read_to_string(&backup)
                     .map_err(|e| format!("failed to read backup {}: {e}", backup.display()));
