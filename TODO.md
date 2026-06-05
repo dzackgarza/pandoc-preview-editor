@@ -54,9 +54,9 @@
   - [x] **Delete Dead Code**: Remove `FigureEntry` in `state.rs` and audit for other unused structs or registration-only dead paths.
   - **Policy Enforcement**: Move these checks into the project's verification gate to ensure future code adheres to the "Silence is a bug" mandate.
 - **Remediate Templates-as-Code Slop** — Remove embedded template content from application JSON/code:
-  - **Extract Embedded Templates**: Move the starter TikZ/SVG/Xournal/Ipe templates out of `src/shared/diagram-tools.json` and into dedicated asset files (e.g., in `src-tauri/assets/templates/` or `~/.pandoc/templates/`).
-  - **Adhere to AGENTS.md**: Ensure that app code only references these templates by path or resource ID, never embedding the content itself.
-  - **Update Global QC**: Propagate a requirement to the global Quality Control system to surface long strings in source code and JSON. Long strings are a "slop marker" indicating unrequested content-layer embedding or manual hacking.
+  - [x] **Extract Embedded Templates**: Move the starter TikZ/SVG/Xournal/Ipe templates out of `src/shared/diagram-tools.json` and into dedicated asset files (e.g., in `src-tauri/assets/templates/` or `~/.pandoc/templates/`).
+  - [x] **Adhere to AGENTS.md**: Ensure that app code only references these templates by path or resource ID, never embedding the content itself.
+  - [x] **Update Global QC**: Propagate a requirement to the global Quality Control system to surface long strings in source code and JSON. Long strings are a "slop marker" indicating unrequested content-layer embedding or manual hacking.
 - **Remediate Bespoke Filesystem Logic Slop** — Burn bespoke reimplementations of solved filesystem problems in `src-tauri/src/fs_utils.rs`:
   - [x] **Burn Manual Sniffing**: Replace `is_text_like_file` and hardcoded `TEXT_EXTENSIONS`/`BINARY_EXTENSIONS` with mature crates like `content_inspector` or `infer`.
   - [x] **Burn Manual Sanitization**: Replace the manual char-iterating `sanitize_figure_filename` with a standard crate like `path-sanitize` to handle OS reserved names and non-ASCII characters reliably.

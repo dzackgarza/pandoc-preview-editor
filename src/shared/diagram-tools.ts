@@ -11,7 +11,6 @@ export interface DiagramTool {
   id: string;
   executables: string[];
   ext: string;
-  starterTemplate: string;
   markdownRef: (filename: string) => string;
   label: string;
   desc: string;

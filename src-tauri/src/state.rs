@@ -52,23 +52,24 @@ pub struct ToolEntry {
 }
 
 impl AppState {
-    pub fn workspace_root(&self) -> PathBuf {
+    pub fn workspace_root(&self) -> Result<PathBuf, String> {
         if let Some(ref root) = self.workspace_root {
-            return root.clone();
+            return Ok(root.clone());
         }
         if let Some(ref file) = self.file {
             if let Some(parent) = file.parent() {
-                return parent.to_path_buf();
+                return Ok(parent.to_path_buf());
             }
         }
-        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+        std::env::current_dir()
+            .map_err(|e| format!("Failed to determine workspace root and current directory is inaccessible: {}", e))
     }
 
-    pub fn document_root(&self) -> PathBuf {
+    pub fn document_root(&self) -> Result<PathBuf, String> {
         if let Some(ref file) = self.file {
             if !self.is_temp_file {
                 if let Some(parent) = file.parent() {
-                    return parent.to_path_buf();
+                    return Ok(parent.to_path_buf());
                 }
             }
         }
@@ -86,8 +87,12 @@ impl AppState {
                 return fs::read_to_string(path)
                     .map_err(|e| format!("failed to read active file {}: {e}", path.display()));
             }
+            // File does not exist yet (e.g. newly created path), fall back to memory
+            return self.file_content.clone().ok_or_else(|| {
+                format!("File {} does not exist on disk and no content is held in memory", path.display())
+            });
         }
-        Ok(self.file_content.clone().unwrap_or_default())
+        self.file_content.clone().ok_or_else(|| "No file is currently loaded in state".to_string())
     }
 }
 
@@ -97,7 +102,6 @@ struct DiagramToolDef {
     id: String,
     executables: Vec<String>,
     ext: String,
-    starter_template: String,
 }
 
 fn load_diagram_tools() -> Vec<DiagramToolDef> {
@@ -112,14 +116,11 @@ pub fn probe_tool_state() -> HashMap<String, ToolEntry> {
     let mut map = HashMap::new();
     for tool in &*DIAGRAM_TOOLS {
         let found = tool.executables.iter().find(|e| is_command_available(e));
-        let cmd = found
-            .cloned()
-            .unwrap_or_else(|| tool.executables[0].clone());
         map.insert(
             tool.id.clone(),
             ToolEntry {
                 installed: found.is_some(),
-                cmd,
+                cmd: found.cloned().unwrap_or_default(),
             },
         );
     }
@@ -133,12 +134,18 @@ pub fn tool_id_for_ext(ext: &str) -> Option<&str> {
         .map(|t| t.id.as_str())
 }
 
-pub fn starter_template_for_tool(tool_id: &str) -> Result<&str, String> {
-    DIAGRAM_TOOLS
-        .iter()
-        .find(|t| t.id == tool_id)
-        .map(|t| t.starter_template.as_str())
-        .ok_or_else(|| format!("unknown diagram tool: {tool_id}"))
+pub fn starter_template_for_tool(tool_id: &str) -> Result<String, String> {
+    // We try to use include_str! to bake them in during compilation rather than relying on fs at runtime
+    match tool_id {
+        "qtikz" => Ok(include_str!("../../src-tauri/assets/diagram-templates/qtikz.tikz").to_string()),
+        "tikzit" => Ok(include_str!("../../src-tauri/assets/diagram-templates/tikzit.tikz").to_string()),
+        "inkscape" => Ok(include_str!("../../src-tauri/assets/diagram-templates/inkscape.svg").to_string()),
+        "drawio" => Ok(include_str!("../../src-tauri/assets/diagram-templates/drawio.drawio").to_string()),
+        "xournal" => Ok(include_str!("../../src-tauri/assets/diagram-templates/xournal.xoj").to_string()),
+        "xournalpp" => Ok(include_str!("../../src-tauri/assets/diagram-templates/xournalpp.xopp").to_string()),
+        "ipe" => Ok(include_str!("../../src-tauri/assets/diagram-templates/ipe.ipe").to_string()),
+        _ => Err(format!("unknown diagram tool: {tool_id}")),
+    }
 }
 
 fn is_command_available(cmd: &str) -> bool {
