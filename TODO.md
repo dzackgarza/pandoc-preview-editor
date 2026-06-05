@@ -47,11 +47,11 @@
   - **Sync QC Back**: Push the updated global QC rules back into this repository to surface such violations automatically in the future.
 - **Systemic Audit of Silent Defaults & Dead Code** — Investigate and burn "fail-open" patterns and abandoned code in the Rust backend:
   - **Burn unwrap_or* Pervasiveness**: Audit all 26+ instances of `unwrap_or`, `unwrap_or_default`, and `unwrap_or_else` in `src-tauri/src/`. Replace "soft" defaults (like `unwrap_or("")` or `unwrap_or_default()`) with explicit error propagation (`?`) or loud assertions (`expect`).
-  - **Fix State Logic Errors**: Specifically fix `src-tauri/src/state.rs`:
-    - `current_file_content`: Return a proper error instead of an empty string default when no file/content is present.
-    - `workspace_root`: Fail loudly if `current_dir()` cannot be determined instead of defaulting to `.`.
-    - `probe_tool_state`: Fail if a required diagram tool is missing instead of defaulting to a potentially incorrect binary name.
-  - **Delete Dead Code**: Remove `FigureEntry` in `state.rs` and audit for other unused structs or registration-only dead paths.
+  - [x] **Fix State Logic Errors**: Specifically fix `src-tauri/src/state.rs`:
+    - [x] `current_file_content`: Return a proper error instead of an empty string default when no file/content is present.
+    - [x] `workspace_root`: Fail loudly if `current_dir()` cannot be determined instead of defaulting to `.`.
+    - [x] `probe_tool_state`: Fail if a required diagram tool is missing instead of defaulting to a potentially incorrect binary name.
+  - [x] **Delete Dead Code**: Remove `FigureEntry` in `state.rs` and audit for other unused structs or registration-only dead paths.
   - **Policy Enforcement**: Move these checks into the project's verification gate to ensure future code adheres to the "Silence is a bug" mandate.
 - **Remediate Templates-as-Code Slop** — Remove embedded template content from application JSON/code:
   - **Extract Embedded Templates**: Move the starter TikZ/SVG/Xournal/Ipe templates out of `src/shared/diagram-tools.json` and into dedicated asset files (e.g., in `src-tauri/assets/templates/` or `~/.pandoc/templates/`).
