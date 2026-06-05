@@ -51,6 +51,16 @@
   - **Extract Embedded Templates**: Move the starter TikZ/SVG/Xournal/Ipe templates out of `src/shared/diagram-tools.json` and into dedicated asset files (e.g., in `src-tauri/assets/templates/` or `~/.pandoc/templates/`).
   - **Adhere to AGENTS.md**: Ensure that app code only references these templates by path or resource ID, never embedding the content itself.
   - **Update Global QC**: Propagate a requirement to the global Quality Control system to surface long strings in source code and JSON. Long strings are a "slop marker" indicating unrequested content-layer embedding or manual hacking.
+- **Remediate Bespoke Filesystem Logic Slop** — Burn bespoke reimplementations of solved filesystem problems in `src-tauri/src/fs_utils.rs`:
+  - **Burn Manual Sniffing**: Replace `is_text_like_file` and hardcoded `TEXT_EXTENSIONS`/`BINARY_EXTENSIONS` with mature crates like `content_inspector` or `infer`.
+  - **Burn Manual Sanitization**: Replace the manual char-iterating `sanitize_figure_filename` with a standard crate like `path-sanitize` to handle OS reserved names and non-ASCII characters reliably.
+- **Remediate IPC Success Laundering** — Fix the user-deceptive "Partial Success" pattern in the renderer IPC:
+  - **Honest IPC Errors**: Refactor `execute_render` in `src-tauri/src/render.rs` to return a real `Err` on subprocess failure instead of an `Ok(RenderResult { ok: false })`.
+  - **Remove HTML Comments for Errors**: Eliminate the practice of injecting error messages into the HTML stream via `<!-- renderer error -->`.
+- **Refactor App.tsx God Object** — Decompose the 500+ line root component into domain-specific hooks and components:
+  - **Domain Hooks**: Extract state and logic into `useFileManager`, `useRenderer`, `usePlugins`, etc., to reduce re-render blast-radius and context-window pressure.
+  - **Standard Utilities**: Replace bespoke `escapeHtml` and `errorDocument` with mature libraries or shared, tested utilities.
+- **Burn Timing Theater in IPC Contract** — Move `duration_ms` out of the core `RenderResult` success contract in `render.rs`. It is diagnostic metadata, not a success criterion, and its presence in the contract invites brittle "latency-based" tests.
 - **Server-side TikZ rendering proof** — Prove TikZ renders through server-side Pandoc -> SVG, not browser-side TikZJax.
 - **Obsidian callout → amsthm** — Convert Obsidian callouts to amsthm environments.
 - **Centralized Pandoc template/filter QA** — Optional manual QA around `~/.pandoc/templates/` and `~/.pandoc/filters/`; app tests stay renderer-agnostic.
