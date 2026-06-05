@@ -37,7 +37,7 @@
 - **Remediate Testing Hacks in Production** — Remove brittle window globals and type suppressions used for E2E verification:
   - **Burn Window Globals**: Remove `__PANDOC_PREVIEW_BACKUP_COMPLETED__` and `__PANDOC_PREVIEW_EDITOR_VIEW__` from `App.tsx` and `EditorPane.tsx`.
   - **Standard DOM Verification**: Update E2E tests to verify editor content via standard locators (e.g., `.cm-content`) rather than reaching into the CodeMirror instance.
-  - **Deterministic UI Signals**: Replace the backup counter with a real UI signal (e.g., a "Backup Saved" status transition) or an observable state that reflects background process completion.
+  - [x] **Deterministic UI Signals**: Replace the backup counter with a real UI signal (e.g., a "Backup Saved" status transition) or an observable state that reflects background process completion.
   - [x] **Remediate E2E Clipboard Theater**: Replace the browser-side event simulation in `src/tests/e2e/workflow-extensions.spec.ts` with a platform-native utility (e.g., `wl-copy` or `xclip`) to populate the real system clipboard, ensuring the Tauri IPC and OS boundary are tested.
   - **Type Safety**: Eliminate all `@ts-ignore` usages. If a global is strictly required for the test adapter (like `__PW_ACTIVE__`), define it properly in the `Window` interface.
 - **Remediate Rust Fail-Fast Violations** — Fix the use of banned `let _ =` patterns that silence critical filesystem errors in `src-tauri/src/config.rs`:
