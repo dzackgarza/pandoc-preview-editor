@@ -33,7 +33,7 @@
   - [x] **Burn App-Side Scraper**: Remove the `useEffect` that imperatively queries the iframe DOM and appends "Edit" overlays. This is "layer laundering"—using the app to fix HTML that the app already controls at the source.
   - [x] **Template-Side Implementation**: Move the "Hover-to-Edit" logic into a modular JavaScript library included in the Pandoc template.
   - [x] **Filter-Provided Hooks**: Update the project's Pandoc filters to provide canonical hooks (e.g., semantic classes or data-attributes) that the template-side JS uses to identify and interact with editable figures.
-  - **Thin App Integration**: Reduce the React layer's role to a minor integration that listens for `postMessage` edit commands from the iframe and dispatches them to the Rust backend.
+  - [x] **Thin App Integration**: Reduce the React layer's role to a minor integration that listens for `postMessage` edit commands from the iframe and dispatches them to the Rust backend.
 - **Remediate Testing Hacks in Production** — Remove brittle window globals and type suppressions used for E2E verification:
   - [x] **Burn Window Globals**: Remove `__PANDOC_PREVIEW_BACKUP_COMPLETED__` and `__PANDOC_PREVIEW_EDITOR_VIEW__` from `App.tsx` and `EditorPane.tsx`.
   - [x] **Standard DOM Verification**: Update E2E tests to verify editor content via standard locators (e.g., `.cm-content`) rather than reaching into the CodeMirror instance.
