@@ -25,8 +25,8 @@
 - **Audit migrated suite against proof obligations** — Confirm the repaired suite models `docs/testing-proof-obligations.md` with real Tauri desktop proofs before using `just test` as an app-satisfaction gate.
 - **Satisfy Tauri desktop proof burden** — After the suite is complete and correct, make `just test` pass through the real Tauri Playwright suite.
 - **Remediate Diagram Integration Slop** — Burn the agent-flavored implementation residue in the diagram generation workflow:
-  - **Study and Cement Extraction Contracts**: Perform a one-time study of `q.uiver.app` and `freetikz` to determine the EXACT CSS selectors and internal data shapes.
-  - **Replace Heuristic Scraper**: Replace the "obsequious" `for`-loop scraper in `src-tauri/assets/tikz-overlay.html` with the deterministic findings from the study. Assert on specific structure and shape.
+  - [x] **Study and Cement Extraction Contracts**: Perform a one-time study of `q.uiver.app` and `freetikz` to determine the EXACT CSS selectors and internal data shapes.
+  - [x] **Replace Heuristic Scraper**: Replace the "obsequious" `for`-loop scraper in `src-tauri/assets/tikz-overlay.html` with the deterministic findings from the study. Assert on specific structure and shape.
   - [x] **Refactor Command Injection**: Refactor `diagram_proxy` in `src-tauri/src/commands/diagram.rs` to stop using retired regex-on-HTML (`replacen`) for script injection. Use structural injection.
   - [x] **Purge High-Entropy Slop**: Remove "Premium" and "Gorgeous" LLM markers from comments and UI code.
 - **Remediate Preview Overlay Layer Laundering** — Fix the layer violation in `src/client/components/PreviewPane.tsx`:
