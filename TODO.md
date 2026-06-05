@@ -28,7 +28,7 @@
   - **Study and Cement Extraction Contracts**: Perform a one-time study of `q.uiver.app` and `freetikz` to determine the EXACT CSS selectors and internal data shapes.
   - **Replace Heuristic Scraper**: Replace the "obsequious" `for`-loop scraper in `src-tauri/assets/tikz-overlay.html` with the deterministic findings from the study. Assert on specific structure and shape.
   - **Refactor Command Injection**: Refactor `diagram_proxy` in `src-tauri/src/commands/diagram.rs` to stop using retired regex-on-HTML (`replacen`) for script injection. Use structural injection.
-  - **Purge High-Entropy Slop**: Remove "Premium" and "Gorgeous" LLM markers from comments and UI code.
+  - [x] **Purge High-Entropy Slop**: Remove "Premium" and "Gorgeous" LLM markers from comments and UI code.
 - **Remediate Preview Overlay Layer Laundering** — Fix the layer violation in `src/client/components/PreviewPane.tsx`:
   - **Burn App-Side Scraper**: Remove the `useEffect` that imperatively queries the iframe DOM and appends "Edit" overlays. This is "layer laundering"—using the app to fix HTML that the app already controls at the source.
   - **Template-Side Implementation**: Move the "Hover-to-Edit" logic into a modular JavaScript library included in the Pandoc template.
@@ -51,6 +51,7 @@
     - [x] `current_file_content`: Return a proper error instead of an empty string default when no file/content is present.
     - [x] `workspace_root`: Fail loudly if `current_dir()` cannot be determined instead of defaulting to `.`.
     - [x] `probe_tool_state`: Fail if a required diagram tool is missing instead of defaulting to a potentially incorrect binary name.
+  - [x] **Harden Sorting Logic**: Replace `unwrap_or("")` sorting fallbacks and `Value::Null` defaults in `src-tauri/src/commands/document.rs` with structured DTOs and explicit Option handling.
   - [x] **Delete Dead Code**: Remove `FigureEntry` in `state.rs` and audit for other unused structs or registration-only dead paths.
   - **Policy Enforcement**: Move these checks into the project's verification gate to ensure future code adheres to the "Silence is a bug" mandate.
 - **Remediate Templates-as-Code Slop** — Remove embedded template content from application JSON/code:
