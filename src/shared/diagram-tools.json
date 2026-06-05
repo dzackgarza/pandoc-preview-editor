@@ -26,16 +26,6 @@
     "url": "https://inkscape.org/"
   },
   {
-    "id": "xournal",
-    "executables": [
-      "xournal"
-    ],
-    "ext": ".xoj",
-    "label": "Xournal (Sketch)",
-    "desc": "Writes .xoj notes",
-    "url": "https://xournal.sourceforge.net/"
-  },
-  {
     "id": "xournalpp",
     "executables": ["xournalpp"],
     "ext": ".xopp",
