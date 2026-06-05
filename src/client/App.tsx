@@ -1,13 +1,12 @@
 import { AnimatePresence } from 'motion/react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Group, Panel, Separator, useGroupRef } from 'react-resizable-panels';
+import { useCallback, useEffect, useState } from 'react';
+import { Group, Panel, Separator } from 'react-resizable-panels';
 import { GripVertical, FolderOpen, Image as ImageIcon, Settings } from 'lucide-react';
-import { EditorView } from '@codemirror/view';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { invoke } from '@tauri-apps/api/core';
 
-import { cn, lineCount, blobToBase64 } from './lib/utils.js';
-import { useToast, toast } from './lib/toast.js';
+import { cn, lineCount } from './lib/utils.js';
+import { toast } from './lib/toast.js';
 
 // Import sub-components
 import { TopMenuBar } from './components/TopMenuBar.jsx';
@@ -25,18 +24,15 @@ import { UnsavedChangesDialog } from './components/UnsavedChangesDialog.jsx';
 import { useFileManager } from './hooks/useFileManager.js';
 import { useRenderer } from './hooks/useRenderer.js';
 import { usePlugins } from './hooks/usePlugins.js';
+import { useDiagrams } from './hooks/useDiagrams.js';
+import { useZotero } from './hooks/useZotero.js';
+import { useAppLayout } from './hooks/useAppLayout.js';
 
 declare global {
   interface Window {
     __PW_ACTIVE__: boolean;
-    __PANDOC_PREVIEW_BACKUP_COMPLETED__?: number;
   }
 }
-
-const RESET_LAYOUT = {
-  'editor-pane-panel': 56,
-  'preview-pane-panel': 44,
-};
 
 export function App() {
   const {
@@ -78,7 +74,6 @@ export function App() {
     diagnostics,
     setDiagnostics,
     renderImmediate,
-    scheduleRender,
   } = useRenderer(markdownText, currentFile, null);
 
   const {
@@ -87,15 +82,50 @@ export function App() {
     runPluginAction,
   } = usePlugins(markdownText, ensureRealFile, setSaveState, setSavedAt);
 
-  const [explorerOpen, setExplorerOpen] = useState(false);
+  const {
+    explorerOpen,
+    sidebarTab,
+    groupRef,
+    editorViewRef,
+    setExplorerOpen,
+    resetSplit,
+    toggleExplorer,
+    openExplorerTab,
+    RESET_LAYOUT,
+  } = useAppLayout();
+
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [diagramOpen, setDiagramOpen] = useState(false);
-  const [sidebarTab, setSidebarTab] = useState<'explorer' | 'figures'>('explorer');
   const [lastBackupSaved, setLastBackupSaved] = useState<Date | null>(null);
 
-  const groupRef = useGroupRef();
-  const editorViewRef = useRef<EditorView | null>(null);
+  const insertTextAtCursor = useCallback(
+    (text: string) => {
+      const view = editorViewRef.current;
+      if (!view) {
+        updateMarkdown(`${markdownText}${text}`);
+        return;
+      }
 
+      const { from, to } = view.state.selection.main;
+      view.dispatch({
+        changes: { from, to, insert: text },
+        selection: { anchor: from + text.length },
+        scrollIntoView: true,
+      });
+      view.focus();
+    },
+    [markdownText, updateMarkdown, editorViewRef],
+  );
+
+  const {
+    diagramOpen,
+    setDiagramOpen,
+    insertClipboardFigure,
+    uploadImageAndInsert,
+  } = useDiagrams(ensureRealFile, insertTextAtCursor);
+
+  const { insertCitation } = useZotero(insertTextAtCursor);
+
+  // Initial State Hydration
   useEffect(() => {
     invoke<any>('get_initial_state')
       .then((data) => {
@@ -117,6 +147,7 @@ export function App() {
       });
   }, [setMarkdownText, setCurrentFile, setIsTempFile, setWorkspaceRoot, setSaveState]);
 
+  // Periodic Backup
   useEffect(() => {
     if (saveState !== 'dirty' || !currentFile) return;
     const handle = window.setTimeout(() => {
@@ -130,6 +161,7 @@ export function App() {
     return () => window.clearTimeout(handle);
   }, [saveState, markdownText, currentFile]);
 
+  // Unsaved Changes Guard
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (saveState === 'dirty') {
@@ -143,111 +175,7 @@ export function App() {
     };
   }, [saveState]);
 
-  const insertTextAtCursor = useCallback(
-    (text: string) => {
-      const view = editorViewRef.current;
-      if (!view) {
-        updateMarkdown(`${markdownText}${text}`);
-        return;
-      }
-
-      const { from, to } = view.state.selection.main;
-      view.dispatch({
-        changes: { from, to, insert: text },
-        selection: { anchor: from + text.length },
-        scrollIntoView: true,
-      });
-      view.focus();
-    },
-    [markdownText, updateMarkdown],
-  );
-
-  const insertCitation = useCallback(async () => {
-    try {
-      const data = await invoke<{ citation?: string; empty?: boolean }>('zotero_cite');
-      if (data.empty) return;
-
-      if (typeof data.citation !== 'string') {
-        throw new Error('no citation returned');
-      }
-
-      insertTextAtCursor(data.citation);
-      toast({
-        title: 'Zotero citation',
-        description: data.citation,
-        variant: 'default',
-      });
-    } catch (err) {
-      toast({
-        title: 'Zotero citation',
-        description: err instanceof Error ? err.message : String(err),
-        variant: 'destructive',
-      });
-    }
-  }, [insertTextAtCursor]);
-
-  const uploadImageAndInsert = useCallback(
-    async (imageBlob: Blob, filePath: string) => {
-      const imageType = imageBlob.type || 'image/png';
-      const data = await invoke<{
-        ok: boolean;
-        markdown: string;
-        path: string;
-      }>('save_figure_asset', {
-        documentPath: filePath,
-        mimeType: imageType,
-        contentBase64: await blobToBase64(imageBlob),
-      });
-
-      if (!data.ok || typeof data.markdown !== 'string') {
-        throw new Error('Failed to save figure asset');
-      }
-      insertTextAtCursor(`\n\n${data.markdown}\n\n`);
-      toast({
-        title: 'Clipboard image',
-        description: data.markdown,
-        variant: 'default',
-      });
-    },
-    [insertTextAtCursor],
-  );
-
-  const insertClipboardFigure = useCallback(async () => {
-    try {
-      const filePath = await ensureRealFile({
-        promptForEmpty: true,
-        title: 'Save Markdown Document',
-        description:
-          'Save your active document to disk first. Adding figure/diagram assets requires a saved file context to resolve relative asset paths correctly.',
-      });
-      if (filePath == null) return;
-      if (!navigator.clipboard?.read) {
-        throw new Error('clipboard image read is not available');
-      }
-
-      const items = await navigator.clipboard.read();
-      let imageBlob: Blob | null = null;
-      for (const item of items) {
-        const type = item.types.find((candidate) => candidate.startsWith('image/'));
-        if (type) {
-          imageBlob = await item.getType(type);
-          break;
-        }
-      }
-      if (!imageBlob) {
-        throw new Error('clipboard does not contain an image');
-      }
-
-      await uploadImageAndInsert(imageBlob, filePath);
-    } catch (err) {
-      toast({
-        title: 'Clipboard image',
-        description: err instanceof Error ? err.message : String(err),
-        variant: 'destructive',
-      });
-    }
-  }, [ensureRealFile, uploadImageAndInsert]);
-
+  // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'p') {
@@ -279,6 +207,7 @@ export function App() {
       window.removeEventListener('keydown', handleKeyDown, { capture: true });
   }, [handleQuickOpen, insertCitation, saveCurrentAs]);
 
+  // Paste handler
   useEffect(() => {
     const handlePaste = (event: ClipboardEvent) => {
       const items = event.clipboardData?.items;
@@ -317,10 +246,6 @@ export function App() {
     return () => document.removeEventListener('paste', handlePaste, { capture: true });
   }, [ensureRealFile, uploadImageAndInsert]);
 
-  const resetSplit = useCallback(() => {
-    groupRef.current?.setLayout(RESET_LAYOUT);
-  }, [groupRef]);
-
   const handleSaveAction = useCallback(async () => {
     renderImmediate(markdownText);
     await saveCurrent();
@@ -340,7 +265,7 @@ export function App() {
           onRunPlugin={runPluginAction}
           onResetSplit={resetSplit}
           onSave={handleSaveAction}
-          onToggleExplorer={() => setExplorerOpen((open) => !open)}
+          onToggleExplorer={toggleExplorer}
           onOpenSettings={() => setSettingsOpen(true)}
           onOpenDiagram={() => setDiagramOpen(true)}
           plugins={plugins}
@@ -350,14 +275,7 @@ export function App() {
             <div className="flex flex-col gap-4 w-full items-center">
               <button
                 aria-label="File Explorer"
-                onClick={() => {
-                  if (explorerOpen && sidebarTab === 'explorer') {
-                    setExplorerOpen(false);
-                  } else {
-                    setExplorerOpen(true);
-                    setSidebarTab('explorer');
-                  }
-                }}
+                onClick={() => openExplorerTab('explorer')}
                 className={cn(
                   'h-8 w-8 rounded-lg flex items-center justify-center transition-all cursor-pointer',
                   explorerOpen && sidebarTab === 'explorer'
@@ -370,14 +288,7 @@ export function App() {
 
               <button
                 aria-label="Figures Library"
-                onClick={() => {
-                  if (explorerOpen && sidebarTab === 'figures') {
-                    setExplorerOpen(false);
-                  } else {
-                    setExplorerOpen(true);
-                    setSidebarTab('figures');
-                  }
-                }}
+                onClick={() => openExplorerTab('figures')}
                 className={cn(
                   'h-8 w-8 rounded-lg flex items-center justify-center transition-all cursor-pointer',
                   explorerOpen && sidebarTab === 'figures'

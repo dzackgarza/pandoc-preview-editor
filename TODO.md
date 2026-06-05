@@ -69,6 +69,7 @@
   - [x] **Honest IPC Errors**: Refactor `execute_render` in `src-tauri/src/render.rs` to return a real `Err` on subprocess failure instead of an `Ok(RenderResult { ok: false })`.
   - [x] **Remove HTML Comments for Errors**: Eliminate the practice of injecting error messages into the HTML stream via `<!-- renderer error -->`.
   - [x] **Structured Config DTO**: Refactor `set_config` in `src-tauri/src/commands/config.rs` to accept a single structured object (e.g., `ConfigUpdate` DTO) utilizing Serde, eliminating positional primitive arguments (signature bloat).
+
 - **Refactor App.tsx God Object** — Decompose the 500+ line root component into domain-specific hooks and components:
   - [x] **Domain Hooks**: Extract state and logic into `useFileManager`, `useRenderer`, `usePlugins`, etc., to reduce re-render blast-radius and context-window pressure.
   - [x] **Modular Error View Component**: Replace the string-concatenated `errorDocument` blob with a first-class React component rendered into the preview pane, eliminating manual HTML-in-JS laundering.
