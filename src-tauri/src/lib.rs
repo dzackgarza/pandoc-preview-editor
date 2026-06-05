@@ -27,7 +27,15 @@ pub fn run() {
             .plugin(tauri_plugin_playwright::init())
             .manage(Mutex::new(initial_state)),
     )
-    .setup(|_app| Ok(()))
+    .setup(|app| {
+        use tauri::Manager;
+        let windows = app.webview_windows();
+        eprintln!("[DEBUG] Active windows ({}):", windows.len());
+        for (label, _) in windows {
+            eprintln!("[DEBUG]   - Window: {}", label);
+        }
+        Ok(())
+    })
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }

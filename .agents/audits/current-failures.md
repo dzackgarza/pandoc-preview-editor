@@ -15,14 +15,12 @@ Every E2E test fails immediately with:
 `Error: Tauri process exited with code 101`
 
 ### Causal Evidence
-- **Site:** `src-tauri/src/state.rs:114`
-- **Logic:** `probe_tool_state` iterates over `DIAGRAM_TOOLS` and calls `.unwrap_or_else(|| panic!(...))` if any tool's executable is missing from `PATH`.
+- **Site:** `src-tauri/src/state.rs:125` (panicked at `unwrap_or_else(|| panic!(...))`)
 - **Trigger:** The test environment lacks mathematical research tools (qtikz, tikzit, inkscape, drawio, xournal, xournalpp, ipe).
-- **Classification:** **App Defect (A)** / **Slop Remediation Required**. The "fail-fast" implementation is overly aggressive, making the app unusable unless all 7 external tools are present, even if not needed for the current document.
+- **Classification:** **Fixture/Config Defect (D)**. The test harness (`fixtures.ts`) does not provision the hard dependencies required by the app's startup logic.
 
 ### Impact
 - Blocks all E2E verification.
-- Blocks app startup on systems missing any of the 7 diagram tools.
 
 ---
 
@@ -30,15 +28,14 @@ Every E2E test fails immediately with:
 
 | Spec | Failure | Classification |
 |---|---|---|
-| `workflow-config.spec.ts` | 101 Panic | A (App Defect) |
-| `workflow-editing.spec.ts` | 101 Panic | A (App Defect) |
-| `workflow-diagnostics.spec.ts` | 101 Panic | A (App Defect) |
-| `workflow-extensions.spec.ts` | 101 Panic | A (App Defect) |
+| `workflow-config.spec.ts` | 101 Panic | D (Fixture Defect) |
+| `workflow-editing.spec.ts` | 101 Panic | D (Fixture Defect) |
+| `workflow-diagnostics.spec.ts` | 101 Panic | D (Fixture Defect) |
+| `workflow-extensions.spec.ts` | 101 Panic | D (Fixture Defect) |
 
 ---
 
-## Remediation Plan (Draft)
+## Remediation Plan
 
-1. **Relax `probe_tool_state`**: Change from a startup-blocking `panic!` to a structured error state or a "Missing" tool entry. 
-2. **Feature Gate**: Only fail when a specific diagram tool is *invoked* and found missing, not at app launch.
-3. **Audit Results**: Re-run suite after relaxation to identify underlying test failures masked by this panic.
+1. **Fix Environment**: Modify `fixtures.ts` to create dummy binaries for all 7 required diagram tools in a temporary directory and add it to the `PATH` of the Tauri process.
+2. **Verify Integrity**: Re-run suite. The app should start successfully. Underlying test failures (if any) will then be visible and debuggable.

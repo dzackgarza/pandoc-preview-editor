@@ -25,7 +25,7 @@ export default defineConfig({
     command: 'npx vite --host localhost --port 5173',
     cwd: repoRoot,
     port: 5173,
-    reuseExistingServer: false,
+    reuseExistingServer: true,
     timeout: 30000,
   },
   projects: [
