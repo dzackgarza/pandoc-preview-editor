@@ -64,6 +64,8 @@ pub struct TomlPandocSection {
     pub render_command: String,
     pub templates_dir: String,
     pub filters_dir: String,
+    #[serde(default)]
+    pub figures_dir: String,
 }
 
 pub fn write_config_toml(
@@ -74,6 +76,7 @@ pub fn write_config_toml(
     render_command: &str,
     templates_dir: &str,
     filters_dir: &str,
+    figures_dir: &str,
 ) -> Result<(), String> {
     let mut doc = toml_edit::DocumentMut::new();
     doc["render"]["debounce_ms"] = toml_edit::value(debounce_ms as i64);
@@ -82,6 +85,7 @@ pub fn write_config_toml(
     doc["pandoc"]["render_command"] = toml_edit::value(render_command);
     doc["pandoc"]["templates_dir"] = toml_edit::value(templates_dir);
     doc["pandoc"]["filters_dir"] = toml_edit::value(filters_dir);
+    doc["pandoc"]["figures_dir"] = toml_edit::value(figures_dir);
     fs::write(path, doc.to_string()).map_err(|e| e.to_string())
 }
 
@@ -123,6 +127,14 @@ pub fn build_initial_state_from_config_path(config_path: &Path) -> Result<AppSta
     let parsed_flags = crate::command_flags::parse_render_command(&render_command)?;
     let templates_dir = PathBuf::from(pandoc.templates_dir);
     let filters_dir = PathBuf::from(pandoc.filters_dir);
+    
+    // Default to ~/.pandoc/figures if empty or missing, per opinionated decision
+    let figures_dir = if pandoc.figures_dir.trim().is_empty() {
+        dirs::home_dir().expect("HOME must be set").join(".pandoc/figures")
+    } else {
+        PathBuf::from(pandoc.figures_dir)
+    };
+
     let debounce_ms = render.debounce_ms;
     let timeout_ms = render.timeout_ms;
     let restore_last_file = render.restore_last_file;
@@ -159,6 +171,7 @@ pub fn build_initial_state_from_config_path(config_path: &Path) -> Result<AppSta
         config_path: Some(config_path.to_path_buf()),
         templates_dir,
         filters_dir,
+        figures_dir,
         debounce_ms,
         launcher_command: None,
         recovered_from_backup: false,
@@ -323,6 +336,7 @@ restore_last_file = false
 render_command = "pandoc --standalone -t html5"
 templates_dir = "/tmp/templates"
 filters_dir = "/tmp/filters"
+figures_dir = "/tmp/figures"
 "#,
         )
         .expect("test config must be writable");
@@ -335,5 +349,6 @@ filters_dir = "/tmp/filters"
         assert!(!state.restore_last_file);
         assert_eq!(state.templates_dir, PathBuf::from("/tmp/templates"));
         assert_eq!(state.filters_dir, PathBuf::from("/tmp/filters"));
+        assert_eq!(state.figures_dir, PathBuf::from("/tmp/figures"));
     }
 }

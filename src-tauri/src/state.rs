@@ -16,18 +16,6 @@ pub struct PluginManifest {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct FigureEntry {
-    pub id: String,
-    pub name: String,
-    pub path: String,
-    #[serde(rename = "type")]
-    pub kind: String,
-    #[serde(rename = "createdAt")]
-    pub created_at: String,
-    pub documents: Vec<String>,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FileFingerprint {
     #[serde(rename = "mtimeMs")]
     pub mtime_ms: u64,
@@ -46,6 +34,7 @@ pub struct AppState {
     pub config_path: Option<PathBuf>,
     pub templates_dir: PathBuf,
     pub filters_dir: PathBuf,
+    pub figures_dir: PathBuf,
     pub debounce_ms: u64,
     pub launcher_command: Option<String>,
     pub recovered_from_backup: bool,

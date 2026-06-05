@@ -61,13 +61,13 @@
   - **Burn Manual Sniffing**: Replace `is_text_like_file` and hardcoded `TEXT_EXTENSIONS`/`BINARY_EXTENSIONS` with mature crates like `content_inspector` or `infer`.
   - **Burn Manual Sanitization**: Replace the manual char-iterating `sanitize_figure_filename` with a standard crate like `path-sanitize` to handle OS reserved names and non-ASCII characters reliably.
 - **Remediate Figure Registry Sniffing** — Implement the Global Figures Directory contract to fix heuristic boundary-scanning:
-  - **Global Configuration**: Add a `figures_dir` field to the user configuration to establish a single centralized location for all academic assets (TikZ, SVG, clipboard images).
-  - **Burn Magic Folder Sniffing**: Remove the `is_workspace_figure` logic in `src-tauri/src/commands/figures.rs` that heuristically looks for folders named "figures". The Figure Library must exclusively scan the configured global directory.
-  - **Cross-Document Reuse**: Ensure that pasting or generating a new figure saves directly to the global directory, enforcing the opinionated default and allowing canonical updates across multiple papers.
+  - [x] **Global Configuration**: Add a `figures_dir` field to the user configuration to establish a single centralized location for all academic assets (TikZ, SVG, clipboard images).
+  - [x] **Burn Magic Folder Sniffing**: Remove the `is_workspace_figure` logic in `src-tauri/src/commands/figures.rs` that heuristically looks for folders named "figures". The Figure Library must exclusively scan the configured global directory.
+  - [x] **Cross-Document Reuse**: Ensure that pasting or generating a new figure saves directly to the global directory, enforcing the opinionated default and allowing canonical updates across multiple papers.
 - **Remediate IPC Success Laundering & Signature Bloat** — Fix the user-deceptive "Partial Success" pattern and parameter accretion in the renderer IPC:
   - [x] **Honest IPC Errors**: Refactor `execute_render` in `src-tauri/src/render.rs` to return a real `Err` on subprocess failure instead of an `Ok(RenderResult { ok: false })`.
   - [x] **Remove HTML Comments for Errors**: Eliminate the practice of injecting error messages into the HTML stream via `<!-- renderer error -->`.
-  - **Structured Config DTO**: Refactor `set_config` in `src-tauri/src/commands/config.rs` to accept a single structured object (e.g., `ConfigUpdate` DTO) utilizing Serde, eliminating positional primitive arguments (signature bloat).
+  - [x] **Structured Config DTO**: Refactor `set_config` in `src-tauri/src/commands/config.rs` to accept a single structured object (e.g., `ConfigUpdate` DTO) utilizing Serde, eliminating positional primitive arguments (signature bloat).
 - **Refactor App.tsx God Object** — Decompose the 500+ line root component into domain-specific hooks and components:
   - **Domain Hooks**: Extract state and logic into `useFileManager`, `useRenderer`, `usePlugins`, etc., to reduce re-render blast-radius and context-window pressure.
   - [x] **Modular Error View Component**: Replace the string-concatenated `errorDocument` blob with a first-class React component rendered into the preview pane, eliminating manual HTML-in-JS laundering.

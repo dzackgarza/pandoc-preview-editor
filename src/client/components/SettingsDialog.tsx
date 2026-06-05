@@ -14,6 +14,7 @@ import {
 export interface SettingsData {
   templatesDir: string;
   filtersDir: string;
+  figuresDir: string;
   debounceMs: number;
   timeoutMs: number;
   renderCommand: string;
@@ -45,6 +46,7 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
   // Config state
   const [templatesDir, setTemplatesDir] = useState('~/.pandoc/templates');
   const [filtersDir, setFiltersDir] = useState('~/.pandoc/filters');
+  const [figuresDir, setFiguresDir] = useState('~/.pandoc/figures');
   const [debounceMs, setDebounceMs] = useState(750);
   const [timeoutMs, setTimeoutMs] = useState(30000);
   const [restoreLastFile, setRestoreLastFile] = useState(true);
@@ -76,6 +78,7 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
         .then((data) => {
           setTemplatesDir(data.templatesDir);
           setFiltersDir(data.filtersDir);
+          setFiguresDir(data.figuresDir);
           setDebounceMs(data.debounceMs);
           setTimeoutMs(data.timeoutMs);
           setRawArgsText(data.renderCommand);
@@ -143,19 +146,22 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
 
   const handleSave = () => {
     invoke('set_config', {
-      templatesDir,
-      filtersDir,
-      debounceMs: Number(debounceMs),
-      timeoutMs: Number(timeoutMs),
-      renderCommand: rawArgsText,
-      restoreLastFile: restoreLastFile,
+      update: {
+        templatesDir,
+        filtersDir,
+        figuresDir,
+        debounceMs: Number(debounceMs),
+        timeoutMs: Number(timeoutMs),
+        renderCommand: rawArgsText,
+        restoreLastFile: restoreLastFile,
+      }
     })
       .then(() => {
         onSave();
         onClose();
       })
-      .catch((err) => {
-        setValidationError(err.message || 'Server error occurred');
+      .catch((err: any) => {
+        setValidationError(err.message || err || 'Server error occurred');
       });
   };
 
