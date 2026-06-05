@@ -72,7 +72,7 @@ pub fn recent_files(state: State<'_, Mutex<AppState>>) -> Result<serde_json::Val
         let name = p
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| p.to_string_lossy().into_owned());
+            .ok_or_else(|| format!("recent file entry has no filename: {}", p.display()))?;
         let is_active = Some(p) == active_path.as_ref();
         files.push(RecentFile {
             name,
