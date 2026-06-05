@@ -19,9 +19,9 @@
 ## Active (Main Backlog)
 
 - **Complete Tauri E2E suite migration** — Finish reconciling the old Express suite with the current Tauri architecture.
-- **Document banned E2E patterns and current failures** — Keep a durable list of non-admissible suite patterns and file-level failures so future work fixes tests instead of counting defective proofs.
-- **Document failed-test debugging protocol** — Require causal notes, complete logs/artifacts, boundary classification, and review after repeated failed fixes before changing app code, assertions, fixtures, helpers, or adapter calls.
-- **Repair non-admissible migrated tests** — Remove `@ts-nocheck`, `as any`, loose known-payload casts, CJS `require()` in ESM tests, dependency skips, duplicate weak helpers, unsupported adapter calls, and mock-only feature proofs from the active E2E suite.
+- [x] **Document banned E2E patterns and current failures** — Keep a durable list of non-admissible suite patterns and file-level failures so future work fixes tests instead of counting defective proofs.
+- [x] **Document failed-test debugging protocol** — Require causal notes, complete logs/artifacts, boundary classification, and review after repeated failed fixes before changing app code, assertions, fixtures, helpers, or adapter calls.
+- [x] **Repair non-admissible migrated tests** — Remove `@ts-nocheck`, `as any`, loose known-payload casts, CJS `require()` in ESM tests, dependency skips, duplicate weak helpers, unsupported adapter calls, and mock-only feature proofs from the active E2E suite.
 - **Audit migrated suite against proof obligations** — Confirm the repaired suite models `docs/testing-proof-obligations.md` with real Tauri desktop proofs before using `just test` as an app-satisfaction gate.
 - **Satisfy Tauri desktop proof burden** — After the suite is complete and correct, make `just test` pass through the real Tauri Playwright suite.
 - **Remediate Diagram Integration Slop** — Burn the agent-flavored implementation residue in the diagram generation workflow:
