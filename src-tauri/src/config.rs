@@ -241,8 +241,10 @@ pub fn load_bundled_plugins(
     })? {
         let entry = entry.map_err(|e| format!("failed to read plugin directory entry: {e}"))?;
         let path = entry.path();
-        if path.extension().map(|x| x == "toml").unwrap_or(false) {
-            names.push(path);
+        if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+            if ext == "toml" {
+                names.push(path);
+            }
         }
     }
     names.sort();
