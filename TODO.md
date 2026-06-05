@@ -38,6 +38,7 @@
   - **Burn Window Globals**: Remove `__PANDOC_PREVIEW_BACKUP_COMPLETED__` and `__PANDOC_PREVIEW_EDITOR_VIEW__` from `App.tsx` and `EditorPane.tsx`.
   - **Standard DOM Verification**: Update E2E tests to verify editor content via standard locators (e.g., `.cm-content`) rather than reaching into the CodeMirror instance.
   - **Deterministic UI Signals**: Replace the backup counter with a real UI signal (e.g., a "Backup Saved" status transition) or an observable state that reflects background process completion.
+  - **Remediate E2E Clipboard Theater**: Replace the browser-side event simulation in `src/tests/e2e/workflow-extensions.spec.ts` with a platform-native utility (e.g., `wl-copy` or `xclip`) to populate the real system clipboard, ensuring the Tauri IPC and OS boundary are tested.
   - **Type Safety**: Eliminate all `@ts-ignore` usages. If a global is strictly required for the test adapter (like `__PW_ACTIVE__`), define it properly in the `Window` interface.
 - **Remediate Rust Fail-Fast Violations** — Fix the use of banned `let _ =` patterns that silence critical filesystem errors in `src-tauri/src/config.rs`:
   - **Fix Silenced Errors**: Replace `let _ = fs::create_dir_all(...)` and `let _ = fs::write(...)` with proper error handling (returning `Result` or using `expect`).
@@ -63,12 +64,14 @@
   - **Global Configuration**: Add a `figures_dir` field to the user configuration to establish a single centralized location for all academic assets (TikZ, SVG, clipboard images).
   - **Burn Magic Folder Sniffing**: Remove the `is_workspace_figure` logic in `src-tauri/src/commands/figures.rs` that heuristically looks for folders named "figures". The Figure Library must exclusively scan the configured global directory.
   - **Cross-Document Reuse**: Ensure that pasting or generating a new figure saves directly to the global directory, enforcing the opinionated default and allowing canonical updates across multiple papers.
-- **Remediate IPC Success Laundering** — Fix the user-deceptive "Partial Success" pattern in the renderer IPC:
+- **Remediate IPC Success Laundering & Signature Bloat** — Fix the user-deceptive "Partial Success" pattern and parameter accretion in the renderer IPC:
   - **Honest IPC Errors**: Refactor `execute_render` in `src-tauri/src/render.rs` to return a real `Err` on subprocess failure instead of an `Ok(RenderResult { ok: false })`.
   - **Remove HTML Comments for Errors**: Eliminate the practice of injecting error messages into the HTML stream via `<!-- renderer error -->`.
+  - **Structured Config DTO**: Refactor `set_config` in `src-tauri/src/commands/config.rs` to accept a single structured object (e.g., `ConfigUpdate` DTO) utilizing Serde, eliminating positional primitive arguments (signature bloat).
 - **Refactor App.tsx God Object** — Decompose the 500+ line root component into domain-specific hooks and components:
   - **Domain Hooks**: Extract state and logic into `useFileManager`, `useRenderer`, `usePlugins`, etc., to reduce re-render blast-radius and context-window pressure.
-  - **Standard Utilities**: Replace bespoke `escapeHtml` and `errorDocument` with mature libraries or shared, tested utilities.
+  - **Modular Error View Component**: Replace the string-concatenated `errorDocument` blob with a first-class React component rendered into the preview pane, eliminating manual HTML-in-JS laundering.
+  - **Standard Utilities**: Replace bespoke `escapeHtml` with mature libraries or browser-native `textContent` assignment.
 - **Burn Timing Theater in IPC Contract** — Move `duration_ms` out of the core `RenderResult` success contract in `render.rs`. It is diagnostic metadata, not a success criterion, and its presence in the contract invites brittle "latency-based" tests.
 - **Server-side TikZ rendering proof** — Prove TikZ renders through server-side Pandoc -> SVG, not browser-side TikZJax.
 - **Obsidian callout → amsthm** — Convert Obsidian callouts to amsthm environments.
