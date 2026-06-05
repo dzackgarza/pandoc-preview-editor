@@ -117,15 +117,16 @@ pub fn probe_tool_state() -> HashMap<String, ToolEntry> {
         let found = tool
             .executables
             .iter()
-            .find(|e| is_command_available(e))
-            .unwrap_or_else(|| {
-                panic!(
-                    "Missing hard dependency: none of the executables for diagram tool '{}' ({:?}) were found in PATH. Ensure all required mathematical research tools are installed.",
-                    tool.id, tool.executables
-                )
-            });
+            .find(|e| is_command_available(e));
 
-        map.insert(tool.id.clone(), ToolEntry { cmd: found.clone() });
+        if let Some(cmd) = found {
+            map.insert(tool.id.clone(), ToolEntry { cmd: cmd.clone() });
+        } else {
+            log::warn!(
+                "Diagram tool '{}' not found in PATH. It will be unavailable until installed.",
+                tool.id
+            );
+        }
     }
     map
 }
