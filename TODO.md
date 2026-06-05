@@ -2,7 +2,7 @@
 
 > [!NOTE]
 > This document is **NON-NORMATIVE**. It is a task tracker only.
-> All product and architecture requirements are owned by `REQUIREMENTS.md` and `DESIGN-COMMITMENTS.md`.
+> All product and architecture requirements are owned by `.agents/memories/REQUIREMENTS.md` and `.agents/memories/DESIGN-COMMITMENTS.md`.
 > Any task that contradicts the requirements authority is invalid and must be removed or re-scoped.
 
 ## File Integrity Implementation (Active Branch: feature/file-integrity)
@@ -38,7 +38,7 @@
   - **Burn Window Globals**: Remove `__PANDOC_PREVIEW_BACKUP_COMPLETED__` and `__PANDOC_PREVIEW_EDITOR_VIEW__` from `App.tsx` and `EditorPane.tsx`.
   - **Standard DOM Verification**: Update E2E tests to verify editor content via standard locators (e.g., `.cm-content`) rather than reaching into the CodeMirror instance.
   - **Deterministic UI Signals**: Replace the backup counter with a real UI signal (e.g., a "Backup Saved" status transition) or an observable state that reflects background process completion.
-  - **Remediate E2E Clipboard Theater**: Replace the browser-side event simulation in `src/tests/e2e/workflow-extensions.spec.ts` with a platform-native utility (e.g., `wl-copy` or `xclip`) to populate the real system clipboard, ensuring the Tauri IPC and OS boundary are tested.
+  - [x] **Remediate E2E Clipboard Theater**: Replace the browser-side event simulation in `src/tests/e2e/workflow-extensions.spec.ts` with a platform-native utility (e.g., `wl-copy` or `xclip`) to populate the real system clipboard, ensuring the Tauri IPC and OS boundary are tested.
   - **Type Safety**: Eliminate all `@ts-ignore` usages. If a global is strictly required for the test adapter (like `__PW_ACTIVE__`), define it properly in the `Window` interface.
 - **Remediate Rust Fail-Fast Violations** — Fix the use of banned `let _ =` patterns that silence critical filesystem errors in `src-tauri/src/config.rs`:
   - **Fix Silenced Errors**: Replace `let _ = fs::create_dir_all(...)` and `let _ = fs::write(...)` with proper error handling (returning `Result` or using `expect`).
