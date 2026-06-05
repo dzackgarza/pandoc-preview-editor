@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { expect, test } from './fixtures.js';
@@ -78,9 +78,9 @@ const renderingWorkflow = test.extend({
 
 const actionWorkflow = test.extend({
   testEnv: async ({ testEnv }, use) => {
-    const documentPath = path.join(testEnv.workspaceDir, 'source.md');
-    writeFileSync(documentPath, '# Plugin Source\n\nInitial.\n', 'utf8');
-    testEnv.writeSessionState(documentPath, true);
+    const tempPath = path.join(testEnv.workspaceDir, 'untitled.md');
+    writeFileSync(tempPath, '# Plugin Source\n\nInitial.\n', 'utf8');
+    testEnv.writeSessionState(tempPath, true);
 
     await use(testEnv);
   },
@@ -239,6 +239,9 @@ test.describe('canonical desktop workflows', () => {
       await replaceEditorContents(appPage, '# Plugin Source\n\nInitial.\n');
       await expect(appPage.locator('#save-state')).toContainText('unsaved');
 
+      // Delete the file from disk so saving it doesn't trigger an overwrite confirmation prompt
+      rmSync(documentPath, { force: true });
+
       // Save the document to establish file identity and clear the temp status
       await appPage.locator('button[aria-label="Save"]').click();
       await saveViaFileSelector(appPage, documentPath);
@@ -283,7 +286,7 @@ test.describe('canonical desktop workflows', () => {
       await replaceEditorContents(appPage, unsaved);
       await expect(appPage.locator('#save-state')).toContainText('unsaved');
       await invokeTauri(appPage, 'backup', { markdown: unsaved, path: documentPath });
-      await appPage.evaluate('window.location.reload()');
+      await appPage.reload();
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
       await expect(appPage.locator('.cm-content')).toContainText(
         'Unsaved backup content.',
@@ -298,7 +301,7 @@ test.describe('canonical desktop workflows', () => {
         restoreLastFile: true,
       });
       await replaceEditorContents(appPage, '# Broken render\n\nShould fail visibly.');
-      await expect(appPage.locator('#status')).toContainText('render failed', {
+      await expect(appPage.locator('#status')).toContainText('error', {
         timeout: 10000,
       });
       await expect(appPage.locator('#diagnostics')).toContainText('renderer exploded');

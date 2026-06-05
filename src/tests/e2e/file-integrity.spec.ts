@@ -85,7 +85,7 @@ test.describe('File Integrity (Tauri)', () => {
 
       expect(readFileSync(documentPath, 'utf-8')).toBe(editedMarkdown);
 
-      await appPage.evaluate('window.location.reload()');
+      await appPage.reload();
       await expect(appPage.getByTestId('editor')).toBeVisible();
       await expect(appPage.locator('#status')).toContainText('ready');
       await expect(appPage.locator('.cm-content')).toContainText(

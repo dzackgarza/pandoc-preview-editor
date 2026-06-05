@@ -120,7 +120,7 @@ test.describe('user workflows', () => {
         });
       }
 
-      await appPage.evaluate('window.location.reload()');
+      await appPage.reload();
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
       await expect(appPage.locator('#status')).toContainText('ready', {
         timeout: 10000,

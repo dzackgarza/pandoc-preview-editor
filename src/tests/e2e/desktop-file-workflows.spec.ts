@@ -128,7 +128,7 @@ test.describe('desktop file workflows', () => {
         );
         await expect(readFileSync(documentPath, 'utf8')).toBe(updatedMarkdown);
 
-        await appPage.evaluate('window.location.reload()');
+        await appPage.reload();
         await expect(appPage.getByTestId('editor')).toBeVisible();
         await expect(appPage.locator('#status')).toContainText('ready');
         await expect(appPage.locator('footer span[title]')).toHaveAttribute(

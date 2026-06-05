@@ -31,7 +31,7 @@ export default defineConfig({
   projects: [
     {
       name: 'tauri',
-      testMatch: '**/workflows.spec.ts',
+      testMatch: '**/*.spec.ts',
       use: {
         mode: 'tauri',
       },

@@ -342,6 +342,28 @@ export const test = base.test.extend<{
       tauriPage as import('@srsholmes/tauri-playwright').TauriPage,
     );
 
+    tauriPage.reload = async () => {
+      await tauriPage.evaluate('window.location.reload()');
+      const readyDeadline = Date.now() + 15_000;
+      let frontendReady = false;
+      while (Date.now() < readyDeadline) {
+        try {
+          frontendReady = await tauriPage.evaluate(
+            'document.readyState === "complete" && !!window.__PW_ACTIVE__',
+          );
+          if (frontendReady) {
+            break;
+          }
+        } catch {}
+        await delay(100);
+      }
+      if (frontendReady) {
+        await installFrontendErrorCapture(
+          tauriPage as import('@srsholmes/tauri-playwright').TauriPage,
+        );
+      }
+    };
+
     try {
       await use(tauriPage as import('@srsholmes/tauri-playwright').TauriPage);
     } finally {

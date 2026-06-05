@@ -161,7 +161,7 @@ test.describe('Session Persistence and Ephemeral Buffer Recovery (Tauri)', () =>
       });
 
       // Reload the page
-      await appPage.evaluate('window.location.reload()');
+      await appPage.reload();
       await expect(appPage.getByTestId('editor')).toBeVisible({ timeout: 15000 });
 
       const state = await invokeTauri(appPage, 'get_initial_state', {});
