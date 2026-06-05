@@ -343,7 +343,7 @@ pub fn list_files(
         let entry = entry.map_err(|e| e.to_string())?;
         let abs = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
-        let client_path = to_client_path(&workspace_root, &abs);
+        let client_path = to_client_path(&workspace_root, &abs)?;
         if should_ignore(&workspace_root, &abs) {
             continue;
         }
@@ -378,7 +378,7 @@ pub fn list_files(
 
     Ok(ListFilesResult {
         root: workspace_root.to_string_lossy().into_owned(),
-        dir: to_client_path(&workspace_root, &target_dir),
+        dir: to_client_path(&workspace_root, &target_dir)?,
         entries,
     })
 }
@@ -409,7 +409,7 @@ pub fn file_content(
     s.is_temp_file = false;
     save_session_state(&target_path, false);
 
-    let client_path = to_client_path(&workspace_root, &target_path);
+    let client_path = to_client_path(&workspace_root, &target_path)?;
     Ok(serde_json::json!({
         "path": client_path,
         "absolutePath": target_path.to_string_lossy(),
@@ -564,7 +564,7 @@ pub async fn quick_open_spawn(
     }
 
     let content = fs::read_to_string(&target_path).map_err(|e| e.to_string())?;
-    let relative_path = to_client_path(&workspace_root, &target_path);
+    let relative_path = to_client_path(&workspace_root, &target_path)?;
 
     {
         let mut s = state.lock().unwrap();

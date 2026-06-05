@@ -34,11 +34,18 @@ pub fn normalize_path(path: &Path) -> PathBuf {
     path_clean::clean(path)
 }
 
-pub fn to_client_path(root: &Path, absolute: &Path) -> String {
+pub fn to_client_path(root: &Path, absolute: &Path) -> Result<String, String> {
     absolute
         .strip_prefix(root)
         .map(|rel| rel.to_string_lossy().into_owned())
-        .unwrap_or_else(|_| absolute.to_string_lossy().into_owned())
+        .map_err(|e| {
+            format!(
+                "failed to resolve client path: path {} is outside root {}: {}",
+                absolute.display(),
+                root.display(),
+                e
+            )
+        })
 }
 
 // ─── ignore / text detection ─────────────────────────────────────────────────
@@ -48,7 +55,9 @@ pub const IGNORE_NAMES: &[&str] = &[".git", "node_modules", "dist", "build", "co
 const MARKDOWN_EXTENSIONS: &[&str] = &[".md", ".mdown", ".markdown"];
 
 pub fn should_ignore(workspace_root: &Path, absolute_path: &Path) -> bool {
-    let client_path = to_client_path(workspace_root, absolute_path);
+    let Ok(client_path) = to_client_path(workspace_root, absolute_path) else {
+        return true;
+    };
     client_path
         .split('/')
         .any(|part| part.starts_with('.') || IGNORE_NAMES.contains(&part))
