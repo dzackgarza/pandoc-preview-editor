@@ -26,6 +26,23 @@ fn remove_file_if_present(path: &Path) -> Result<(), String> {
     }
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileEntry {
+    pub name: String,
+    pub path: String,
+    pub kind: String,
+    pub is_markdown: bool,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentFile {
+    pub name: String,
+    pub path: String,
+    pub is_active: bool,
+}
+
 // ─── Tauri commands ───────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -40,10 +57,30 @@ pub fn get_initial_state(state: State<'_, Mutex<AppState>>) -> Result<serde_json
         "content": s.current_file_content()?,
         "file": s.file.as_ref().filter(|_| !s.is_temp_file).map(|p| p.to_string_lossy()),
         "tempBackupFile": if s.is_temp_file { s.file.as_ref().map(|p| p.to_string_lossy().into_owned()) } else { None },
-        "workspaceRoot": s.workspace_root().to_string_lossy(),
+        "workspaceRoot": s.workspace_root()?.to_string_lossy(),
         "isTempFile": s.is_temp_file,
         "recoveredFromBackup": has_backup,
     }))
+}
+
+#[tauri::command]
+pub fn recent_files(state: State<'_, Mutex<AppState>>) -> Result<serde_json::Value, String> {
+    let s = state.lock().unwrap();
+    let active_path = s.file.clone();
+    let mut files = vec![];
+    for p in s.recent_files.iter() {
+        let name = p
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| p.to_string_lossy().into_owned());
+        let is_active = Some(p) == active_path.as_ref();
+        files.push(RecentFile {
+            name,
+            path: p.to_string_lossy().into_owned(),
+            is_active,
+        });
+    }
+    Ok(serde_json::json!({ "recentFiles": files }))
 }
 
 // ─── save ─────────────────────────────────────────────────────────────────────
@@ -63,7 +100,7 @@ pub fn save(
     state: State<'_, Mutex<AppState>>,
 ) -> Result<SaveResult, String> {
     let mut s = state.lock().unwrap();
-    let workspace_root = s.workspace_root();
+    let workspace_root = s.workspace_root()?;
 
     let target_path: PathBuf = if let Some(ref p) = path {
         if !p.is_empty() {
@@ -144,7 +181,7 @@ pub fn save(
     Ok(SaveResult {
         ok: true,
         path: target_path.to_string_lossy().into_owned(),
-        workspace_root: s.workspace_root().to_string_lossy().into_owned(),
+        workspace_root: s.workspace_root()?.to_string_lossy().into_owned(),
     })
 }
 
@@ -157,7 +194,7 @@ pub fn backup(
     state: State<'_, Mutex<AppState>>,
 ) -> Result<serde_json::Value, String> {
     let s = state.lock().unwrap();
-    let workspace_root = s.workspace_root();
+    let workspace_root = s.workspace_root()?;
 
     let doc_path: PathBuf = if let Some(ref p) = path {
         if !p.is_empty() {
@@ -204,77 +241,104 @@ pub fn backup(
 
 use crate::fs_utils::IGNORE_NAMES;
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowseEntry {
+    pub name: String,
+    pub absolute_path: String,
+    pub kind: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct BrowseResult {
+    pub dir: String,
+    pub parent: Option<String>,
+    pub entries: Vec<BrowseEntry>,
+}
+
 #[tauri::command]
-pub fn browse(dir: String) -> Result<serde_json::Value, String> {
+pub fn browse(dir: String) -> Result<BrowseResult, String> {
     let target_dir = PathBuf::from(&dir);
     let meta = fs::metadata(&target_dir).map_err(|e| e.to_string())?;
     if !meta.is_dir() {
         return Err("dir must be a directory".into());
     }
 
-    const BROWSE_IGNORE: &[&str] = IGNORE_NAMES;
-    let mut entries: Vec<serde_json::Value> = vec![];
+    let mut entries: Vec<BrowseEntry> = vec![];
     for entry in fs::read_dir(&target_dir).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
         let name = entry.file_name().to_string_lossy().into_owned();
-        if name.starts_with('.') || BROWSE_IGNORE.contains(&name.as_str()) {
+        if name.starts_with('.') || IGNORE_NAMES.contains(&name.as_str()) {
             continue;
         }
         let abs = entry.path();
-        let kind = if abs.is_dir() { "directory" } else { "file" };
-        entries.push(serde_json::json!({
-            "name": name,
-            "absolutePath": abs.to_string_lossy(),
-            "kind": kind,
-        }));
+        let kind = if abs.is_dir() {
+            "directory"
+        } else {
+            "file"
+        };
+        entries.push(BrowseEntry {
+            name,
+            absolute_path: abs.to_string_lossy().into_owned(),
+            kind: kind.to_string(),
+        });
     }
+
     entries.sort_by(|a, b| {
-        let ka = a["kind"].as_str().unwrap_or("");
-        let kb = b["kind"].as_str().unwrap_or("");
-        let na = a["name"].as_str().unwrap_or("");
-        let nb = b["name"].as_str().unwrap_or("");
-        if ka != kb {
-            return if ka == "directory" {
+        if a.kind != b.kind {
+            return if a.kind == "directory" {
                 std::cmp::Ordering::Less
             } else {
                 std::cmp::Ordering::Greater
             };
         }
-        na.cmp(nb)
+        a.name.to_lowercase().cmp(&b.name.to_lowercase())
     });
 
-    let parent_path = target_dir
-        .parent()
-        .map(|p| p.to_string_lossy().into_owned());
-    let parent = if parent_path.as_deref() == Some(target_dir.to_string_lossy().as_ref()) {
-        serde_json::Value::Null
-    } else {
-        parent_path
-            .map(serde_json::Value::String)
-            .unwrap_or(serde_json::Value::Null)
-    };
+    let parent = target_dir.parent().and_then(|p| {
+        let p_str = p.to_string_lossy();
+        let target_str = target_dir.to_string_lossy();
+        if p_str == target_str {
+            None
+        } else {
+            Some(p_str.into_owned())
+        }
+    });
 
-    Ok(serde_json::json!({
-        "dir": target_dir.to_string_lossy(),
-        "parent": parent,
-        "entries": entries,
-    }))
+    Ok(BrowseResult {
+        dir: target_dir.to_string_lossy().into_owned(),
+        parent,
+        entries,
+    })
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListFilesResult {
+    pub root: String,
+    pub dir: String,
+    pub entries: Vec<FileEntry>,
 }
 
 #[tauri::command]
 pub fn list_files(
     dir: Option<String>,
     state: State<'_, Mutex<AppState>>,
-) -> Result<serde_json::Value, String> {
+) -> Result<ListFilesResult, String> {
     let s = state.lock().unwrap();
-    let workspace_root = s.workspace_root();
-    let target_dir = resolve_inside(&workspace_root, dir.as_deref().unwrap_or(""))?;
+    let workspace_root = s.workspace_root()?;
+
+    let target_dir = match dir {
+        Some(ref d) if !d.is_empty() => resolve_inside(&workspace_root, d)?,
+        _ => workspace_root.clone(),
+    };
+
     let meta = fs::metadata(&target_dir).map_err(|e| e.to_string())?;
     if !meta.is_dir() {
         return Err("dir must reference a directory".into());
     }
 
-    let mut entries: Vec<serde_json::Value> = vec![];
+    let mut entries: Vec<FileEntry> = vec![];
     for entry in fs::read_dir(&target_dir).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
         let abs = entry.path();
@@ -284,41 +348,39 @@ pub fn list_files(
             continue;
         }
         if abs.is_dir() {
-            entries.push(serde_json::json!({
-                "name": name,
-                "path": client_path,
-                "kind": "directory",
-            }));
+            entries.push(FileEntry {
+                name,
+                path: client_path,
+                kind: "directory".to_string(),
+                is_markdown: false,
+            });
             continue;
         }
         if abs.is_file() && is_text_like_file(&abs)? {
-            entries.push(serde_json::json!({
-                "name": name,
-                "path": client_path,
-                "kind": "file",
-            }));
+            let is_md = is_markdown_file(&abs);
+            entries.push(FileEntry {
+                name,
+                path: client_path,
+                kind: "file".to_string(),
+                is_markdown: is_md,
+            });
         }
     }
     entries.sort_by(|a, b| {
-        let ka = a["kind"].as_str().unwrap_or("");
-        let kb = b["kind"].as_str().unwrap_or("");
-        let na = a["name"].as_str().unwrap_or("");
-        let nb = b["name"].as_str().unwrap_or("");
-        if ka != kb {
-            return if ka == "directory" {
-                std::cmp::Ordering::Less
-            } else {
-                std::cmp::Ordering::Greater
-            };
+        if a.kind == b.kind {
+            a.name.to_lowercase().cmp(&b.name.to_lowercase())
+        } else if a.kind == "directory" {
+            std::cmp::Ordering::Less
+        } else {
+            std::cmp::Ordering::Greater
         }
-        na.cmp(nb)
     });
 
-    Ok(serde_json::json!({
-        "root": workspace_root.to_string_lossy(),
-        "dir": to_client_path(&workspace_root, &target_dir),
-        "entries": entries,
-    }))
+    Ok(ListFilesResult {
+        root: workspace_root.to_string_lossy().into_owned(),
+        dir: to_client_path(&workspace_root, &target_dir),
+        entries,
+    })
 }
 
 #[tauri::command]
@@ -327,7 +389,7 @@ pub fn file_content(
     state: State<'_, Mutex<AppState>>,
 ) -> Result<serde_json::Value, String> {
     let mut s = state.lock().unwrap();
-    let workspace_root = s.workspace_root();
+    let workspace_root = s.workspace_root()?;
     let target_path = resolve_inside(&workspace_root, &path)?;
     let meta = fs::metadata(&target_path).map_err(|e| e.to_string())?;
     if !meta.is_file() {
@@ -361,7 +423,7 @@ pub fn file_exists(
     state: State<'_, Mutex<AppState>>,
 ) -> Result<serde_json::Value, String> {
     let s = state.lock().unwrap();
-    let workspace_root = s.workspace_root();
+    let workspace_root = s.workspace_root()?;
     let target = if Path::new(&path).is_absolute() {
         PathBuf::from(&path)
     } else {
@@ -376,7 +438,7 @@ pub fn new_file(
     state: State<'_, Mutex<AppState>>,
 ) -> Result<serde_json::Value, String> {
     let mut s = state.lock().unwrap();
-    let workspace_root = s.workspace_root();
+    let workspace_root = s.workspace_root()?;
     let target_path = if let Some(ref p) = path {
         if !p.is_empty() {
             if Path::new(p).is_absolute() {
@@ -411,7 +473,7 @@ pub fn new_file(
         "path": target_path.to_string_lossy(),
         "absolutePath": target_path.to_string_lossy(),
         "content": "",
-        "workspaceRoot": s.workspace_root().to_string_lossy(),
+        "workspaceRoot": s.workspace_root()?.to_string_lossy(),
     }))
 }
 
@@ -421,7 +483,7 @@ pub fn open_file_external(
     state: State<'_, Mutex<AppState>>,
 ) -> Result<serde_json::Value, String> {
     let s = state.lock().unwrap();
-    let workspace_root = s.workspace_root();
+    let workspace_root = s.workspace_root()?;
     let target = if Path::new(&path).is_absolute() {
         PathBuf::from(&path)
     } else {
@@ -443,7 +505,7 @@ pub async fn quick_open_spawn(
 ) -> Result<serde_json::Value, String> {
     let (workspace_root, launcher_cmd) = {
         let s = state.lock().unwrap();
-        (s.workspace_root(), s.launcher_command.clone())
+        (s.workspace_root()?, s.launcher_command.clone())
     };
 
     let cmd = if let Some(c) = launcher_cmd {
