@@ -1,4 +1,5 @@
 import { readFileSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import * as import_child_process from 'node:child_process';
 import path from 'node:path';
 import { expect, test } from './fixtures.js';
 import {
@@ -53,28 +54,27 @@ test.describe('Desktop Extensions Workflow (Consolidated)', () => {
       expect(existsSync(path.join(testEnv.workspaceDir, 'figures', 'my-diagram.tikz'))).toBe(true);
 
       // 3. Image Paste Workflow
-      const pngBytes = await appPage.evaluate<number[]>(`
-        (async () => {
-          const canvas = document.createElement('canvas');
-          canvas.width = 1; canvas.height = 1;
-          const ctx = canvas.getContext('2d');
-          ctx.fillStyle = '#ff0000';
-          ctx.fillRect(0, 0, 1, 1);
-          const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
-          if (!blob) throw new Error('Blob creation failed');
-          return Array.from(new Uint8Array(await blob.arrayBuffer()));
-        })()
-      `);
+      try {
+        import_child_process.execSync('which wl-copy', { stdio: 'ignore' });
+      } catch (e) {
+        throw new Error('Missing hard dependency: wl-copy is required for clipboard E2E tests. Failing fast.');
+      }
 
-      await appPage.evaluate(`
-        (() => {
-          const blob = new Blob([new Uint8Array(${JSON.stringify(pngBytes)})], { type: 'image/png' });
-          const file = new File([blob], 'pasted.png', { type: 'image/png' });
-          const dt = new DataTransfer();
-          dt.items.add(file);
-          document.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, clipboardData: dt }));
-        })()
-      `);
+      // Minimal 1x1 red PNG
+      const pngBuffer = Buffer.from([
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+        0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
+        0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xdd, 0x8d, 0xb0, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e,
+        0x44, 0xae, 0x42, 0x60, 0x82,
+      ]);
+      const tmpPngPath = path.join(testEnv.workspaceDir, 'test-clipboard.png');
+      writeFileSync(tmpPngPath, pngBuffer);
+
+      import_child_process.execSync(`wl-copy --type image/png < ${tmpPngPath}`);
+
+      await appPage.getByTestId('editor').click();
+      await appPage.keyboard.press('Control+V');
 
       await expect
         .poll(() =>
