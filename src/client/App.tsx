@@ -21,102 +21,83 @@ import { SettingsDialog } from './components/SettingsDialog.jsx';
 import { DiagramModal } from './components/DiagramModal.jsx';
 import { UnsavedChangesDialog } from './components/UnsavedChangesDialog.jsx';
 
-export type RenderStatus = 'idle' | 'rendering' | 'error';
-export type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
-export type PluginState = 'idle' | 'running' | 'complete' | 'error';
+// Import hooks
+import { useFileManager } from './hooks/useFileManager.js';
+import { useRenderer } from './hooks/useRenderer.js';
+import { usePlugins } from './hooks/usePlugins.js';
 
-export type FileEntry = {
-  name: string;
-  path: string;
-  kind: 'directory' | 'file';
-};
+declare global {
+  interface Window {
+    __PW_ACTIVE__: boolean;
+    __PANDOC_PREVIEW_BACKUP_COMPLETED__?: number;
+  }
+}
 
-export type OpenFileResult = {
-  path: string;
-  absolutePath: string;
-  content: string;
-};
-
-export type QuickOpenEntry = {
-  path: string;
-  absolutePath: string;
-  name: string;
-  dir: string;
-  recent: boolean;
-};
-
-export type PluginMetadata = {
-  id: string;
-  name: string;
-  description: string;
-  category: string;
-};
-
-type InitialState = {
-  content: string;
-  file: string | null;
-  tempBackupFile: string | null;
-  workspaceRoot: string;
-  isTempFile: boolean;
-  recoveredFromBackup: boolean;
-};
-
-const DEBOUNCE_MS = 400;
 const RESET_LAYOUT = {
   'editor-pane-panel': 56,
   'preview-pane-panel': 44,
 };
 
-declare global {
-  interface Window {
-    __PANDOC_PREVIEW_BACKUP_COMPLETED__?: number;
-  }
-}
-
-// Ensure the module is treated as a module when augmenting global scope
-export {};
-
 export function App() {
-  const [markdownText, setMarkdownText] = useState('');
-  const [currentFile, setCurrentFile] = useState<string | null>(null);
-  const [isTempFile, setIsTempFile] = useState(false);
-  const [previewHtml, setPreviewHtml] = useState('');
-  const [status, setStatus] = useState<RenderStatus>('idle');
-  const [durationMs, setDurationMs] = useState<number | null>(null);
-  const [diagnostics, setDiagnostics] = useState<{
-    summary: string;
-    detail: string;
-  } | null>(null);
-  const [saveState, setSaveState] = useState<SaveState>('idle');
-  const [savedAt, setSavedAt] = useState<Date | null>(null);
-  const [pluginState, setPluginState] = useState<PluginState>('idle');
-  const [plugins, setPlugins] = useState<PluginMetadata[]>([]);
+  const {
+    markdownText,
+    currentFile,
+    isTempFile,
+    workspaceRoot,
+    saveState,
+    savedAt,
+    saveAsDialogOpen,
+    saveAsDialogMode,
+    saveAsDialogTitleOverride,
+    saveAsDialogDescription,
+    unsavedChangesDialogOpen,
+    setMarkdownText,
+    setCurrentFile,
+    setIsTempFile,
+    setWorkspaceRoot,
+    setSaveState,
+    setSavedAt,
+    updateMarkdown,
+    saveCurrent,
+    saveCurrentAs,
+    createNewFile,
+    openFile,
+    handleQuickOpen,
+    ensureRealFile,
+    handleSaveAsSubmit,
+    handleSaveAsCancel,
+    handleUnsavedChangesSave,
+    handleUnsavedChangesDiscard,
+    handleUnsavedChangesCancel,
+  } = useFileManager();
+
+  const {
+    previewHtml,
+    status,
+    durationMs,
+    diagnostics,
+    setDiagnostics,
+    renderImmediate,
+    scheduleRender,
+  } = useRenderer(markdownText, currentFile, null);
+
+  const {
+    pluginState,
+    plugins,
+    runPluginAction,
+  } = usePlugins(markdownText, ensureRealFile, setSaveState, setSavedAt);
+
   const [explorerOpen, setExplorerOpen] = useState(false);
-  const [saveAsDialogOpen, setSaveAsDialogOpen] = useState(false);
-  const [saveAsDialogMode, setSaveAsDialogMode] = useState<'save' | 'new'>('save');
-  const [saveAsDialogTitleOverride, setSaveAsDialogTitleOverride] = useState<
-    string | undefined
-  >(undefined);
-  const [saveAsDialogDescription, setSaveAsDialogDescription] = useState<
-    string | undefined
-  >(undefined);
-  const [workspaceRoot, setWorkspaceRoot] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [diagramOpen, setDiagramOpen] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<'explorer' | 'figures'>('explorer');
-  const renderVersion = useRef(0);
-  const debounceTimer = useRef<number | null>(null);
+  const [lastBackupSaved, setLastBackupSaved] = useState<Date | null>(null);
+
   const groupRef = useGroupRef();
   const editorViewRef = useRef<EditorView | null>(null);
-  const saveAsInputRef = useRef<HTMLInputElement>(null);
-  const saveAsResolveRef = useRef<((path: string | null) => void) | null>(null);
-  const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
-  const unsavedChangesResolveRef = useRef<
-    ((choice: 'save' | 'discard' | 'cancel') => void) | null
-  >(null);
 
   useEffect(() => {
-    invoke<InitialState>('get_initial_state')
+    invoke<any>('get_initial_state')
       .then((data) => {
         setMarkdownText(data.content);
         setCurrentFile(data.file ?? null);
@@ -132,94 +113,9 @@ export function App() {
         }
       })
       .catch((err) => {
-        throw new Error(
-          `Failed to load initial state: ${err instanceof Error ? err.message : String(err)}`,
-        );
+        console.error('Failed to load initial state:', err);
       });
-  }, []);
-
-  useEffect(() => {
-    invoke<{ plugins: PluginMetadata[] }>('list_plugins')
-      .then((data) => {
-        setPlugins(data.plugins);
-      })
-      .catch((err) => {
-        throw new Error(
-          `Failed to load plugins: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      });
-  }, []);
-
-  const clearRenderTimer = useCallback(() => {
-    if (debounceTimer.current != null) {
-      window.clearTimeout(debounceTimer.current);
-      debounceTimer.current = null;
-    }
-  }, []);
-
-  const doRender = useCallback(async (text: string, version: number) => {
-    setStatus('rendering');
-    try {
-      const data = await invoke<{
-        html: string;
-        stderr: string;
-      }>('render', { markdown: text });
-
-      if (version !== renderVersion.current) return;
-
-      setPreviewHtml(data.html);
-      setStatus('idle');
-      setDurationMs(null); // duration_ms removed from core contract
-      setDiagnostics(null);
-    } catch (err) {
-      if (version !== renderVersion.current) return;
-      
-      // Tauri serializes Rust Err(RenderError) into a Promise rejection.
-      let detail = String(err);
-      let summary = 'Renderer Error';
-      
-      if (typeof err === 'object' && err !== null) {
-        const errorObj = err as { message?: string; stderr?: string };
-        detail = errorObj.stderr || errorObj.message || 'Unknown render error';
-        if (errorObj.message) summary = errorObj.message;
-      } else if (err instanceof Error) {
-        detail = err.message;
-      }
-      
-      setStatus('error');
-      setDiagnostics({
-        summary,
-        detail,
-      });
-    }
-  }, []);
-
-  const renderImmediate = useCallback(
-    (text: string) => {
-      clearRenderTimer();
-      const version = ++renderVersion.current;
-      void doRender(text, version);
-    },
-    [clearRenderTimer, doRender],
-  );
-
-  const scheduleRender = useCallback(
-    (text: string) => {
-      clearRenderTimer();
-      const version = ++renderVersion.current;
-      debounceTimer.current = window.setTimeout(() => {
-        void doRender(text, version);
-      }, DEBOUNCE_MS);
-    },
-    [clearRenderTimer, doRender],
-  );
-
-  useEffect(() => {
-    scheduleRender(markdownText);
-    return clearRenderTimer;
-  }, [clearRenderTimer, markdownText, scheduleRender]);
-
-  const [lastBackupSaved, setLastBackupSaved] = useState<Date | null>(null);
+  }, [setMarkdownText, setCurrentFile, setIsTempFile, setWorkspaceRoot, setSaveState]);
 
   useEffect(() => {
     if (saveState !== 'dirty' || !currentFile) return;
@@ -246,180 +142,6 @@ export function App() {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [saveState]);
-
-  const promptForSavePath = useCallback(
-    (
-      mode: 'save' | 'new',
-      titleOverride?: string,
-      description?: string,
-    ): Promise<string | null> => {
-      return new Promise((resolve) => {
-        saveAsResolveRef.current = resolve;
-        setSaveAsDialogMode(mode);
-        setSaveAsDialogTitleOverride(titleOverride);
-        setSaveAsDialogDescription(description);
-        setSaveAsDialogOpen(true);
-      });
-    },
-    [],
-  );
-
-  const handleSaveAsSubmit = useCallback((path: string) => {
-    setSaveAsDialogOpen(false);
-    setSaveAsDialogTitleOverride(undefined);
-    setSaveAsDialogDescription(undefined);
-    saveAsResolveRef.current?.(path);
-  }, []);
-
-  const handleSaveAsCancel = useCallback(() => {
-    setSaveAsDialogOpen(false);
-    setSaveAsDialogTitleOverride(undefined);
-    setSaveAsDialogDescription(undefined);
-    saveAsResolveRef.current?.(null);
-  }, []);
-
-  const promptForUnsavedChanges = useCallback((): Promise<
-    'save' | 'discard' | 'cancel'
-  > => {
-    return new Promise((resolve) => {
-      unsavedChangesResolveRef.current = resolve;
-      setUnsavedChangesDialogOpen(true);
-    });
-  }, []);
-
-  const handleUnsavedChangesSave = useCallback(() => {
-    setUnsavedChangesDialogOpen(false);
-    unsavedChangesResolveRef.current?.('save');
-  }, []);
-
-  const handleUnsavedChangesDiscard = useCallback(() => {
-    setUnsavedChangesDialogOpen(false);
-    unsavedChangesResolveRef.current?.('discard');
-  }, []);
-
-  const handleUnsavedChangesCancel = useCallback(() => {
-    setUnsavedChangesDialogOpen(false);
-    unsavedChangesResolveRef.current?.('cancel');
-  }, []);
-
-  const persistMarkdown = useCallback(
-    async (path: string, text: string) => {
-      setSaveState('saving');
-      try {
-        const data = await invoke<{
-          ok: boolean;
-          path: string;
-          workspaceRoot: string;
-        }>('save', { markdown: text, path });
-
-        if (!data.ok) {
-          throw new Error('save failed');
-        }
-
-        const savedPath = data.path ?? path;
-        setCurrentFile(savedPath);
-        setWorkspaceRoot(data.workspaceRoot ?? workspaceRoot);
-        setIsTempFile(false);
-        setSaveState('saved');
-        setSavedAt(new Date());
-        return savedPath;
-      } catch (err) {
-        setSaveState('error');
-        const message = err instanceof Error ? err.message : String(err);
-        toast({
-          title: 'Save failed',
-          description: message,
-          variant: 'destructive',
-        });
-        return null;
-      }
-    },
-    [workspaceRoot],
-  );
-
-  const ensureRealFile = useCallback(
-    async (options: {
-      promptForEmpty: boolean;
-      title?: string;
-      description?: string;
-    }) => {
-      if (isTempFile || !currentFile) {
-        if (
-          !options.promptForEmpty &&
-          markdownText.length === 0 &&
-          saveState !== 'dirty'
-        ) {
-          return null;
-        }
-        const savePath = await promptForSavePath(
-          'save',
-          options.title,
-          options.description,
-        );
-        if (savePath === null) return null;
-        return persistMarkdown(savePath, markdownText);
-      }
-
-      if (saveState === 'dirty') {
-        return persistMarkdown(currentFile, markdownText);
-      }
-      return currentFile;
-    },
-    [
-      currentFile,
-      isTempFile,
-      markdownText,
-      persistMarkdown,
-      promptForSavePath,
-      saveState,
-    ],
-  );
-
-  const ensureBufferSafeToReplace = useCallback(async () => {
-    if (
-      (isTempFile || !currentFile) &&
-      markdownText.length === 0 &&
-      saveState !== 'dirty'
-    ) {
-      return true;
-    }
-    if (saveState !== 'dirty') {
-      return true;
-    }
-    const choice = await promptForUnsavedChanges();
-    if (choice === 'cancel') {
-      return false;
-    }
-    if (choice === 'save') {
-      return (await ensureRealFile({ promptForEmpty: true })) != null;
-    }
-    return true; // discard
-  }, [
-    currentFile,
-    ensureRealFile,
-    isTempFile,
-    markdownText,
-    promptForUnsavedChanges,
-    saveState,
-  ]);
-
-  const saveCurrent = useCallback(async () => {
-    renderImmediate(markdownText);
-    await ensureRealFile({ promptForEmpty: true });
-  }, [ensureRealFile, markdownText, renderImmediate]);
-
-  // Always prompts for a new path, even if the document is already saved.
-  const saveCurrentAs = useCallback(async () => {
-    const savePath = await promptForSavePath('save');
-    if (savePath === null) return;
-    await persistMarkdown(savePath, markdownText);
-  }, [markdownText, persistMarkdown, promptForSavePath]);
-
-  const updateMarkdown = useCallback((value: string) => {
-    setMarkdownText(value);
-    setSaveState('dirty');
-    setSavedAt(null);
-  }, []);
 
   const insertTextAtCursor = useCallback(
     (text: string) => {
@@ -464,7 +186,6 @@ export function App() {
     }
   }, [insertTextAtCursor]);
 
-  // Shared upload path used by both the button handler and the paste event handler.
   const uploadImageAndInsert = useCallback(
     async (imageBlob: Blob, filePath: string) => {
       const imageType = imageBlob.type || 'image/png';
@@ -472,7 +193,6 @@ export function App() {
         ok: boolean;
         markdown: string;
         path: string;
-        relativePath: string;
       }>('save_figure_asset', {
         documentPath: filePath,
         mimeType: imageType,
@@ -528,174 +248,6 @@ export function App() {
     }
   }, [ensureRealFile, uploadImageAndInsert]);
 
-  const runPluginAction = useCallback(
-    async (pluginId: string) => {
-      const pluginMeta = plugins.find((p) => p.id === pluginId);
-      const pluginName = pluginMeta?.name ?? pluginId;
-      const filePath = await ensureRealFile({
-        promptForEmpty: true,
-        title: 'Save Original Markdown Document',
-        description: `Please choose a location to save your original Markdown document first. The plugin "${pluginName}" requires a saved file context on disk to run.`,
-      });
-      if (filePath == null) return;
-      setPluginState('running');
-      setSaveState('saving');
-
-      try {
-        const data = await invoke<{
-          ok: boolean;
-          stdout: string;
-          stderr: string;
-          exitCode: number | null;
-          outputPath?: string;
-        }>('run_plugin', {
-          id: pluginId,
-          markdown: markdownText,
-          path: filePath,
-        });
-
-        if (!data.ok) {
-          throw new Error(data.stderr || 'plugin execution failed');
-        }
-
-        setSaveState('saved');
-        setSavedAt(new Date());
-        setPluginState('idle');
-
-        const handleOpen = async (e: React.MouseEvent) => {
-          e.preventDefault();
-          try {
-            await invoke('open_file_external', { path: data.outputPath });
-          } catch (err) {
-            console.error('Failed to open file:', err);
-          }
-        };
-
-        toast({
-          title: pluginMeta?.name ?? pluginId,
-          description: data.outputPath ? (
-            <span>
-              completed successfully. Output:{' '}
-              <button
-                onClick={handleOpen}
-                className="underline text-[#8fb8ff] hover:text-[#b4d2ff] font-medium transition-colors focus-visible:outline-none"
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  padding: 0,
-                  cursor: 'pointer',
-                }}
-              >
-                {data.outputPath.split('/').at(-1)}
-              </button>
-            </span>
-          ) : data.stderr ? (
-            `stderr: ${data.stderr}`
-          ) : (
-            'completed successfully'
-          ),
-          variant: 'default',
-        });
-      } catch (err) {
-        setSaveState('error');
-        setPluginState('idle');
-
-        const message = err instanceof Error ? err.message : String(err);
-        toast({
-          title: pluginMeta?.name ?? pluginId,
-          description: message,
-          variant: 'destructive',
-        });
-      }
-    },
-    [ensureRealFile, markdownText, plugins],
-  );
-
-  const createNewFile = useCallback(async () => {
-    if (!(await ensureBufferSafeToReplace())) return;
-
-    const savePath = await promptForSavePath('new');
-    if (savePath === null) return; // user cancelled
-
-    setSaveState('saving');
-
-    try {
-      // Create file at the specified workspace-relative path
-      const data = await invoke<{
-        ok: boolean;
-        path: string;
-        absolutePath: string;
-        content: string;
-        workspaceRoot: string;
-      }>('new_file', { path: savePath });
-
-      if (!data.ok || typeof data.absolutePath !== 'string') {
-        throw new Error('Failed to create file');
-      }
-
-      setMarkdownText(data.content);
-      setCurrentFile(data.absolutePath);
-      setWorkspaceRoot(data.workspaceRoot ?? workspaceRoot);
-      setIsTempFile(false);
-      setSaveState('dirty');
-      setSavedAt(null);
-    } catch (err) {
-      setSaveState('error');
-      const message = err instanceof Error ? err.message : String(err);
-      toast({
-        title: 'Create file failed',
-        description: message,
-        variant: 'destructive',
-      });
-    }
-  }, [ensureBufferSafeToReplace, promptForSavePath, workspaceRoot]);
-
-  const openFile = useCallback(
-    async (result: OpenFileResult) => {
-      if (!(await ensureBufferSafeToReplace())) return false;
-      setMarkdownText(result.content);
-      setCurrentFile(result.absolutePath);
-      setIsTempFile(false);
-      setSaveState('idle');
-      setSavedAt(null);
-      return true;
-    },
-    [ensureBufferSafeToReplace],
-  );
-
-  const handleQuickOpen = useCallback(async () => {
-    try {
-      const data = await invoke<{
-        ok: boolean;
-        cancelled?: boolean;
-        path: string;
-        absolutePath: string;
-        content: string;
-        error?: string;
-      }>('quick_open_spawn');
-      if (data.ok) {
-        await openFile({
-          path: data.path,
-          absolutePath: data.absolutePath,
-          content: data.content,
-        });
-      } else if (data.error) {
-        toast({
-          title: 'Quick Open Error',
-          description: data.error,
-          variant: 'destructive',
-        });
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast({
-        title: 'Quick Open Failed',
-        description: msg,
-        variant: 'destructive',
-      });
-    }
-  }, [openFile]);
-
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'p') {
@@ -727,9 +279,6 @@ export function App() {
       window.removeEventListener('keydown', handleKeyDown, { capture: true });
   }, [handleQuickOpen, insertCitation, saveCurrentAs]);
 
-  // Wayland-compatible paste handler: navigator.clipboard.read() is broken on
-  // Wayland for binary image types. The paste DOM event's clipboardData.items is
-  // the reliable path on all platforms including Wayland.
   useEffect(() => {
     const handlePaste = (event: ClipboardEvent) => {
       const items = event.clipboardData?.items;
@@ -742,7 +291,6 @@ export function App() {
         }
       }
       if (!imageFile) return;
-      // There is an image on the clipboard: take ownership and upload it.
       event.preventDefault();
       event.stopPropagation();
       const blob = imageFile;
@@ -773,6 +321,11 @@ export function App() {
     groupRef.current?.setLayout(RESET_LAYOUT);
   }, [groupRef]);
 
+  const handleSaveAction = useCallback(async () => {
+    renderImmediate(markdownText);
+    await saveCurrent();
+  }, [markdownText, renderImmediate, saveCurrent]);
+
   return (
     <Tooltip.Provider delayDuration={250}>
       <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[#15161a] text-[#e6e8eb]">
@@ -786,17 +339,15 @@ export function App() {
           onRefresh={() => renderImmediate(markdownText)}
           onRunPlugin={runPluginAction}
           onResetSplit={resetSplit}
-          onSave={saveCurrent}
+          onSave={handleSaveAction}
           onToggleExplorer={() => setExplorerOpen((open) => !open)}
           onOpenSettings={() => setSettingsOpen(true)}
           onOpenDiagram={() => setDiagramOpen(true)}
           plugins={plugins}
         />
         <div className="flex min-h-0 flex-1 overflow-hidden">
-          {/* Vertical Activity Bar */}
           <div className="w-12 border-r border-[#2b2f38] bg-[#14171f] flex flex-col items-center py-4 gap-4 shrink-0 justify-between select-none">
             <div className="flex flex-col gap-4 w-full items-center">
-              {/* File Explorer tab trigger */}
               <button
                 aria-label="File Explorer"
                 onClick={() => {
@@ -817,7 +368,6 @@ export function App() {
                 <FolderOpen className="h-5 w-5" />
               </button>
 
-              {/* Figures Library tab trigger */}
               <button
                 aria-label="Figures Library"
                 onClick={() => {
@@ -840,7 +390,6 @@ export function App() {
             </div>
 
             <div className="w-full flex justify-center">
-              {/* Preferences Settings dialog trigger */}
               <button
                 aria-label="Preferences"
                 onClick={() => setSettingsOpen(true)}
@@ -876,7 +425,7 @@ export function App() {
                 onCreateEditor={(view) => {
                   editorViewRef.current = view;
                 }}
-                onSave={saveCurrent}
+                onSave={handleSaveAction}
               />
             </Panel>
             <Separator
@@ -966,4 +515,3 @@ export function App() {
     </Tooltip.Provider>
   );
 }
-

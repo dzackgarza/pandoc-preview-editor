@@ -70,7 +70,7 @@
   - [x] **Remove HTML Comments for Errors**: Eliminate the practice of injecting error messages into the HTML stream via `<!-- renderer error -->`.
   - [x] **Structured Config DTO**: Refactor `set_config` in `src-tauri/src/commands/config.rs` to accept a single structured object (e.g., `ConfigUpdate` DTO) utilizing Serde, eliminating positional primitive arguments (signature bloat).
 - **Refactor App.tsx God Object** — Decompose the 500+ line root component into domain-specific hooks and components:
-  - **Domain Hooks**: Extract state and logic into `useFileManager`, `useRenderer`, `usePlugins`, etc., to reduce re-render blast-radius and context-window pressure.
+  - [x] **Domain Hooks**: Extract state and logic into `useFileManager`, `useRenderer`, `usePlugins`, etc., to reduce re-render blast-radius and context-window pressure.
   - [x] **Modular Error View Component**: Replace the string-concatenated `errorDocument` blob with a first-class React component rendered into the preview pane, eliminating manual HTML-in-JS laundering.
   - [x] **Standard Utilities**: Replace bespoke `escapeHtml` with mature libraries or browser-native `textContent` assignment.
 - [x] **Burn Timing Theater in IPC Contract** — Move `duration_ms` out of the core `RenderResult` success contract in `render.rs`. It is diagnostic metadata, not a success criterion, and its presence in the contract invites brittle "latency-based" tests.
