@@ -80,7 +80,7 @@ const actionWorkflow = test.extend({
   testEnv: async ({ testEnv }, use) => {
     const documentPath = path.join(testEnv.workspaceDir, 'source.md');
     writeFileSync(documentPath, '# Plugin Source\n\nInitial.\n', 'utf8');
-    testEnv.writeSessionState(documentPath, false);
+    testEnv.writeSessionState(documentPath, true);
 
     await use(testEnv);
   },
@@ -228,22 +228,30 @@ test.describe('canonical desktop workflows', () => {
         'command',
       );
 
-      try {
-        await invokeTauri(appPage, 'run_plugin', {
+      await expect(
+        invokeTauri(appPage, 'run_plugin', {
           id: 'export-html',
           markdown: '# Unsaved\n\nNo path.',
-        });
-        throw new Error('run_plugin unexpectedly accepted an unsaved buffer');
-      } catch (error) {
-        expect(String(error)).toContain('save the document first');
-      }
+        }),
+      ).rejects.toThrow('save the document first');
+
+      // Edit the content to make it dirty/unsaved
+      await replaceEditorContents(appPage, '# Plugin Source\n\nInitial.\n');
+      await expect(appPage.locator('#save-state')).toContainText('unsaved');
+
+      // Save the document to establish file identity and clear the temp status
+      await appPage.locator('button[aria-label="Save"]').click();
+      await saveViaFileSelector(appPage, documentPath);
+      await expect(appPage.locator('#save-state')).toContainText('saved');
 
       const exportResult = (await invokeTauri(appPage, 'run_plugin', {
         id: 'export-html',
         path: documentPath,
         markdown: '# Plugin Source\n\nInitial.\n',
       })) as { ok: boolean; exitCode: number; outputPath: string };
-      expect(exportResult).toEqual({ ok: true, exitCode: 0, outputPath: htmlPath });
+      expect(exportResult).toEqual(
+        expect.objectContaining({ ok: true, exitCode: 0, outputPath: htmlPath }),
+      );
       pandocHtmlOracle(documentPath, expectedHtml);
       expect(readFileSync(htmlPath, 'utf8')).toBe(readFileSync(expectedHtml, 'utf8'));
 

@@ -57,17 +57,13 @@ test.describe('diagram toolbar and filter workflows', () => {
 
   test('create_diagram_file rejects on unsaved temp buffer', async ({ appPage }) => {
     // When no file path is established, creating a diagram should be blocked (save-gate)
-    try {
-      await invokeTauri(appPage, 'create_diagram_file', {
+    await expect(
+      invokeTauri(appPage, 'create_diagram_file', {
         kind: 'qtikz',
         filename: 'diagram1.tikz',
         documentPath: '/tmp/pandoc-preview/untitled-123.md',
-      });
-      // If it resolves, it must indicate failure
-      expect(true).toBe(false);
-    } catch (error: unknown) {
-      expect(String(error)).toContain('save the document');
-    }
+      })
+    ).rejects.toThrow('save the document');
   });
 
   savedFileTest(

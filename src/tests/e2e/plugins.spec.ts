@@ -83,16 +83,12 @@ test.describe('plugin API', () => {
   );
 
   test('plugin rejects run without a saved file path', async ({ appPage }) => {
-    try {
-      await invokeTauri(appPage, 'run_plugin', {
+    await expect(
+      invokeTauri(appPage, 'run_plugin', {
         id: 'export-html',
         markdown: '# Temp Backed Buffer\n\nNo user path has been chosen.',
-      });
-      // If it resolves instead of rejecting, ok must be false
-      expect(true).toBe(false);
-    } catch (error: unknown) {
-      expect(String(error)).toContain('save the document first');
-    }
+      })
+    ).rejects.toThrow('save the document first');
   });
 
   savedFileTest(

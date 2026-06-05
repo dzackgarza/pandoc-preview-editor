@@ -87,13 +87,7 @@ test.describe('Server-side TikZ Lua Filter E2E', () => {
     async ({ appPage, testEnv }) => {
       const { execSync } = await import('node:child_process');
 
-      try {
-        execSync('pdflatex --version', { stdio: 'ignore' });
-      } catch {
-        throw new Error(
-          'pdflatex is required for the pdf_tex overlay test but is not available',
-        );
-      }
+      execSync('pdflatex --version', { stdio: 'ignore' });
 
       const pdfTexPath = path.join(testEnv.workspaceDir, 'my-fig.pdf_tex');
 

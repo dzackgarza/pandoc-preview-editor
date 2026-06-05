@@ -182,112 +182,118 @@ export const test = base.test.extend<{
   testEnv: TestEnvironment;
   appPage: import('@srsholmes/tauri-playwright').TauriPage;
 }>({
+  mode: async ({ mode, testEnv }, use) => {
+    await use(mode);
+  },
   launchSetup: [
     async ({}, use) => {
       await use(async () => {});
     },
     { option: true },
   ],
-  testEnv: async ({ launchSetup }, use) => {
-    const rootDir = mkdtempSync(path.join(tmpdir(), 'pandoc-preview-e2e-'));
-    const homeDir = path.join(rootDir, 'home');
-    const workspaceDir = path.join(rootDir, 'workspace');
-    const xdgConfigHome = path.join(rootDir, 'xdg-config');
-    const xdgStateHome = path.join(rootDir, 'xdg-state');
-    const configDir = path.join(xdgConfigHome, 'pandoc-preview');
-    const stateDir = path.join(xdgStateHome, 'pandoc-preview');
-    const configPath = path.join(configDir, 'config.toml');
-    const sessionStatePath = path.join(stateDir, 'state.json');
+  testEnv: [
+    async ({ launchSetup }, use) => {
+      const rootDir = mkdtempSync(path.join(tmpdir(), 'pandoc-preview-e2e-'));
+      const homeDir = path.join(rootDir, 'home');
+      const workspaceDir = path.join(rootDir, 'workspace');
+      const xdgConfigHome = path.join(rootDir, 'xdg-config');
+      const xdgStateHome = path.join(rootDir, 'xdg-state');
+      const configDir = path.join(xdgConfigHome, 'pandoc-preview');
+      const stateDir = path.join(xdgStateHome, 'pandoc-preview');
+      const configPath = path.join(configDir, 'config.toml');
+      const sessionStatePath = path.join(stateDir, 'state.json');
 
-    for (const dir of [
-      homeDir,
-      workspaceDir,
-      configDir,
-      stateDir,
-      path.join(homeDir, '.pandoc', 'templates'),
-      path.join(homeDir, '.pandoc', 'filters'),
-    ]) {
-      ensureDir(dir);
-    }
-
-    const previousEnv = {
-      HOME: process.env.HOME,
-      CARGO_HOME: process.env.CARGO_HOME,
-      RUSTUP_HOME: process.env.RUSTUP_HOME,
-      XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
-      XDG_STATE_HOME: process.env.XDG_STATE_HOME,
-      PANDOC_PREVIEW_TEST_HOME: process.env.PANDOC_PREVIEW_TEST_HOME,
-      PANDOC_PREVIEW_TEST_XDG_CONFIG_HOME:
-        process.env.PANDOC_PREVIEW_TEST_XDG_CONFIG_HOME,
-      PANDOC_PREVIEW_TEST_XDG_STATE_HOME:
-        process.env.PANDOC_PREVIEW_TEST_XDG_STATE_HOME,
-    };
-
-    const writeConfig = (overrides = {}) => {
-      ensureDir(configDir);
-      writeFileSync(configPath, defaultConfig({ homeDir }, overrides));
-    };
-
-    const writeSessionState = (filePath: string, isTempFile = false) => {
-      ensureDir(stateDir);
-      writeFileSync(
-        sessionStatePath,
-        JSON.stringify(
-          {
-            last_file: filePath,
-            is_temp_file: isTempFile,
-          },
-          null,
-          2,
-        ),
-      );
-    };
-
-    writeConfig();
-
-    const realHomeDir = previousEnv.HOME ?? path.join(rootDir, 'real-home');
-
-    process.env.HOME = homeDir;
-    process.env.CARGO_HOME = previousEnv.CARGO_HOME ?? path.join(realHomeDir, '.cargo');
-    process.env.RUSTUP_HOME =
-      previousEnv.RUSTUP_HOME ?? path.join(realHomeDir, '.rustup');
-    process.env.XDG_CONFIG_HOME = xdgConfigHome;
-    process.env.XDG_STATE_HOME = xdgStateHome;
-    process.env.PANDOC_PREVIEW_TEST_HOME = homeDir;
-    process.env.PANDOC_PREVIEW_TEST_XDG_CONFIG_HOME = xdgConfigHome;
-    process.env.PANDOC_PREVIEW_TEST_XDG_STATE_HOME = xdgStateHome;
-
-    try {
-      const env = {
-        rootDir,
+      for (const dir of [
         homeDir,
         workspaceDir,
-        xdgConfigHome,
-        xdgStateHome,
-        configPath,
-        sessionStatePath,
-        writeConfig,
-        writeSessionState,
-        readConfig: () => readFileSync(configPath, 'utf8'),
+        configDir,
+        stateDir,
+        path.join(homeDir, '.pandoc', 'templates'),
+        path.join(homeDir, '.pandoc', 'filters'),
+      ]) {
+        ensureDir(dir);
+      }
+
+      const previousEnv = {
+        HOME: process.env.HOME,
+        CARGO_HOME: process.env.CARGO_HOME,
+        RUSTUP_HOME: process.env.RUSTUP_HOME,
+        XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+        XDG_STATE_HOME: process.env.XDG_STATE_HOME,
+        PANDOC_PREVIEW_TEST_HOME: process.env.PANDOC_PREVIEW_TEST_HOME,
+        PANDOC_PREVIEW_TEST_XDG_CONFIG_HOME:
+          process.env.PANDOC_PREVIEW_TEST_XDG_CONFIG_HOME,
+        PANDOC_PREVIEW_TEST_XDG_STATE_HOME:
+          process.env.PANDOC_PREVIEW_TEST_XDG_STATE_HOME,
       };
 
-      await launchSetup(env);
+      const writeConfig = (overrides = {}) => {
+        ensureDir(configDir);
+        writeFileSync(configPath, defaultConfig({ homeDir }, overrides));
+      };
 
-      await use({
-        ...env,
-      });
-    } finally {
-      for (const [key, value] of Object.entries(previousEnv)) {
-        if (value === undefined) {
-          delete process.env[key];
-        } else {
-          process.env[key] = value;
+      const writeSessionState = (filePath: string, isTempFile = false) => {
+        ensureDir(stateDir);
+        writeFileSync(
+          sessionStatePath,
+          JSON.stringify(
+            {
+              last_file: filePath,
+              is_temp_file: isTempFile,
+            },
+            null,
+            2,
+          ),
+        );
+      };
+
+      writeConfig();
+
+      const realHomeDir = previousEnv.HOME ?? path.join(rootDir, 'real-home');
+
+      process.env.HOME = homeDir;
+      process.env.CARGO_HOME = previousEnv.CARGO_HOME ?? path.join(realHomeDir, '.cargo');
+      process.env.RUSTUP_HOME =
+        previousEnv.RUSTUP_HOME ?? path.join(realHomeDir, '.rustup');
+      process.env.XDG_CONFIG_HOME = xdgConfigHome;
+      process.env.XDG_STATE_HOME = xdgStateHome;
+      process.env.PANDOC_PREVIEW_TEST_HOME = homeDir;
+      process.env.PANDOC_PREVIEW_TEST_XDG_CONFIG_HOME = xdgConfigHome;
+      process.env.PANDOC_PREVIEW_TEST_XDG_STATE_HOME = xdgStateHome;
+
+      try {
+        const env = {
+          rootDir,
+          homeDir,
+          workspaceDir,
+          xdgConfigHome,
+          xdgStateHome,
+          configPath,
+          sessionStatePath,
+          writeConfig,
+          writeSessionState,
+          readConfig: () => readFileSync(configPath, 'utf8'),
+        };
+
+        await launchSetup(env);
+
+        await use({
+          ...env,
+        });
+      } finally {
+        for (const [key, value] of Object.entries(previousEnv)) {
+          if (value === undefined) {
+            delete process.env[key];
+          } else {
+            process.env[key] = value;
+          }
         }
+        rmSync(rootDir, { recursive: true, force: true });
       }
-      rmSync(rootDir, { recursive: true, force: true });
-    }
-  },
-  appPage: async ({ tauriPage }, use) => {
+    },
+    { auto: true },
+  ],
+  appPage: async ({ tauriPage, testEnv }, use) => {
     const startupDeadline = Date.now() + 30_000;
     let lastStartupError: unknown;
 
