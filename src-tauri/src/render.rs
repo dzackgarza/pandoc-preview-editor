@@ -10,11 +10,14 @@ use crate::state::AppState;
 // ─── Tauri render command ─────────────────────────────────────────────────────
 
 #[derive(serde::Serialize)]
-pub struct RenderResult {
+pub struct RenderSuccess {
     pub html: String,
-    #[serde(rename = "durationMs")]
-    pub duration_ms: u64,
-    pub ok: bool,
+    pub stderr: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct RenderError {
+    pub message: String,
     pub stderr: String,
 }
 
@@ -24,8 +27,7 @@ pub async fn execute_render(
     command: &str,
     timeout_ms: u64,
     doc_path: Option<&Path>,
-) -> Result<RenderResult, String> {
-    let started = std::time::Instant::now();
+) -> Result<RenderSuccess, RenderError> {
     let timeout = std::time::Duration::from_millis(timeout_ms);
 
     let mut cmd = tokio::process::Command::new("zsh");
@@ -38,37 +40,44 @@ pub async fn execute_render(
         cmd.env("PANDOC_DOC_PATH", path.to_string_lossy().as_ref());
     }
 
-    let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+    let mut child = cmd.spawn().map_err(|e| RenderError {
+        message: format!("Failed to spawn renderer: {}", e),
+        stderr: String::new(),
+    })?;
+
     if let Some(mut stdin) = child.stdin.take() {
         stdin
             .write_all(markdown.as_bytes())
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| RenderError {
+                message: format!("Failed to write to renderer stdin: {}", e),
+                stderr: String::new(),
+            })?;
     }
 
     let output = tokio::time::timeout(timeout, child.wait_with_output())
         .await
-        .map_err(|_| format!("renderer timed out after {}ms", timeout_ms))?
-        .map_err(|e| e.to_string())?;
+        .map_err(|_| RenderError {
+            message: format!("renderer timed out after {}ms", timeout_ms),
+            stderr: String::new(),
+        })?
+        .map_err(|e| RenderError {
+            message: format!("Failed to wait for renderer: {}", e),
+            stderr: String::new(),
+        })?;
 
-    let duration_ms = started.elapsed().as_millis() as u64;
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let stderr_text = String::from_utf8_lossy(&output.stderr).into_owned();
 
     if !output.status.success() {
-        let html = format!("<!-- renderer error:\n{}\n-->", &stderr_text);
-        return Ok(RenderResult {
-            html,
-            duration_ms,
-            ok: false,
+        return Err(RenderError {
+            message: format!("Renderer exited with {}", output.status),
             stderr: stderr_text,
         });
     }
 
-    Ok(RenderResult {
+    Ok(RenderSuccess {
         html: stdout,
-        duration_ms,
-        ok: true,
         stderr: stderr_text,
     })
 }
@@ -77,7 +86,7 @@ pub async fn execute_render(
 pub async fn render(
     markdown: String,
     state: State<'_, Mutex<AppState>>,
-) -> Result<RenderResult, String> {
+) -> Result<RenderSuccess, RenderError> {
     let (command, timeout_ms, doc_path) = {
         let s = state.lock().unwrap();
         (s.render_command.clone(), s.timeout_ms, s.file.clone())

@@ -65,14 +65,14 @@
   - **Burn Magic Folder Sniffing**: Remove the `is_workspace_figure` logic in `src-tauri/src/commands/figures.rs` that heuristically looks for folders named "figures". The Figure Library must exclusively scan the configured global directory.
   - **Cross-Document Reuse**: Ensure that pasting or generating a new figure saves directly to the global directory, enforcing the opinionated default and allowing canonical updates across multiple papers.
 - **Remediate IPC Success Laundering & Signature Bloat** — Fix the user-deceptive "Partial Success" pattern and parameter accretion in the renderer IPC:
-  - **Honest IPC Errors**: Refactor `execute_render` in `src-tauri/src/render.rs` to return a real `Err` on subprocess failure instead of an `Ok(RenderResult { ok: false })`.
-  - **Remove HTML Comments for Errors**: Eliminate the practice of injecting error messages into the HTML stream via `<!-- renderer error -->`.
+  - [x] **Honest IPC Errors**: Refactor `execute_render` in `src-tauri/src/render.rs` to return a real `Err` on subprocess failure instead of an `Ok(RenderResult { ok: false })`.
+  - [x] **Remove HTML Comments for Errors**: Eliminate the practice of injecting error messages into the HTML stream via `<!-- renderer error -->`.
   - **Structured Config DTO**: Refactor `set_config` in `src-tauri/src/commands/config.rs` to accept a single structured object (e.g., `ConfigUpdate` DTO) utilizing Serde, eliminating positional primitive arguments (signature bloat).
 - **Refactor App.tsx God Object** — Decompose the 500+ line root component into domain-specific hooks and components:
   - **Domain Hooks**: Extract state and logic into `useFileManager`, `useRenderer`, `usePlugins`, etc., to reduce re-render blast-radius and context-window pressure.
-  - **Modular Error View Component**: Replace the string-concatenated `errorDocument` blob with a first-class React component rendered into the preview pane, eliminating manual HTML-in-JS laundering.
-  - **Standard Utilities**: Replace bespoke `escapeHtml` with mature libraries or browser-native `textContent` assignment.
-- **Burn Timing Theater in IPC Contract** — Move `duration_ms` out of the core `RenderResult` success contract in `render.rs`. It is diagnostic metadata, not a success criterion, and its presence in the contract invites brittle "latency-based" tests.
+  - [x] **Modular Error View Component**: Replace the string-concatenated `errorDocument` blob with a first-class React component rendered into the preview pane, eliminating manual HTML-in-JS laundering.
+  - [x] **Standard Utilities**: Replace bespoke `escapeHtml` with mature libraries or browser-native `textContent` assignment.
+- [x] **Burn Timing Theater in IPC Contract** — Move `duration_ms` out of the core `RenderResult` success contract in `render.rs`. It is diagnostic metadata, not a success criterion, and its presence in the contract invites brittle "latency-based" tests.
 - **Server-side TikZ rendering proof** — Prove TikZ renders through server-side Pandoc -> SVG, not browser-side TikZJax.
 - **Obsidian callout → amsthm** — Convert Obsidian callouts to amsthm environments.
 - **Centralized Pandoc template/filter QA** — Optional manual QA around `~/.pandoc/templates/` and `~/.pandoc/filters/`; app tests stay renderer-agnostic.

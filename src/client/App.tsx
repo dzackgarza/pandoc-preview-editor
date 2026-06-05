@@ -152,35 +152,35 @@ export function App() {
     setStatus('rendering');
     try {
       const data = await invoke<{
-        ok: boolean;
         html: string;
-        durationMs: number;
         stderr: string;
       }>('render', { markdown: text });
 
       if (version !== renderVersion.current) return;
 
-      if (data.ok && typeof data.html === 'string') {
-        setPreviewHtml(data.html);
-        setStatus('idle');
-        setDurationMs(data.durationMs ?? null);
-        setDiagnostics(null);
-      } else {
-        setPreviewHtml(errorDocument('Render failed'));
-        setStatus('error');
-        setDiagnostics({
-          summary: 'Renderer Error',
-          detail: data.stderr || 'Render failed',
-        });
-      }
+      setPreviewHtml(data.html);
+      setStatus('idle');
+      setDurationMs(null); // duration_ms removed from core contract
+      setDiagnostics(null);
     } catch (err) {
       if (version !== renderVersion.current) return;
-      const message = err instanceof Error ? err.message : String(err);
-      setPreviewHtml(errorDocument(`Error: ${message}`));
+      
+      // Tauri serializes Rust Err(RenderError) into a Promise rejection.
+      let detail = String(err);
+      let summary = 'Renderer Error';
+      
+      if (typeof err === 'object' && err !== null) {
+        const errorObj = err as { message?: string; stderr?: string };
+        detail = errorObj.stderr || errorObj.message || 'Unknown render error';
+        if (errorObj.message) summary = errorObj.message;
+      } else if (err instanceof Error) {
+        detail = err.message;
+      }
+      
       setStatus('error');
       setDiagnostics({
-        summary: 'Renderer Error',
-        detail: message,
+        summary,
+        detail,
       });
     }
   }, []);
@@ -883,7 +883,7 @@ export function App() {
               <GripVertical className="h-4 w-4 text-[#8791a3] group-hover:text-white" />
             </Separator>
             <Panel id="preview-pane-panel" minSize="24%" defaultSize="44%">
-              <PreviewPane html={previewHtml} />
+              <PreviewPane html={previewHtml} error={status === 'error' ? diagnostics?.detail : null} />
             </Panel>
           </Group>
         </div>
@@ -963,16 +963,3 @@ export function App() {
   );
 }
 
-function errorDocument(message: string) {
-  return `<html><body style="color:#b42318;padding:2rem;font-family:system-ui,sans-serif">${escapeHtml(
-    message,
-  )}</body></html>`;
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
