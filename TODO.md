@@ -46,7 +46,7 @@
   - **Rust-Specific Rules**: Implement Rust semgrep rules in global QC to detect and block `let _ =` on `Result` types.
   - **Sync QC Back**: Push the updated global QC rules back into this repository to surface such violations automatically in the future.
 - **Systemic Audit of Silent Defaults & Dead Code** — Investigate and burn "fail-open" patterns and abandoned code in the Rust backend:
-  - **Burn unwrap_or* Pervasiveness**: Audit all 26+ instances of `unwrap_or`, `unwrap_or_default`, and `unwrap_or_else` in `src-tauri/src/`. Replace "soft" defaults (like `unwrap_or("")` or `unwrap_or_default()`) with explicit error propagation (`?`) or loud assertions (`expect`).
+  - [x] **Burn unwrap_or* Pervasiveness**: Audit all 26+ instances of `unwrap_or`, `unwrap_or_default`, and `unwrap_or_else` in `src-tauri/src/`. Replace "soft" defaults (like `unwrap_or("")` or `unwrap_or_default()`) with explicit error propagation (`?`) or loud assertions (`expect`).
     - [x] **Harden Backup Path Resolution**: Refactor `get_backup_path` in `config.rs` to return a `Result` and remove the silent canonicalization fallback.
   - [x] **Fix State Logic Errors**: Specifically fix `src-tauri/src/state.rs`:
     - [x] `current_file_content`: Return a proper error instead of an empty string default when no file/content is present.
