@@ -1,5 +1,17 @@
 # pandoc-preview Agent Rules
 
+> [!IMPORTANT]
+> **REQUIREMENTS FREEZE IN EFFECT**
+> This repository is currently under a requirements freeze as mandated by the `requirements-freeze-extraction` skill.
+> Product-changing work (new features, refactors, migrations, substrate changes) is HALTED.
+> Work is restricted to:
+> 1. Extraction of the requirements authority (`REQUIREMENTS.md`, `DESIGN-COMMITMENTS.md`, `REQUIREMENTS-LEDGER.md`).
+> 2. Critical data-loss or security fixes.
+> 3. Inspection and maintenance of the requirements authority.
+>
+> All existing docs (including this one), TODOs, plans, and code are now **evidence only**.
+> The normative authority is established in `REQUIREMENTS.md`.
+
 Read this file before editing this repository. Then read `.agents/plans/FEATURE-EVALUATION-FRAMEWORK.md` and `docs/feature-evaluation-philosophy.md`.
 
 ## App Philosophy
@@ -17,12 +29,16 @@ Read this file before editing this repository. Then read `.agents/plans/FEATURE-
 - Templates are data, not code. Pandoc templates, TikZ wrappers, macros, and style sheets are user-editable files stored under `~/.pandoc/` or the app's config directory. No app code may embed template content or construct templates through string manipulation. When a new macro package is released or a style needs updating, the user edits a file — no code change, no deployment.
 - TikZ diagrams are rendered to SVG via Pandoc on the server side, never through an in-browser JavaScript engine (tikzjax or equivalent). TikZjax lacks full TikZ feature coverage, does not support user macros, is outside the app's template control, and — most critically — produces output that is not reproducible outside the app. Server-side Pandoc → SVG rendering is externally auditable, handles text vs drawing scaling correctly, and compiles identically on any machine.
 - Deep integration with TikZ generation tools (e.g., FreeTikZ, quiverapp) is a core part of the app's bespoke identity. This facilitates TikZ code generation and source document population, which is fundamentally distinct from rendering. The integration must prioritize one-button access, seamless extraction (via deterministic contracts, not discovery heuristics), and direct cursor injection while maintaining the server-side rendering boundary.
-- The app uses a fail-fast architecture. Unexpected state at any layer must crash promptly and visibly — never silently degrade, never substitute fallback defaults. Silenced errors today become unrecoverable research data loss tomorrow. A broken build is always cheaper than corrupted output.
+- The app enforces a **Global Figures Directory** for academic asset management. All figures (TikZ, SVG, clipboard images) are stored in a single centralized location defined in the user's configuration. This allows for cross-document asset reuse and canonical updates. The Figure Library scans this global directory exclusively. Local per-document `./figures/` folders are not supported by the current architecture.
+- The app uses a fail-fast architecture.
+ Unexpected state at any layer must crash promptly and visibly — never silently degrade, never substitute fallback defaults. Silenced errors today become unrecoverable research data loss tomorrow. A broken build is always cheaper than corrupted output.
 - The app is git-native. Versioning, crash recovery, and rollback are delegated to git rather than reinvented. The GUI prominently indicates whether the active file is tracked in a git repository. For a tracked file, saving and committing are the same operation — the save IS a git commit. For an untracked file (not in git at all, or inside a repo but never committed) or an unsaved buffer, save and commit necessarily split: the backend writes to its own recovery repo. The prominent untracked indicator is a prompt to track the file in git; the split is a temporary condition, not a normal workflow. The backend additionally autosaves the current buffer on a short internal timer (sub-10-second debounce) and commits every autosave, so that the maximum recoverable work loss from any crash is a few seconds of editing. Commits per save are negligible on modern systems; agents can squash and clean history during maintenance.
 
 ## Hard Boundaries
 
-- App-owned configuration and command execution must maintain "Honest Labeling." A successful IPC response (Ok) must imply that the requested operation succeeded. Failures (such as non-zero exit codes or filesystem errors) must be returned as structured errors. The app must never return "success-shaped errors" (e.g., a successful result containing an "ok: false" flag).
+- IPC commands must use structured types (structs) for complex data transfer. Positional primitive arguments (parameter accretion) are forbidden. The configuration state and its update commands must share a single source of truth DTO.
+- App-owned configuration and command execution must maintain "Honest Labeling."
+ A successful IPC response (Ok) must imply that the requested operation succeeded. Failures (such as non-zero exit codes or filesystem errors) must be returned as structured errors. The app must never return "success-shaped errors" (e.g., a successful result containing an "ok: false" flag).
 - Performance tracking (e.g., render duration) is diagnostic metadata only. It must never be part of an operation's core success/failure contract.
 - Any functionality a mature dependency already provides must be delegated to that dependency. Writing bespoke helpers for file-type detection (sniffing), path sanitization, shell parsing, or TOML serialization is a design error. Use mature crates (e.g., `infer`, `path-sanitize`) to handle these solved problems with high precision.
 - App state logic must never mask configuration or state errors with "safe" defaults (e.g., defaulting to the current directory or an empty string). If a workspace root or file content is required but missing, the system must fail loudly and propagate the error to the UI.

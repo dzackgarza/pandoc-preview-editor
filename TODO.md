@@ -1,5 +1,10 @@
 # pandoc-preview TODO
 
+> [!NOTE]
+> This document is **NON-NORMATIVE**. It is a task tracker only.
+> All product and architecture requirements are owned by `REQUIREMENTS.md` and `DESIGN-COMMITMENTS.md`.
+> Any task that contradicts the requirements authority is invalid and must be removed or re-scoped.
+
 ## File Integrity Implementation (Active Branch: feature/file-integrity)
 
 - [x] **Task 1: Refactor Save Endpoints for Atomicity**
@@ -54,6 +59,10 @@
 - **Remediate Bespoke Filesystem Logic Slop** — Burn bespoke reimplementations of solved filesystem problems in `src-tauri/src/fs_utils.rs`:
   - **Burn Manual Sniffing**: Replace `is_text_like_file` and hardcoded `TEXT_EXTENSIONS`/`BINARY_EXTENSIONS` with mature crates like `content_inspector` or `infer`.
   - **Burn Manual Sanitization**: Replace the manual char-iterating `sanitize_figure_filename` with a standard crate like `path-sanitize` to handle OS reserved names and non-ASCII characters reliably.
+- **Remediate Figure Registry Sniffing** — Implement the Global Figures Directory contract to fix heuristic boundary-scanning:
+  - **Global Configuration**: Add a `figures_dir` field to the user configuration to establish a single centralized location for all academic assets (TikZ, SVG, clipboard images).
+  - **Burn Magic Folder Sniffing**: Remove the `is_workspace_figure` logic in `src-tauri/src/commands/figures.rs` that heuristically looks for folders named "figures". The Figure Library must exclusively scan the configured global directory.
+  - **Cross-Document Reuse**: Ensure that pasting or generating a new figure saves directly to the global directory, enforcing the opinionated default and allowing canonical updates across multiple papers.
 - **Remediate IPC Success Laundering** — Fix the user-deceptive "Partial Success" pattern in the renderer IPC:
   - **Honest IPC Errors**: Refactor `execute_render` in `src-tauri/src/render.rs` to return a real `Err` on subprocess failure instead of an `Ok(RenderResult { ok: false })`.
   - **Remove HTML Comments for Errors**: Eliminate the practice of injecting error messages into the HTML stream via `<!-- renderer error -->`.
