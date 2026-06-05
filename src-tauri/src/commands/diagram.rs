@@ -59,10 +59,15 @@ pub async fn diagram_proxy(url: String) -> Result<serde_json::Value, String> {
 #[tauri::command]
 pub fn get_diagram_tools(state: State<'_, Mutex<AppState>>) -> serde_json::Value {
     let s = state.lock().unwrap();
+    let installed_ids = s.tool_state.keys().collect::<Vec<_>>();
+
     serde_json::Value::Object(
-        s.tool_state
-            .iter()
-            .map(|(id, entry)| (id.clone(), serde_json::Value::Bool(entry.installed)))
+        crate::state::all_diagram_tool_ids()
+            .into_iter()
+            .map(|id| {
+                let is_installed = installed_ids.contains(&&id);
+                (id, serde_json::Value::Bool(is_installed))
+            })
             .collect(),
     )
 }
@@ -128,13 +133,7 @@ pub fn launch_diagram(
     let entry = s
         .tool_state
         .get(&tool_type)
-        .ok_or_else(|| format!("unknown tool: {}", tool_type))?;
-    if !entry.installed {
-        return Err(format!(
-            "Desktop application for {} is not installed on this system",
-            tool_type
-        ));
-    }
+        .ok_or_else(|| format!("Desktop application for {} is not installed on this system", tool_type))?;
     let resolved = if Path::new(&absolute_path).is_absolute() {
         PathBuf::from(&absolute_path)
     } else if let Some(ref file) = s.file {

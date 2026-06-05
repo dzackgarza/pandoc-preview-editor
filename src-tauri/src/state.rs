@@ -47,7 +47,6 @@ pub struct AppState {
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ToolEntry {
-    pub installed: bool,
     pub cmd: String,
 }
 
@@ -115,14 +114,14 @@ static DIAGRAM_TOOLS: LazyLock<Vec<DiagramToolDef>> = LazyLock::new(load_diagram
 pub fn probe_tool_state() -> HashMap<String, ToolEntry> {
     let mut map = HashMap::new();
     for tool in &*DIAGRAM_TOOLS {
-        let found = tool.executables.iter().find(|e| is_command_available(e));
-        map.insert(
-            tool.id.clone(),
-            ToolEntry {
-                installed: found.is_some(),
-                cmd: found.cloned().unwrap_or_default(),
-            },
-        );
+        if let Some(found) = tool.executables.iter().find(|e| is_command_available(e)) {
+            map.insert(
+                tool.id.clone(),
+                ToolEntry {
+                    cmd: found.clone(),
+                },
+            );
+        }
     }
     map
 }
@@ -146,6 +145,10 @@ pub fn starter_template_for_tool(tool_id: &str) -> Result<String, String> {
         "ipe" => Ok(include_str!("../../src-tauri/assets/diagram-templates/ipe.ipe").to_string()),
         _ => Err(format!("unknown diagram tool: {tool_id}")),
     }
+}
+
+pub fn all_diagram_tool_ids() -> Vec<String> {
+    DIAGRAM_TOOLS.iter().map(|t| t.id.clone()).collect()
 }
 
 fn is_command_available(cmd: &str) -> bool {
