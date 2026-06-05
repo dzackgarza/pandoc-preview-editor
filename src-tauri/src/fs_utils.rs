@@ -58,7 +58,7 @@ pub fn is_text_like_file(path: &Path) -> Result<bool, String> {
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().to_lowercase())
-        .unwrap_or_default();
+        .ok_or_else(|| format!("invalid file path (no filename): {}", path.display()))?;
     if name == "justfile" {
         return Ok(true);
     }
