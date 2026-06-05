@@ -41,7 +41,7 @@
   - [x] **Remediate E2E Clipboard Theater**: Replace the browser-side event simulation in `src/tests/e2e/workflow-extensions.spec.ts` with a platform-native utility (e.g., `wl-copy` or `xclip`) to populate the real system clipboard, ensuring the Tauri IPC and OS boundary are tested.
   - [x] **Type Safety**: Eliminate all `@ts-ignore` usages. If a global is strictly required for the test adapter (like `__PW_ACTIVE__`), define it properly in the `Window` interface.
 - **Remediate Rust Fail-Fast Violations** — Fix the use of banned `let _ =` patterns that silence critical filesystem errors in `src-tauri/src/config.rs`:
-  - **Fix Silenced Errors**: Replace `let _ = fs::create_dir_all(...)` and `let _ = fs::write(...)` with proper error handling (returning `Result` or using `expect`).
+  - [x] **Fix Silenced Errors**: Replace `let _ = fs::create_dir_all(...)` and `let _ = fs::write(...)` with proper error handling (returning `Result` or using `expect`).
   - **Float to Global QC**: Propagate this violation pattern to the global Quality Control system (`~/ai/quality-control`).
   - **Rust-Specific Rules**: Implement Rust semgrep rules in global QC to detect and block `let _ =` on `Result` types.
   - **Sync QC Back**: Push the updated global QC rules back into this repository to surface such violations automatically in the future.

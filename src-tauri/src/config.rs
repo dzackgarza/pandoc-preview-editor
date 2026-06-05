@@ -35,15 +35,18 @@ pub fn get_backup_path(document_path: &Path) -> PathBuf {
 
 pub fn save_session_state(last_file: &Path, is_temp_file: bool) {
     let dir = xdg_state_dir();
-    let _ = fs::create_dir_all(&dir);
+    fs::create_dir_all(&dir)
+        .unwrap_or_else(|e| panic!("Failed to create state directory {}: {}", dir.display(), e));
     let state = serde_json::json!({
         "last_file": last_file.to_string_lossy(),
         "is_temp_file": is_temp_file,
     });
-    let _ = fs::write(
-        state_file_path(),
+    let state_file = state_file_path();
+    fs::write(
+        &state_file,
         serde_json::to_string_pretty(&state).unwrap(),
-    );
+    )
+    .unwrap_or_else(|e| panic!("Failed to write session state to {}: {}", state_file.display(), e));
 }
 
 #[derive(Debug, serde::Deserialize)]
