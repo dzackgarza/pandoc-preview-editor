@@ -45,37 +45,6 @@ pub fn to_client_path(root: &Path, absolute: &Path) -> String {
 
 pub const IGNORE_NAMES: &[&str] = &[".git", "node_modules", "dist", "build", "coverage"];
 
-const TEXT_EXTENSIONS: &[&str] = &[
-    ".bib",
-    ".css",
-    ".csv",
-    ".htm",
-    ".html",
-    ".js",
-    ".json",
-    ".jsx",
-    ".log",
-    ".lua",
-    ".md",
-    ".mdown",
-    ".markdown",
-    ".mjs",
-    ".rst",
-    ".sh",
-    ".tex",
-    ".toml",
-    ".ts",
-    ".tsx",
-    ".txt",
-    ".yaml",
-    ".yml",
-];
-
-const BINARY_EXTENSIONS: &[&str] = &[
-    ".7z", ".avif", ".bin", ".exe", ".gif", ".gz", ".ico", ".jpeg", ".jpg", ".pdf", ".png", ".tar",
-    ".tgz", ".webp", ".zip", ".zst",
-];
-
 const MARKDOWN_EXTENSIONS: &[&str] = &[".md", ".mdown", ".markdown"];
 
 pub fn should_ignore(workspace_root: &Path, absolute_path: &Path) -> bool {
@@ -93,21 +62,16 @@ pub fn is_text_like_file(path: &Path) -> Result<bool, String> {
     if name == "justfile" {
         return Ok(true);
     }
-    let ext = path
-        .extension()
-        .map(|e| format!(".{}", e.to_string_lossy().to_lowercase()))
-        .unwrap_or_default();
-    if BINARY_EXTENSIONS.contains(&ext.as_str()) {
-        return Ok(false);
-    }
-    if TEXT_EXTENSIONS.contains(&ext.as_str()) {
-        return Ok(true);
-    }
-    // Sniff for null bytes
-    let bytes = fs::read(path)
-        .map_err(|e| format!("failed to read file type sample {}: {e}", path.display()))?;
-    let sample = &bytes[..bytes.len().min(1024)];
-    Ok(!sample.contains(&0u8))
+    
+    // Read only the first 1024 bytes for inspection to avoid loading large binaries
+    use std::io::Read;
+    let mut file = fs::File::open(path)
+        .map_err(|e| format!("failed to open file {}: {e}", path.display()))?;
+    let mut buffer = [0; 1024];
+    let n = file.read(&mut buffer)
+        .map_err(|e| format!("failed to read file sample {}: {e}", path.display()))?;
+        
+    Ok(content_inspector::inspect(&buffer[..n]).is_text())
 }
 
 pub fn is_markdown_file(path: &Path) -> bool {
@@ -163,23 +127,11 @@ pub fn image_extension(mime_type: &str) -> &'static str {
 }
 
 pub fn sanitize_figure_filename(filename: &str, mime_type: &str) -> String {
-    let base = filename.split(['/', '\\']).last().unwrap_or(filename);
-    let sanitized: String = base
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-' {
-                c
-            } else {
-                '-'
-            }
-        })
-        .collect();
-    let sanitized = sanitized.trim_start_matches('-');
-    let sanitized = &sanitized[..sanitized.len().min(120)];
+    let sanitized = sanitize_filename::sanitize(filename);
     if sanitized.is_empty() {
         format!("figure-{}{}", Uuid::new_v4(), image_extension(mime_type))
     } else {
-        sanitized.to_string()
+        sanitized
     }
 }
 

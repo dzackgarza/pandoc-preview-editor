@@ -58,8 +58,8 @@
   - **Adhere to AGENTS.md**: Ensure that app code only references these templates by path or resource ID, never embedding the content itself.
   - **Update Global QC**: Propagate a requirement to the global Quality Control system to surface long strings in source code and JSON. Long strings are a "slop marker" indicating unrequested content-layer embedding or manual hacking.
 - **Remediate Bespoke Filesystem Logic Slop** — Burn bespoke reimplementations of solved filesystem problems in `src-tauri/src/fs_utils.rs`:
-  - **Burn Manual Sniffing**: Replace `is_text_like_file` and hardcoded `TEXT_EXTENSIONS`/`BINARY_EXTENSIONS` with mature crates like `content_inspector` or `infer`.
-  - **Burn Manual Sanitization**: Replace the manual char-iterating `sanitize_figure_filename` with a standard crate like `path-sanitize` to handle OS reserved names and non-ASCII characters reliably.
+  - [x] **Burn Manual Sniffing**: Replace `is_text_like_file` and hardcoded `TEXT_EXTENSIONS`/`BINARY_EXTENSIONS` with mature crates like `content_inspector` or `infer`.
+  - [x] **Burn Manual Sanitization**: Replace the manual char-iterating `sanitize_figure_filename` with a standard crate like `path-sanitize` to handle OS reserved names and non-ASCII characters reliably.
 - **Remediate Figure Registry Sniffing** — Implement the Global Figures Directory contract to fix heuristic boundary-scanning:
   - [x] **Global Configuration**: Add a `figures_dir` field to the user configuration to establish a single centralized location for all academic assets (TikZ, SVG, clipboard images).
   - [x] **Burn Magic Folder Sniffing**: Remove the `is_workspace_figure` logic in `src-tauri/src/commands/figures.rs` that heuristically looks for folders named "figures". The Figure Library must exclusively scan the configured global directory.
