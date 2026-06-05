@@ -13,29 +13,31 @@ pub fn run() {
         panic!("pandoc-preview fatal startup error: {}", error);
     });
 
-    commands::register_commands(
-        tauri::Builder::default()
-            .plugin(
-                tauri_plugin_log::Builder::default()
-                    .level(log::LevelFilter::Info)
-                    .build(),
-            )
-            .plugin(tauri_plugin_shell::init())
-            .plugin(tauri_plugin_fs::init())
-            .plugin(tauri_plugin_dialog::init())
-            .plugin(tauri_plugin_http::init())
-            .plugin(tauri_plugin_playwright::init())
-            .manage(Mutex::new(initial_state)),
-    )
-    .setup(|app| {
-        use tauri::Manager;
-        let windows = app.webview_windows();
-        eprintln!("[DEBUG] Active windows ({}):", windows.len());
-        for (label, _) in windows {
-            eprintln!("[DEBUG]   - Window: {}", label);
-        }
-        Ok(())
-    })
-    .run(tauri::generate_context!())
-    .expect("error while running tauri application");
+    let builder = tauri::Builder::default()
+        .plugin(
+            tauri_plugin_log::Builder::default()
+                .level(log::LevelFilter::Info)
+                .build(),
+        )
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_http::init())
+        .manage(Mutex::new(initial_state));
+
+    #[cfg(feature = "e2e-testing")]
+    let builder = {
+        let socket_path = std::env::var("TAURI_PLAYWRIGHT_SOCKET")
+            .expect("TAURI_PLAYWRIGHT_SOCKET must be set for e2e-testing builds");
+        builder.plugin(tauri_plugin_playwright::init_with_config(
+            tauri_plugin_playwright::PluginConfig::new()
+                .socket_path(socket_path)
+                .window_label("main"),
+        ))
+    };
+
+    commands::register_commands(builder)
+        .setup(|_app| Ok(()))
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
 }

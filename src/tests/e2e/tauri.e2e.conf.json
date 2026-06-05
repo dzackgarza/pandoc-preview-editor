@@ -2,5 +2,22 @@
   "build": {
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": "node -e \"\""
+  },
+  "app": {
+    "security": {
+      "capabilities": [
+        "default",
+        {
+          "identifier": "e2e-playwright",
+          "description": "Tauri Playwright socket bridge for real desktop E2E proofs.",
+          "windows": [
+            "main"
+          ],
+          "permissions": [
+            "playwright:default"
+          ]
+        }
+      ]
+    }
   }
 }

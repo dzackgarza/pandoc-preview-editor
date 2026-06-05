@@ -24,6 +24,16 @@ Use this before editing `src/tests/`, `src/tests/playwright.config.ts`, `src/tes
 
 For this repo, standard feature proof means one shared fixture from `createTauriTest`, project `use: { mode: 'tauri' }`, explicit dev URL and socket/window-label agreement, `workers: 1`, isolated HOME/XDG/workspace/config/state directories, real renderer commands, and exact assertions on editor text, preview content, file paths, disk contents, config TOML, renderer diagnostics, plugin artifacts, and visible UI state.
 
+## Capability Wiring
+
+The Playwright plugin is test-only. Keep `tauri-plugin-playwright` behind the Rust `e2e-testing` feature and keep `playwright:default` out of the base `default` capability. The base `src-tauri/tauri.conf.json` must explicitly select only the `default` capability so Tauri does not auto-enable every capability file in `src-tauri/capabilities/`.
+
+The E2E overlay `src/tests/e2e/tauri.e2e.conf.json` selects `default` and an inline `e2e-playwright` capability object, and the fixture passes `tauriFeatures: ['e2e-testing']`. Do not create a standalone `src-tauri/capabilities/e2e-playwright.json`: Tauri validates capability files during normal builds, so a file that names `playwright:default` breaks non-E2E Cargo commands when the plugin is not compiled. If normal `cargo test --manifest-path src-tauri/Cargo.toml` reports `Permission playwright:default not found`, the base build is still seeing a test-only permission.
+
+## Dependency Gate
+
+The app-owned diagram tool contract is `src/shared/diagram-tools.json`, consumed by `src-tauri/src/state.rs`. Public test gating must read that JSON instead of duplicating executable names in shell. If the gate reports `xournal` while `xournalpp` is present, that is not an alternatives bug: the JSON declares separate `xournal` and `xournalpp` tools. Change the JSON contract if the app should no longer require a tool.
+
 ## Local Failure Pattern To Reject
 
 Do not repair this suite by adding connection probes, smoke tests, mocked IPC, `page.route`, broad `*.spec.ts` project sweeps, dummy dependency binaries, stale-server reuse, debug print scaffolding, or timeout increases. Those preserve a green signal while weakening the proof obligation.

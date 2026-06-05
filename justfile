@@ -52,16 +52,25 @@ _check-dependencies:
     #!/usr/bin/env bash
     set -euo pipefail
     missing=()
-    for tool in pandoc qtikz tikzit inkscape xournal xournalpp ipe; do
-        if ! command -v "$tool" >/dev/null 2>&1; then
-            missing+=("$tool")
-        fi
-    done
-    
-    # Special case for drawio/draw.io
-    if ! command -v drawio >/dev/null 2>&1 && ! command -v draw.io >/dev/null 2>&1; then
-        missing+=("drawio (or draw.io)")
+
+    if ! command -v pandoc >/dev/null 2>&1; then
+        missing+=("pandoc")
     fi
+
+    while IFS=$'\t' read -r tool_id executables; do
+        found=0
+        IFS='|' read -r -a candidates <<< "$executables"
+        for executable in "${candidates[@]}"; do
+            if command -v "$executable" >/dev/null 2>&1; then
+                found=1
+                break
+            fi
+        done
+
+        if [ "$found" -eq 0 ]; then
+            missing+=("$tool_id (${executables//|/ or })")
+        fi
+    done < <(jq -r '.[] | [.id, (.executables | join("|"))] | @tsv' src/shared/diagram-tools.json)
 
     if [ ${#missing[@]} -ne 0 ]; then
         echo "FATAL: Missing hard dependencies required for pandoc-preview startup:"
@@ -72,42 +81,13 @@ _check-dependencies:
         exit 1
     fi
 
-# Run all tests: agent contracts, type-check, Rust unit tests, canonical workflow E2E.
-test: _agent-contracts _typecheck
+# Run all tests: agent contracts, type-check, dependency assertion, Rust unit tests, canonical workflow E2E.
+test: _agent-contracts _typecheck _check-dependencies
     #!/usr/bin/env bash
     set -euo pipefail
 
-    # Provision dummy binaries for missing hard dependencies to satisfy probe_tool_state panic
-    bin_dir="$(pwd)/.agents/tmp/bin"
-    mkdir -p "$bin_dir"
-    for tool in qtikz tikzit inkscape drawio draw.io xournal xournalpp ipe; do
-        if ! command -v "$tool" >/dev/null 2>&1; then
-            printf "#!/bin/sh\nexit 0\n" > "$bin_dir/$tool"
-            chmod +x "$bin_dir/$tool"
-        fi
-    done
-    export PATH="$bin_dir:$PATH"
-
-    # Assert existence of all required tools
-    missing=()
-    for tool in pandoc qtikz tikzit inkscape xournal xournalpp ipe; do
-        if ! command -v "$tool" >/dev/null 2>&1; then
-            missing+=("$tool")
-        fi
-    done
-    if ! command -v drawio >/dev/null 2>&1 && ! command -v draw.io >/dev/null 2>&1; then
-        missing+=("drawio (or draw.io)")
-    fi
-
-    if [ ${#missing[@]} -ne 0 ]; then
-        echo "FATAL: Dependency check failed even after provisioning dummies:"
-        for m in "${missing[@]}"; do
-            echo "  - $m"
-        done
-        exit 1
-    fi
-
     test_target_dir="$(pwd)/.agents/tmp/cargo-target"
+    socket_path="$(pwd)/.agents/tmp/tauri-playwright.sock"
     export CARGO_TARGET_DIR="$test_target_dir"
 
     cleanup() {
@@ -122,6 +102,9 @@ test: _agent-contracts _typecheck
             fi
             if [ -e tauri-dev.log ]; then
                 gio trash tauri-dev.log
+            fi
+            if [ -e "$socket_path" ]; then
+                gio trash "$socket_path" || cleanup_status="$?"
             fi
         fi
 
@@ -138,13 +121,14 @@ test: _agent-contracts _typecheck
     trap cleanup EXIT
     trap terminate INT TERM
 
-    # Clean stale socket
-    rm -f /tmp/tauri-playwright.sock
+    if [ -e "$socket_path" ]; then
+        echo "FATAL: stale Tauri Playwright socket exists at $socket_path"
+        echo "Remove the stale socket explicitly before rerunning the proof suite."
+        exit 1
+    fi
 
     mkdir -p "$test_target_dir"
     cargo test --manifest-path src-tauri/Cargo.toml
-    # Pre-compile dev build to avoid Playwright timeout
-    cargo build --manifest-path src-tauri/Cargo.toml
     npx playwright test --config src/tests/playwright.config.ts --max-failures=1
 
 [private]

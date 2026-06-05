@@ -1,52 +1,19 @@
 import { createTauriTest, tauriExpect } from '@srsholmes/tauri-playwright';
-import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-/**
- * Kill orphaned Tauri dev process trees left after a test run.
- *
- * The tauri-playwright adapter's stop() sends SIGTERM to the child process
- * (run-tauri-dev.sh), but the script's `exec` replaced the shell with `npx`,
- * which does NOT propagate signals to its cargo/binary children.
- *
- * run-tauri-dev.sh has been updated to trap EXIT and propagate kills to the
- * process group. This function is a safety net: if anything still leaks,
- * kill it by matching the test-specific XDG config directory that only
- * test processes use.
- */
-function killOrphanedTauriProcesses() {
-  // The test environment sets a unique PANDOC_PREVIEW_TEST_HOME per test run.
-  // We match processes whose command line includes that path, which isolates
-  // the kill to only processes launched by this test suite (not user dev servers).
-  const testHome = process.env.PANDOC_PREVIEW_TEST_HOME;
-  if (testHome) {
-    const result = spawnSync('pkill', ['-f', testHome], {
-      encoding: 'utf8',
-      stdio: 'pipe',
-    });
-    if (result.error) {
-      throw result.error;
-    }
-    if (result.status === 1) {
-      return;
-    }
-    if (result.status !== 0) {
-      const detail =
-        result.stderr.trim() || result.stdout.trim() || `exit code ${result.status}`;
-      throw new Error(`pkill -f ${testHome} failed: ${detail}`);
-    }
-  }
-}
-
 const repoRoot = process.cwd();
 const devUrl = 'http://localhost:5173';
+const mcpSocket = path.join(repoRoot, '.agents', 'tmp', 'tauri-playwright.sock');
+mkdirSync(path.dirname(mcpSocket), { recursive: true });
 
 const base = createTauriTest({
   devUrl,
+  mcpSocket,
   tauriCommand: 'src/tests/e2e/run-tauri-dev.sh',
   tauriCwd: repoRoot,
+  tauriFeatures: ['e2e-testing'],
   startTimeout: 180,
 });
 
@@ -227,13 +194,6 @@ export const test = base.test.extend<{
 
     await use(tauriPage as import('@srsholmes/tauri-playwright').TauriPage);
   },
-});
-
-// Kill orphaned Tauri processes after every test file.
-// The adapter's stop() only SIGTERMs the direct child (npx tauri dev),
-// not the cargo/binary grandchildren that produce the visible GUI window.
-test.afterAll(async () => {
-  killOrphanedTauriProcesses();
 });
 
 // Anchor the exported value to the package's named tauriExpect type surface

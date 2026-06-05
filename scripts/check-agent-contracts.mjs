@@ -9,11 +9,17 @@ function git(args) {
 }
 
 function trackedFiles() {
-  const output =
-    mode === 'staged'
-      ? git(['diff', '--cached', '--name-only', '--diff-filter=ACMR'])
-      : git(['ls-files']);
-  return output === '' ? [] : output.split('\n');
+  if (mode === 'staged') {
+    const output = git(['diff', '--cached', '--name-only', '--diff-filter=ACMR']);
+    return output === '' ? [] : output.split('\n');
+  }
+
+  const output = git(['ls-files']);
+  if (output === '') return [];
+
+  const deletedOutput = git(['ls-files', '--deleted']);
+  const deleted = new Set(deletedOutput === '' ? [] : deletedOutput.split('\n'));
+  return output.split('\n').filter((path) => !deleted.has(path));
 }
 
 function fileContent(path) {

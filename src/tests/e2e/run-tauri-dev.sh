@@ -2,14 +2,14 @@
 set -euo pipefail
 
 script_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-original_home="${HOME:-$script_dir/home}"
-export HOME="${PANDOC_PREVIEW_TEST_HOME:-$original_home}"
-: "${CARGO_HOME:=${HOME}/.cargo}"
-: "${RUSTUP_HOME:=${HOME}/.rustup}"
+export HOME="${PANDOC_PREVIEW_TEST_HOME:?PANDOC_PREVIEW_TEST_HOME must be set by the Playwright fixture}"
+: "${CARGO_HOME:?CARGO_HOME must be set by the Playwright fixture}"
+: "${RUSTUP_HOME:?RUSTUP_HOME must be set by the Playwright fixture}"
 export CARGO_HOME
 export RUSTUP_HOME
-export XDG_CONFIG_HOME="${PANDOC_PREVIEW_TEST_XDG_CONFIG_HOME:-${XDG_CONFIG_HOME:-$script_dir/xdg-config}}"
-export XDG_STATE_HOME="${PANDOC_PREVIEW_TEST_XDG_STATE_HOME:-${XDG_STATE_HOME:-$script_dir/xdg-state}}"
+export XDG_CONFIG_HOME="${PANDOC_PREVIEW_TEST_XDG_CONFIG_HOME:?PANDOC_PREVIEW_TEST_XDG_CONFIG_HOME must be set by the Playwright fixture}"
+export XDG_STATE_HOME="${PANDOC_PREVIEW_TEST_XDG_STATE_HOME:?PANDOC_PREVIEW_TEST_XDG_STATE_HOME must be set by the Playwright fixture}"
+: "${TAURI_PLAYWRIGHT_SOCKET:?TAURI_PLAYWRIGHT_SOCKET must be set by createTauriTest}"
 
 # Conda pkg-config searches only conda paths by default.
 # Prepend system paths so GTK/GLib/WebKit build deps are found.
@@ -42,7 +42,7 @@ kill_tree() {
 trap kill_tree EXIT
 set -m
 
-xvfb-run --auto-servernum npx tauri dev --config "$script_dir/tauri.e2e.conf.json" --no-watch "$@" > tauri-dev.log 2>&1 &
+xvfb-run --auto-servernum npx tauri dev --config "$script_dir/tauri.e2e.conf.json" --no-watch "$@" &
 child_pid=$!
 
 # Wait for the Tauri process. When Playwright sends SIGTERM to this script,

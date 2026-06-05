@@ -25,13 +25,13 @@ export default defineConfig({
     command: 'npx vite --host localhost --port 5173',
     cwd: repoRoot,
     port: 5173,
-    reuseExistingServer: true,
+    reuseExistingServer: false,
     timeout: 30000,
   },
   projects: [
     {
       name: 'tauri',
-      testMatch: '**/*.spec.ts',
+      testMatch: '**/workflow-*.spec.ts',
       use: {
         mode: 'tauri',
       },

@@ -2,40 +2,35 @@
 
 **Branch:** feature/tauri-first-architecture
 **Date:** 2026-06-06
-**Status:** **Systemic Failure**
+**Status:** Environment blocker
 
-The E2E suite currently fails 100% of tests with a Rust panic (exit code 101) during app startup.
+The public gate currently stops before Rust unit tests or desktop E2E because required app startup tools are not all available on `PATH`.
 
----
-
-## Systemic Failure: Rust Panic (101) in `probe_tool_state`
+## Current Public-Gate Failure
 
 ### Observed Symptom
-Every E2E test fails immediately with:
-`Error: Tauri process exited with code 101`
+
+`just test` fails in `_check-dependencies` with:
+
+```text
+FATAL: Missing hard dependencies required for pandoc-preview startup:
+  - drawio (drawio or draw.io)
+  - xournal (xournal)
+  - ipe (ipe)
+```
 
 ### Causal Evidence
-- **Site:** `src-tauri/src/state.rs:125` (panicked at `unwrap_or_else(|| panic!(...))`)
-- **Trigger:** The test environment lacks mathematical research tools (qtikz, tikzit, inkscape, drawio, xournal, xournalpp, ipe).
-- **Classification:** **Fixture/Config Defect (D)**. The test harness (`fixtures.ts`) does not provision the hard dependencies required by the app's startup logic.
+
+- **Source of truth:** `src/shared/diagram-tools.json` declares the diagram tools and executable alternatives consumed by `src-tauri/src/state.rs`.
+- **Current shell state:** `pandoc`, `qtikz`, `tikzit`, `inkscape`, and `xournalpp` resolve on `PATH`; `xournal`, `ipe`, and `drawio`/`draw.io` do not.
+- **Classification:** Environment provisioning blocker. This is not a fixture defect.
 
 ### Impact
-- Blocks all E2E verification.
 
----
+- Blocks Rust startup-dependent tests and Tauri desktop workflow proofs.
+- The gate now fails before E2E launch instead of laundering missing tools through dummy executables.
 
-## File-Level Failures
+## Remediation
 
-| Spec | Failure | Classification |
-|---|---|---|
-| `workflow-config.spec.ts` | 101 Panic | D (Fixture Defect) |
-| `workflow-editing.spec.ts` | 101 Panic | D (Fixture Defect) |
-| `workflow-diagnostics.spec.ts` | 101 Panic | D (Fixture Defect) |
-| `workflow-extensions.spec.ts` | 101 Panic | D (Fixture Defect) |
-
----
-
-## Remediation Plan
-
-1. **Fix Environment**: Modify `fixtures.ts` to create dummy binaries for all 7 required diagram tools in a temporary directory and add it to the `PATH` of the Tauri process.
-2. **Verify Integrity**: Re-run suite. The app should start successfully. Underlying test failures (if any) will then be visible and debuggable.
+- Install or expose the real `xournal`, `ipe`, and `drawio`/`draw.io` executables on `PATH`, then rerun `just test`.
+- If any listed tool is no longer intended to be a hard app dependency, change `src/shared/diagram-tools.json` and the app-owned behavior it drives. Do not weaken the test harness or create shell stubs.
