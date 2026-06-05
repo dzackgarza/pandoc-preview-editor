@@ -114,14 +114,18 @@ static DIAGRAM_TOOLS: LazyLock<Vec<DiagramToolDef>> = LazyLock::new(load_diagram
 pub fn probe_tool_state() -> HashMap<String, ToolEntry> {
     let mut map = HashMap::new();
     for tool in &*DIAGRAM_TOOLS {
-        if let Some(found) = tool.executables.iter().find(|e| is_command_available(e)) {
-            map.insert(
-                tool.id.clone(),
-                ToolEntry {
-                    cmd: found.clone(),
-                },
-            );
-        }
+        let found = tool
+            .executables
+            .iter()
+            .find(|e| is_command_available(e))
+            .unwrap_or_else(|| {
+                panic!(
+                    "Missing hard dependency: none of the executables for diagram tool '{}' ({:?}) were found in PATH. Ensure all required mathematical research tools are installed.",
+                    tool.id, tool.executables
+                )
+            });
+
+        map.insert(tool.id.clone(), ToolEntry { cmd: found.clone() });
     }
     map
 }

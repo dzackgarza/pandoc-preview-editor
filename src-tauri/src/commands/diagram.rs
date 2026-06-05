@@ -57,17 +57,13 @@ pub async fn diagram_proxy(url: String) -> Result<serde_json::Value, String> {
 // ─── diagram tools ────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn get_diagram_tools(state: State<'_, Mutex<AppState>>) -> serde_json::Value {
-    let s = state.lock().unwrap();
-    let installed_ids = s.tool_state.keys().collect::<Vec<_>>();
-
+pub fn get_diagram_tools() -> serde_json::Value {
+    // Since probe_tool_state asserts that all registered tools are installed on startup,
+    // we can simply return true for all IDs in the registry.
     serde_json::Value::Object(
         crate::state::all_diagram_tool_ids()
             .into_iter()
-            .map(|id| {
-                let is_installed = installed_ids.contains(&&id);
-                (id, serde_json::Value::Bool(is_installed))
-            })
+            .map(|id| (id, serde_json::Value::Bool(true)))
             .collect(),
     )
 }
