@@ -84,11 +84,12 @@ pub fn is_text_like_file(path: &Path) -> Result<bool, String> {
 }
 
 pub fn is_markdown_file(path: &Path) -> bool {
-    let ext = path
-        .extension()
-        .map(|e| format!(".{}", e.to_string_lossy().to_lowercase()))
-        .unwrap_or_default();
-    MARKDOWN_EXTENSIONS.contains(&ext.as_str())
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        let normalized = format!(".{}", ext.to_lowercase());
+        MARKDOWN_EXTENSIONS.contains(&normalized.as_str())
+    } else {
+        false
+    }
 }
 
 // ─── fingerprint ─────────────────────────────────────────────────────────────
