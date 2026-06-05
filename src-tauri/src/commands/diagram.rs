@@ -15,9 +15,15 @@ const ALLOWED_PROXY_HOSTS: &[&str] = &["q.uiver.app", "freetikz.app", "homepages
 #[tauri::command]
 pub async fn diagram_proxy(url: String) -> Result<serde_json::Value, String> {
     let parsed = url::Url::parse(&url).map_err(|_| "Invalid URL format".to_string())?;
-    let host = parsed.host_str().unwrap_or("");
-    if !ALLOWED_PROXY_HOSTS.contains(&host) || parsed.scheme() != "https" {
-        return Err("proxy host not allowed".into());
+    
+    if parsed.scheme() != "https" {
+        return Err("proxy requires https scheme".into());
+    }
+
+    let host = parsed.host_str().ok_or_else(|| "missing host in URL".to_string())?;
+    
+    if !ALLOWED_PROXY_HOSTS.contains(&host) {
+        return Err(format!("proxy host not allowed: {}", host));
     }
 
     let client = reqwest::Client::builder()
@@ -37,7 +43,7 @@ pub async fn diagram_proxy(url: String) -> Result<serde_json::Value, String> {
         html = format!("{}{}", base_tag, html);
     }
 
-    // Premium TikZ overlay injected into proxied diagram tool pages
+    // Export overlay injected into proxied diagram tool pages
     let overlay = include_str!("../../assets/tikz-overlay.html");
     if html.contains("</body>") {
         html = html.replacen("</body>", &format!("{}</body>", overlay), 1);
@@ -69,7 +75,7 @@ pub fn create_diagram_file(
     state: State<'_, Mutex<AppState>>,
 ) -> Result<serde_json::Value, String> {
     let s = state.lock().unwrap();
-    let workspace_root = s.workspace_root();
+    let workspace_root = s.workspace_root()?;
     let resolved_doc = if Path::new(&document_path).is_absolute() {
         PathBuf::from(&document_path)
     } else {
