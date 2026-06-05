@@ -15,13 +15,15 @@ const ALLOWED_PROXY_HOSTS: &[&str] = &["q.uiver.app", "freetikz.app", "homepages
 #[tauri::command]
 pub async fn diagram_proxy(url: String) -> Result<serde_json::Value, String> {
     let parsed = url::Url::parse(&url).map_err(|_| "Invalid URL format".to_string())?;
-    
+
     if parsed.scheme() != "https" {
         return Err("proxy requires https scheme".into());
     }
 
-    let host = parsed.host_str().ok_or_else(|| "missing host in URL".to_string())?;
-    
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| "missing host in URL".to_string())?;
+
     if !ALLOWED_PROXY_HOSTS.contains(&host) {
         return Err(format!("proxy host not allowed: {}", host));
     }
@@ -35,23 +37,16 @@ pub async fn diagram_proxy(url: String) -> Result<serde_json::Value, String> {
         return Err(format!("proxy failed with status {}", response.status()));
     }
 
-    let mut html = response.text().await.map_err(|e| e.to_string())?;
-    let base_tag = format!("<base href=\"{}\">", url);
-    if html.contains("<head>") {
-        html = html.replacen("<head>", &format!("<head>{}", base_tag), 1);
-    } else {
-        html = format!("{}{}", base_tag, html);
-    }
+    let html = response.text().await.map_err(|e| e.to_string())?;
 
     // Export overlay injected into proxied diagram tool pages
     let overlay = include_str!("../../assets/tikz-overlay.html");
-    if html.contains("</body>") {
-        html = html.replacen("</body>", &format!("{}</body>", overlay), 1);
-    } else {
-        html.push_str(overlay);
-    }
 
-    Ok(serde_json::json!({ "html": html }))
+    Ok(serde_json::json!({
+        "html": html,
+        "baseUrl": url,
+        "overlay": overlay,
+    }))
 }
 
 // ─── diagram tools ────────────────────────────────────────────────────────────

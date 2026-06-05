@@ -64,10 +64,19 @@ export function DiagramModal({
     let active = true;
     if (open && activeTab === 'web') {
       setProxyLoading(true);
-      invoke<{ html: string }>('diagram_proxy', { url: webToolUrl })
+      invoke<{ html: string; baseUrl: string; overlay: string }>('diagram_proxy', { url: webToolUrl })
         .then((data) => {
           if (active) {
-            setProxyHtml(data.html);
+            // Structural injection in the frontend
+            const baseTag = `<base href="${data.baseUrl}">`;
+            let combined = data.html;
+            if (combined.includes('<head>')) {
+              combined = combined.replace('<head>', `<head>${baseTag}`);
+            } else {
+              combined = baseTag + combined;
+            }
+            combined += data.overlay;
+            setProxyHtml(combined);
           }
         })
         .catch((err: unknown) => {
