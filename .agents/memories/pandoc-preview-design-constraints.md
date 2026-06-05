@@ -124,6 +124,12 @@ Therefore:
 - **Absolute Host Base Injection:** Because sandboxed `srcdoc` iframes default their base URL to `about:srcdoc` (rendering relative base hrefs non-functional), the server must dynamically inject a fully qualified absolute URL (e.g. `http://localhost:port/api/preview-assets/`) based on the incoming request's host header.
 - **Secure Static Serving:** Mount the `/api/preview-assets/` endpoint to the document root (`express.static(currentDocumentRoot(config))`). To prevent relative path resolution failures, strip any leading slashes cleanly from the request path before matching absolute paths securely within the workspace.
 
+## Bespoke Integration with Generation Tools
+
+The app provides deep, tight integration with standard TikZ generation tools (e.g., FreeTikZ, quiverapp) to facilitate automatically populating markdown files with TikZ code. This is a core part of the app's bespoke identity and is distinct from TikZ rendering.
+
+For details on requirements and stability basis, see `decisions/tikz-generation-integration`.
+
 ## One-Off Variables as Schema Scars
 
 When you encounter a one-off local variable that hedges between two values (e.g.

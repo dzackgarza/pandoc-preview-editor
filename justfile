@@ -49,6 +49,41 @@ _typecheck:
 
 # Run all tests: agent contracts, type-check, Rust unit tests, canonical workflow E2E.
 test: _agent-contracts _typecheck
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    test_target_dir="$(pwd)/.agents/tmp/cargo-target"
+    export CARGO_TARGET_DIR="$test_target_dir"
+
+    cleanup() {
+        status="$?"
+        cleanup_status=0
+
+        cargo clean --manifest-path src-tauri/Cargo.toml --target-dir "$test_target_dir" || cleanup_status="$?"
+
+        if [ "$status" -eq 0 ]; then
+            if [ -e test-results ]; then
+                gio trash test-results
+            fi
+            if [ -e tauri-dev.log ]; then
+                gio trash tauri-dev.log
+            fi
+        fi
+
+        if [ "$cleanup_status" -ne 0 ]; then
+            exit "$cleanup_status"
+        fi
+        exit "$status"
+    }
+
+    terminate() {
+        exit 143
+    }
+
+    trap cleanup EXIT
+    trap terminate INT TERM
+
+    mkdir -p "$test_target_dir"
     cargo test --manifest-path src-tauri/Cargo.toml
     npx playwright test --config src/tests/playwright.config.ts --max-failures=1
 

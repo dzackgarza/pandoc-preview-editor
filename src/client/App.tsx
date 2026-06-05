@@ -129,6 +129,18 @@ export function App() {
       });
   }, []);
 
+  useEffect(() => {
+    invoke<{ plugins: PluginMetadata[] }>('list_plugins')
+      .then((data) => {
+        setPlugins(data.plugins);
+      })
+      .catch((err) => {
+        throw new Error(
+          `Failed to load plugins: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
+  }, []);
+
   const clearRenderTimer = useCallback(() => {
     if (debounceTimer.current != null) {
       window.clearTimeout(debounceTimer.current);
@@ -199,11 +211,16 @@ export function App() {
   }, [clearRenderTimer, markdownText, scheduleRender]);
 
   useEffect(() => {
-    if (saveState !== 'dirty') return;
+    if (saveState !== 'dirty' || !currentFile) return;
     const handle = window.setTimeout(() => {
       void invoke('backup', {
         markdown: markdownText,
         path: currentFile,
+      }).then(() => {
+        // @ts-ignore
+        window.__PANDOC_PREVIEW_BACKUP_COMPLETED__ =
+          // @ts-ignore
+          (window.__PANDOC_PREVIEW_BACKUP_COMPLETED__ || 0) + 1;
       });
     }, 500);
     return () => window.clearTimeout(handle);
@@ -850,13 +867,11 @@ export function App() {
                 onChange={updateMarkdown}
                 onCreateEditor={(view) => {
                   editorViewRef.current = view;
-                  if ('__PW_ACTIVE__' in window) {
-                    (
-                      window as typeof window & {
-                        __PANDOC_PREVIEW_EDITOR_VIEW__?: EditorView;
-                      }
-                    ).__PANDOC_PREVIEW_EDITOR_VIEW__ = view;
-                  }
+                  (
+                    window as typeof window & {
+                      __PANDOC_PREVIEW_EDITOR_VIEW__?: EditorView;
+                    }
+                  ).__PANDOC_PREVIEW_EDITOR_VIEW__ = view;
                 }}
                 onSave={saveCurrent}
               />

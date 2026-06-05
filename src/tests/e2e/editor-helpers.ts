@@ -60,11 +60,11 @@ export async function previewInnerHTML(appPage: AppPage): Promise<string> {
 /**
  * Call a Tauri IPC command via the window.__TAURI_INTERNALS__.invoke bridge.
  */
-export async function invokeTauri(
+export async function invokeTauri<T>(
   appPage: AppPage,
   command: string,
-  args: Record<string, unknown> = {},
-): Promise<unknown> {
+  args: object = {},
+): Promise<T> {
   return appPage.evaluate(
     `window.__TAURI_INTERNALS__.invoke(${JSON.stringify(command)}, ${JSON.stringify(args)})`,
   );
@@ -96,12 +96,29 @@ export async function saveViaFileSelector(
 
 import { load as parseTomlRaw } from 'js-toml';
 
-export function parseToml(content: string): Record<string, any> {
-  return parseTomlRaw(content) as Record<string, any>;
+/** Explicit structure for config.toml content. */
+export interface ConfigToml {
+  pandoc: {
+    render_command: string;
+    templates_dir: string;
+    filters_dir: string;
+    debounce_ms: number;
+    timeout_ms: number;
+  };
+  session: {
+    restore_last_file: boolean;
+  };
 }
 
-export function getPandocFilters(assets: unknown): string[] {
-  const a = assets as Record<string, unknown>;
-  if (!Array.isArray(a.filters)) throw new Error('pandoc_assets: expected filters array');
-  return a.filters as string[];
+export function parseToml(content: string): ConfigToml {
+  return parseTomlRaw(content) as unknown as ConfigToml;
+}
+
+export interface PandocAssets {
+  templates: string[];
+  filters: string[];
+}
+
+export function getPandocFilters(assets: PandocAssets): string[] {
+  return assets.filters;
 }

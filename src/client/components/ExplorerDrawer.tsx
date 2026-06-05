@@ -280,6 +280,7 @@ function ExplorerBranch({
             <div key={entry.path}>
               <button
                 className="flex h-7 w-full items-center gap-1.5 truncate px-2 text-left text-sm text-[#c8ced8] hover:bg-[#28303b] cursor-pointer"
+                data-testid={`explorer-dir-${entry.name}`}
                 style={{ paddingLeft }}
                 type="button"
                 onClick={() => onToggleDirectory(entry.path)}
@@ -319,6 +320,7 @@ function ExplorerBranch({
         return (
           <button
             key={entry.path}
+            data-testid={`explorer-file-${entry.name}`}
             className={cn(
               'flex h-7 w-full items-center gap-2 truncate px-2 text-left text-sm hover:bg-[#28303b] cursor-pointer',
               isCurrent

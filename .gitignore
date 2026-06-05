@@ -5,3 +5,4 @@ test-artifacts/
 test-results/
 *.orig
 .antigravitycli/
+.agents/tmp/

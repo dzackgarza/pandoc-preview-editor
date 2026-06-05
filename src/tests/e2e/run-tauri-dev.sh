@@ -29,20 +29,22 @@ child_pid=""
 kill_tree() {
   if [ -n "$child_pid" ]; then
     # Kill the child's entire process group (negative PID = group kill).
-    kill -- -"$child_pid" 2>/dev/null || true
+    if kill -0 -- -"$child_pid"; then
+      kill -- -"$child_pid"
+    fi
     # Fallback: kill just the direct child.
-    kill "$child_pid" 2>/dev/null || true
-    wait "$child_pid" 2>/dev/null || true
+    if kill -0 "$child_pid"; then
+      kill "$child_pid"
+    fi
   fi
 }
 
 trap kill_tree EXIT
 set -m
 
-xvfb-run --auto-servernum npx tauri dev --config "$script_dir/tauri.e2e.conf.json" --no-watch "$@" > tauri-dev.log 2>&1 &
+xvfb-run --auto-servernum npx tauri dev --config "$script_dir/tauri.e2e.conf.json" --no-watch "$@" &
 child_pid=$!
 
 # Wait for the Tauri process. When Playwright sends SIGTERM to this script,
 # the EXIT trap fires, killing the entire child process group before exiting.
 wait "$child_pid"
-

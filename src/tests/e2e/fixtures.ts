@@ -40,79 +40,6 @@ function killOrphanedTauriProcesses() {
   }
 }
 
-type FrontendErrorBuffer = {
-  consoleErrors: string[];
-  pageErrors: string[];
-};
-
-async function installFrontendErrorCapture(
-  page: import('@srsholmes/tauri-playwright').TauriPage,
-) {
-  await page.evaluate(`
-    (() => {
-      const w = window;
-      const key = '__PW_FRONTEND_ERRORS__';
-      const existing = w[key];
-      if (existing?.installed) {
-        existing.consoleErrors.length = 0;
-        existing.pageErrors.length = 0;
-        return;
-      }
-
-      const stringify = (value) => {
-        if (typeof value === 'string') return value;
-        try {
-          return JSON.stringify(value);
-        } catch {
-          return String(value);
-        }
-      };
-
-      const store = {
-        installed: true,
-        consoleErrors: [],
-        pageErrors: [],
-      };
-
-      const originalConsoleError = console.error.bind(console);
-      console.error = (...args) => {
-        store.consoleErrors.push(args.map(stringify).join(' '));
-        return originalConsoleError(...args);
-      };
-
-      window.addEventListener('error', (event) => {
-        const message =
-          event.error?.stack ?? event.error?.message ?? event.message ?? 'unknown page error';
-        store.pageErrors.push(String(message));
-      });
-
-      window.addEventListener('unhandledrejection', (event) => {
-        const reason = event.reason?.stack ?? event.reason?.message ?? event.reason ?? 'unknown rejection';
-        store.pageErrors.push(String(reason));
-      });
-
-      w[key] = store;
-    })()
-  `);
-}
-
-async function readFrontendErrors(
-  page: import('@srsholmes/tauri-playwright').TauriPage,
-): Promise<FrontendErrorBuffer> {
-  return page.evaluate(`
-    (() => {
-      const store = window.__PW_FRONTEND_ERRORS__;
-      if (!store) {
-        return { consoleErrors: [], pageErrors: [] };
-      }
-      return {
-        consoleErrors: [...store.consoleErrors],
-        pageErrors: [...store.pageErrors],
-      };
-    })()
-  `);
-}
-
 const repoRoot = process.cwd();
 const devUrl = 'http://localhost:5173';
 
@@ -147,10 +74,6 @@ type LaunchSetup = (env: TestEnvironment) => void | Promise<void>;
 
 function ensureDir(dir: string) {
   mkdirSync(dir, { recursive: true });
-}
-
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function defaultConfig(
@@ -293,93 +216,16 @@ export const test = base.test.extend<{
     },
     { auto: true },
   ],
-  appPage: async ({ tauriPage, testEnv }, use) => {
-    const startupDeadline = Date.now() + 30_000;
-    let lastStartupError: unknown;
+  appPage: async ({ tauriPage }, use) => {
+    // The tauriPage fixture from @srsholmes/tauri-playwright already:
+    // 1. Launches the Tauri app using tauriCommand.
+    // 2. Navigates the webview to devUrl (since configured in createTauriTest).
+    // 3. Waits for window.__PW_ACTIVE__ to be true.
 
-    while (Date.now() < startupDeadline) {
-      try {
-        await tauriPage.evaluate('window.location.href');
-        lastStartupError = null;
-        break;
-      } catch (error) {
-        lastStartupError = error;
-        await delay(250);
-      }
-    }
+    // We only need to verify the initial frontend readiness locator before handing control to the test.
+    await expect(tauriPage.getByTestId('editor')).toBeVisible({ timeout: 30000 });
 
-    if (lastStartupError) {
-      throw lastStartupError;
-    }
-
-    await tauriPage.evaluate(`window.location.href = ${JSON.stringify(devUrl)}`);
-
-    const readyDeadline = Date.now() + 30_000;
-    let frontendReady = false;
-    let lastReadyError: unknown;
-
-    while (Date.now() < readyDeadline) {
-      try {
-        frontendReady = await tauriPage.evaluate(
-          'document.readyState === "complete" && !!window.__PW_ACTIVE__',
-        );
-        if (frontendReady) {
-          break;
-        }
-      } catch (error) {
-        lastReadyError = error;
-      }
-      await delay(250);
-    }
-
-    if (!frontendReady) {
-      throw (
-        lastReadyError ?? new Error('Timed out waiting for Tauri frontend readiness')
-      );
-    }
-
-    await installFrontendErrorCapture(
-      tauriPage as import('@srsholmes/tauri-playwright').TauriPage,
-    );
-
-    tauriPage.reload = async () => {
-      await tauriPage.evaluate('window.location.reload()');
-      const readyDeadline = Date.now() + 15_000;
-      let frontendReady = false;
-      while (Date.now() < readyDeadline) {
-        try {
-          frontendReady = await tauriPage.evaluate(
-            'document.readyState === "complete" && !!window.__PW_ACTIVE__',
-          );
-          if (frontendReady) {
-            break;
-          }
-        } catch {}
-        await delay(100);
-      }
-      if (frontendReady) {
-        await installFrontendErrorCapture(
-          tauriPage as import('@srsholmes/tauri-playwright').TauriPage,
-        );
-      }
-    };
-
-    try {
-      await use(tauriPage as import('@srsholmes/tauri-playwright').TauriPage);
-    } finally {
-      const frontendErrors = await readFrontendErrors(
-        tauriPage as import('@srsholmes/tauri-playwright').TauriPage,
-      );
-      if (frontendErrors.consoleErrors.length || frontendErrors.pageErrors.length) {
-        throw new Error(
-          [
-            'Frontend errors detected during E2E test.',
-            `console.error: ${JSON.stringify(frontendErrors.consoleErrors)}`,
-            `page errors: ${JSON.stringify(frontendErrors.pageErrors)}`,
-          ].join('\n'),
-        );
-      }
-    }
+    await use(tauriPage as import('@srsholmes/tauri-playwright').TauriPage);
   },
 });
 

@@ -11,7 +11,7 @@ import {
   RustParsedFlags,
 } from '../../shared/command-parser.js';
 
-interface SettingsData {
+export interface SettingsData {
   templatesDir: string;
   filtersDir: string;
   debounceMs: number;
@@ -197,6 +197,7 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
             <Tabs.List className="w-56 border-r border-[#2b2f38] bg-[#14171f] py-4 flex flex-col gap-1 shrink-0">
               <Tabs.Trigger
                 value="general"
+                data-testid="settings-tab-general"
                 className="flex items-center gap-3 px-5 py-2.5 text-left text-sm outline-none transition-colors w-full cursor-pointer text-[#a9b2c3] hover:bg-[#1f2229] hover:text-[#e6e8eb] data-[state=active]:bg-[#2a2f3a] data-[state=active]:text-white data-[state=active]:font-medium data-[state=active]:border-l-2 data-[state=active]:border-[#3b82f6]"
               >
                 <Cpu className="h-4 w-4 text-[#8fb8ff]" />
@@ -204,6 +205,7 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
               </Tabs.Trigger>
               <Tabs.Trigger
                 value="pandoc"
+                data-testid="settings-tab-pandoc"
                 className="flex items-center gap-3 px-5 py-2.5 text-left text-sm outline-none transition-colors w-full cursor-pointer text-[#a9b2c3] hover:bg-[#1f2229] hover:text-[#e6e8eb] data-[state=active]:bg-[#2a2f3a] data-[state=active]:text-white data-[state=active]:font-medium data-[state=active]:border-l-2 data-[state=active]:border-[#3b82f6]"
               >
                 <Terminal className="h-4 w-4 text-[#a6e3a1]" />
@@ -211,6 +213,7 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
               </Tabs.Trigger>
               <Tabs.Trigger
                 value="filters"
+                data-testid="settings-tab-filters"
                 className="flex items-center gap-3 px-5 py-2.5 text-left text-sm outline-none transition-colors w-full cursor-pointer text-[#a9b2c3] hover:bg-[#1f2229] hover:text-[#e6e8eb] data-[state=active]:bg-[#2a2f3a] data-[state=active]:text-white data-[state=active]:font-medium data-[state=active]:border-l-2 data-[state=active]:border-[#3b82f6]"
               >
                 <Filter className="h-4 w-4 text-[#f9e2af]" />
@@ -218,6 +221,7 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
               </Tabs.Trigger>
               <Tabs.Trigger
                 value="assets"
+                data-testid="settings-tab-assets"
                 className="flex items-center gap-3 px-5 py-2.5 text-left text-sm outline-none transition-colors w-full cursor-pointer text-[#a9b2c3] hover:bg-[#1f2229] hover:text-[#e6e8eb] data-[state=active]:bg-[#2a2f3a] data-[state=active]:text-white data-[state=active]:font-medium data-[state=active]:border-l-2 data-[state=active]:border-[#3b82f6]"
               >
                 <FolderOpen className="h-4 w-4 text-[#f5c2e7]" />
@@ -225,6 +229,7 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
               </Tabs.Trigger>
               <Tabs.Trigger
                 value="raw"
+                data-testid="settings-tab-raw"
                 className="flex items-center gap-3 px-5 py-2.5 text-left text-sm outline-none transition-colors w-full cursor-pointer text-[#a9b2c3] hover:bg-[#1f2229] hover:text-[#e6e8eb] data-[state=active]:bg-[#2a2f3a] data-[state=active]:text-white data-[state=active]:font-medium data-[state=active]:border-l-2 data-[state=active]:border-[#3b82f6]"
               >
                 <Terminal className="h-4 w-4 text-[#89dceb]" />
@@ -232,6 +237,7 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
               </Tabs.Trigger>
               <Tabs.Trigger
                 value="plugins"
+                data-testid="settings-tab-plugins"
                 className="flex items-center gap-3 px-5 py-2.5 text-left text-sm outline-none transition-colors w-full cursor-pointer text-[#a9b2c3] hover:bg-[#1f2229] hover:text-[#e6e8eb] data-[state=active]:bg-[#2a2f3a] data-[state=active]:text-white data-[state=active]:font-medium data-[state=active]:border-l-2 data-[state=active]:border-[#3b82f6]"
               >
                 <Plug className="h-4 w-4 text-[#cba6f7]" />

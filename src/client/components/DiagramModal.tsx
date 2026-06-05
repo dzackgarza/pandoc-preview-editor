@@ -465,6 +465,7 @@ export function DiagramModal({
                       return (
                         <button
                           key={tool.id}
+                          data-testid={`diagram-tool-${tool.id}`}
                           onClick={() => {
                             setDesktopTool(tool.id);
                             setError(null);
@@ -490,6 +491,7 @@ export function DiagramModal({
                     </label>
                     <input
                       type="text"
+                      aria-label="Filename"
                       className="w-full rounded border border-[#343946] bg-[#15161a] px-3 py-2 text-sm text-[#e6e8eb] outline-none focus:border-[#89b4fa]"
                       placeholder="e.g. commutative-diagram"
                       value={filename}

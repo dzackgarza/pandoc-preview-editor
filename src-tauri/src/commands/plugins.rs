@@ -36,6 +36,11 @@ fn interpolate_plugin_arg(arg: &str, file_path: &Path) -> Result<String, String>
 #[tauri::command]
 pub fn list_plugins(state: State<'_, Mutex<AppState>>) -> serde_json::Value {
     let s = state.lock().unwrap();
+    println!(
+        "[Rust] list_plugins called. Count: {}, Plugins: {:?}",
+        s.plugins.len(),
+        s.plugins.iter().map(|p| &p.name).collect::<Vec<_>>()
+    );
     let metadata: Vec<serde_json::Value> = s
         .plugins
         .iter()

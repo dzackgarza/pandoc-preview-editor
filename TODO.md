@@ -19,6 +19,38 @@
 - **Repair non-admissible migrated tests** — Remove `@ts-nocheck`, `as any`, loose known-payload casts, CJS `require()` in ESM tests, dependency skips, duplicate weak helpers, unsupported adapter calls, and mock-only feature proofs from the active E2E suite.
 - **Audit migrated suite against proof obligations** — Confirm the repaired suite models `docs/testing-proof-obligations.md` with real Tauri desktop proofs before using `just test` as an app-satisfaction gate.
 - **Satisfy Tauri desktop proof burden** — After the suite is complete and correct, make `just test` pass through the real Tauri Playwright suite.
+- **Remediate Diagram Integration Slop** — Burn the agent-flavored implementation residue in the diagram generation workflow:
+  - **Study and Cement Extraction Contracts**: Perform a one-time study of `q.uiver.app` and `freetikz` to determine the EXACT CSS selectors and internal data shapes.
+  - **Replace Heuristic Scraper**: Replace the "obsequious" `for`-loop scraper in `src-tauri/assets/tikz-overlay.html` with the deterministic findings from the study. Assert on specific structure and shape.
+  - **Refactor Command Injection**: Refactor `diagram_proxy` in `src-tauri/src/commands/diagram.rs` to stop using retired regex-on-HTML (`replacen`) for script injection. Use structural injection.
+  - **Purge High-Entropy Slop**: Remove "Premium" and "Gorgeous" LLM markers from comments and UI code.
+- **Remediate Preview Overlay Layer Laundering** — Fix the layer violation in `src/client/components/PreviewPane.tsx`:
+  - **Burn App-Side Scraper**: Remove the `useEffect` that imperatively queries the iframe DOM and appends "Edit" overlays. This is "layer laundering"—using the app to fix HTML that the app already controls at the source.
+  - **Template-Side Implementation**: Move the "Hover-to-Edit" logic into a modular JavaScript library included in the Pandoc template.
+  - **Filter-Provided Hooks**: Update the project's Pandoc filters to provide canonical hooks (e.g., semantic classes or data-attributes) that the template-side JS uses to identify and interact with editable figures.
+  - **Thin App Integration**: Reduce the React layer's role to a minor integration that listens for `postMessage` edit commands from the iframe and dispatches them to the Rust backend.
+- **Remediate Testing Hacks in Production** — Remove brittle window globals and type suppressions used for E2E verification:
+  - **Burn Window Globals**: Remove `__PANDOC_PREVIEW_BACKUP_COMPLETED__` and `__PANDOC_PREVIEW_EDITOR_VIEW__` from `App.tsx` and `EditorPane.tsx`.
+  - **Standard DOM Verification**: Update E2E tests to verify editor content via standard locators (e.g., `.cm-content`) rather than reaching into the CodeMirror instance.
+  - **Deterministic UI Signals**: Replace the backup counter with a real UI signal (e.g., a "Backup Saved" status transition) or an observable state that reflects background process completion.
+  - **Type Safety**: Eliminate all `@ts-ignore` usages. If a global is strictly required for the test adapter (like `__PW_ACTIVE__`), define it properly in the `Window` interface.
+- **Remediate Rust Fail-Fast Violations** — Fix the use of banned `let _ =` patterns that silence critical filesystem errors in `src-tauri/src/config.rs`:
+  - **Fix Silenced Errors**: Replace `let _ = fs::create_dir_all(...)` and `let _ = fs::write(...)` with proper error handling (returning `Result` or using `expect`).
+  - **Float to Global QC**: Propagate this violation pattern to the global Quality Control system (`~/ai/quality-control`).
+  - **Rust-Specific Rules**: Implement Rust semgrep rules in global QC to detect and block `let _ =` on `Result` types.
+  - **Sync QC Back**: Push the updated global QC rules back into this repository to surface such violations automatically in the future.
+- **Systemic Audit of Silent Defaults & Dead Code** — Investigate and burn "fail-open" patterns and abandoned code in the Rust backend:
+  - **Burn unwrap_or* Pervasiveness**: Audit all 26+ instances of `unwrap_or`, `unwrap_or_default`, and `unwrap_or_else` in `src-tauri/src/`. Replace "soft" defaults (like `unwrap_or("")` or `unwrap_or_default()`) with explicit error propagation (`?`) or loud assertions (`expect`).
+  - **Fix State Logic Errors**: Specifically fix `src-tauri/src/state.rs`:
+    - `current_file_content`: Return a proper error instead of an empty string default when no file/content is present.
+    - `workspace_root`: Fail loudly if `current_dir()` cannot be determined instead of defaulting to `.`.
+    - `probe_tool_state`: Fail if a required diagram tool is missing instead of defaulting to a potentially incorrect binary name.
+  - **Delete Dead Code**: Remove `FigureEntry` in `state.rs` and audit for other unused structs or registration-only dead paths.
+  - **Policy Enforcement**: Move these checks into the project's verification gate to ensure future code adheres to the "Silence is a bug" mandate.
+- **Remediate Templates-as-Code Slop** — Remove embedded template content from application JSON/code:
+  - **Extract Embedded Templates**: Move the starter TikZ/SVG/Xournal/Ipe templates out of `src/shared/diagram-tools.json` and into dedicated asset files (e.g., in `src-tauri/assets/templates/` or `~/.pandoc/templates/`).
+  - **Adhere to AGENTS.md**: Ensure that app code only references these templates by path or resource ID, never embedding the content itself.
+  - **Update Global QC**: Propagate a requirement to the global Quality Control system to surface long strings in source code and JSON. Long strings are a "slop marker" indicating unrequested content-layer embedding or manual hacking.
 - **Server-side TikZ rendering proof** — Prove TikZ renders through server-side Pandoc -> SVG, not browser-side TikZJax.
 - **Obsidian callout → amsthm** — Convert Obsidian callouts to amsthm environments.
 - **Centralized Pandoc template/filter QA** — Optional manual QA around `~/.pandoc/templates/` and `~/.pandoc/filters/`; app tests stay renderer-agnostic.

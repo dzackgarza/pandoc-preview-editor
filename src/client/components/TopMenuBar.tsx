@@ -14,7 +14,6 @@ import {
   FileText,
   Settings,
   Plus,
-  Filter,
 } from 'lucide-react';
 import { useMemo } from 'react';
 
@@ -62,29 +61,36 @@ export function TopMenuBar({
     <div className="flex h-10 shrink-0 items-center border-b border-[#2b2f38] bg-[#20232b] px-2">
       <Menubar.Root className="flex items-center gap-1 text-sm text-[#d6d9df]">
         <Menubar.Menu>
-          <Menubar.Trigger className="rounded px-3 py-1.5 outline-none hover:bg-[#303541] focus:bg-[#303541] data-[state=open]:bg-[#303541]">
+          <Menubar.Trigger
+            className="rounded px-3 py-1.5 outline-none hover:bg-[#303541] focus:bg-[#303541] data-[state=open]:bg-[#303541]"
+            data-testid="menu-trigger-file"
+          >
             File
           </Menubar.Trigger>
           <Menubar.Portal>
             <Menubar.Content className="z-50 min-w-40 rounded border border-[#343946] bg-[#22262f] p-1 text-sm text-[#e7eaf0] shadow-xl">
-              <MenuItem onSelect={onNewFile}>
+              <MenuItem onSelect={onNewFile} testId="menu-item-new">
                 <FilePlus className="h-4 w-4" />
                 New
               </MenuItem>
-              <MenuItem onSelect={onOpenExplorer}>
+              <MenuItem onSelect={onOpenExplorer} testId="menu-item-open">
                 <FolderOpen className="h-4 w-4" />
                 Open
               </MenuItem>
-              <MenuItem onSelect={onOpenQuickOpen} shortcut="Ctrl+P">
+              <MenuItem
+                onSelect={onOpenQuickOpen}
+                shortcut="Ctrl+P"
+                testId="menu-item-quick-open"
+              >
                 <Search className="h-4 w-4" />
                 Quick Open
               </MenuItem>
-              <MenuItem onSelect={onOpenSettings}>
+              <MenuItem onSelect={onOpenSettings} testId="menu-item-preferences">
                 <Settings className="h-4 w-4" />
                 Preferences...
               </MenuItem>
               <Menubar.Separator className="my-1 h-px bg-[#343946]" />
-              <MenuItem onSelect={onSave} shortcut="Ctrl+S">
+              <MenuItem onSelect={onSave} shortcut="Ctrl+S" testId="menu-item-save">
                 <Save className="h-4 w-4" />
                 Save
               </MenuItem>
@@ -92,21 +98,24 @@ export function TopMenuBar({
           </Menubar.Portal>
         </Menubar.Menu>
         <Menubar.Menu>
-          <Menubar.Trigger className="rounded px-3 py-1.5 outline-none hover:bg-[#303541] focus:bg-[#303541] data-[state=open]:bg-[#303541]">
+          <Menubar.Trigger
+            className="rounded px-3 py-1.5 outline-none hover:bg-[#303541] focus:bg-[#303541] data-[state=open]:bg-[#303541]"
+            data-testid="menu-trigger-view"
+          >
             View
           </Menubar.Trigger>
           <Menubar.Portal>
             <Menubar.Content className="z-50 min-w-48 rounded border border-[#343946] bg-[#22262f] p-1 text-sm text-[#e7eaf0] shadow-xl">
-              <MenuItem onSelect={onToggleExplorer}>
+              <MenuItem onSelect={onToggleExplorer} testId="menu-item-toggle-explorer">
                 <PanelLeftOpen className="h-4 w-4" />
                 {explorerOpen ? 'Hide Explorer' : 'Show Explorer'}
               </MenuItem>
               <Menubar.Separator className="my-1 h-px bg-[#343946]" />
-              <MenuItem onSelect={onResetSplit}>
+              <MenuItem onSelect={onResetSplit} testId="menu-item-reset-split">
                 <RefreshCcw className="h-4 w-4" />
                 Reset Split
               </MenuItem>
-              <MenuItem onSelect={onRefresh}>
+              <MenuItem onSelect={onRefresh} testId="menu-item-refresh-preview">
                 <RefreshCcw className="h-4 w-4" />
                 Refresh Preview
               </MenuItem>
@@ -114,20 +123,30 @@ export function TopMenuBar({
           </Menubar.Portal>
         </Menubar.Menu>
         <Menubar.Menu>
-          <Menubar.Trigger className="rounded px-3 py-1.5 outline-none hover:bg-[#303541] focus:bg-[#303541] data-[state=open]:bg-[#303541]">
+          <Menubar.Trigger
+            className="rounded px-3 py-1.5 outline-none hover:bg-[#303541] focus:bg-[#303541] data-[state=open]:bg-[#303541]"
+            data-testid="menu-trigger-insert"
+          >
             Insert
           </Menubar.Trigger>
           <Menubar.Portal>
             <Menubar.Content className="z-50 min-w-44 rounded border border-[#343946] bg-[#22262f] p-1 text-sm text-[#e7eaf0] shadow-xl">
-              <MenuItem onSelect={onInsertCitation} shortcut="Ctrl+Shift+C">
+              <MenuItem
+                onSelect={onInsertCitation}
+                shortcut="Ctrl+Shift+C"
+                testId="menu-item-insert-citation"
+              >
                 <BookOpen className="h-4 w-4" />
                 Citation
               </MenuItem>
-              <MenuItem onSelect={onInsertClipboardFigure}>
+              <MenuItem
+                onSelect={onInsertClipboardFigure}
+                testId="menu-item-insert-clipboard-image"
+              >
                 <ImageIcon className="h-4 w-4" />
                 Clipboard Image
               </MenuItem>
-              <MenuItem onSelect={onOpenDiagram}>
+              <MenuItem onSelect={onOpenDiagram} testId="menu-item-open-diagram">
                 <Plus className="h-4 w-4" />
                 Diagram...
               </MenuItem>
@@ -135,7 +154,10 @@ export function TopMenuBar({
           </Menubar.Portal>
         </Menubar.Menu>
         <Menubar.Menu>
-          <Menubar.Trigger className="rounded px-3 py-1.5 outline-none hover:bg-[#303541] focus:bg-[#303541] data-[state=open]:bg-[#303541]">
+          <Menubar.Trigger
+            className="rounded px-3 py-1.5 outline-none hover:bg-[#303541] focus:bg-[#303541] data-[state=open]:bg-[#303541]"
+            data-testid="menu-trigger-plugin"
+          >
             Plugin
           </Menubar.Trigger>
           <Menubar.Portal>
@@ -143,6 +165,7 @@ export function TopMenuBar({
               {pluginsByCategory.length === 0 ? (
                 <Menubar.Item
                   className="flex cursor-default select-none items-center gap-2 rounded px-2 py-1.5 text-[#788190] outline-none"
+                  data-testid="menu-item-no-plugins"
                   disabled
                 >
                   <Plug className="h-4 w-4" />
@@ -151,7 +174,10 @@ export function TopMenuBar({
               ) : (
                 pluginsByCategory.map(({ category, items }) => (
                   <Menubar.Sub key={category}>
-                    <Menubar.SubTrigger className="flex cursor-default select-none items-center gap-2 rounded px-2 py-1.5 outline-none hover:bg-[#344154] focus:bg-[#344154] data-[state=open]:bg-[#344154]">
+                    <Menubar.SubTrigger
+                      className="flex cursor-default select-none items-center gap-2 rounded px-2 py-1.5 outline-none hover:bg-[#344154] focus:bg-[#344154] data-[state=open]:bg-[#344154]"
+                      data-testid={`menu-subtrigger-${category.toLowerCase()}`}
+                    >
                       <Plug className="h-4 w-4" />
                       {category}
                       <ChevronRight className="ml-auto h-4 w-4" />
@@ -162,6 +188,7 @@ export function TopMenuBar({
                           <MenuItem
                             key={plugin.id}
                             onSelect={() => onRunPlugin(plugin.id)}
+                            testId={`menu-item-${plugin.id}`}
                           >
                             <FileText className="h-4 w-4 shrink-0 text-[#8fb8ff]" />
                             {plugin.name}
@@ -201,14 +228,17 @@ function MenuItem({
   children,
   shortcut,
   onSelect,
+  testId,
 }: {
   children: React.ReactNode;
   shortcut?: string;
   onSelect: () => void;
+  testId: string;
 }) {
   return (
     <Menubar.Item
       className="flex cursor-default select-none items-center gap-2 rounded px-2 py-1.5 outline-none hover:bg-[#344154] focus:bg-[#344154] justify-between"
+      data-testid={testId}
       onSelect={onSelect}
     >
       <div className="flex items-center gap-2">{children}</div>
