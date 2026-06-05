@@ -7,11 +7,11 @@ use std::path::{Path, PathBuf};
 fn xdg_state_dir() -> PathBuf {
     let base = std::env::var("XDG_STATE_HOME")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            dirs::home_dir()
-                .expect("HOME must be set")
-                .join(".local/state")
-        });
+        .ok()
+        .or_else(|| {
+            dirs::home_dir().map(|h| h.join(".local/state"))
+        })
+        .expect("Failed to determine state directory: XDG_STATE_HOME is not set and HOME is unknown or inaccessible.");
     base.join("pandoc-preview")
 }
 
@@ -108,7 +108,11 @@ pub fn load_config_from_toml(config_path: &Path) -> Result<TomlConfig, String> {
 pub fn discover_config_path() -> PathBuf {
     let base = std::env::var("XDG_CONFIG_HOME")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| dirs::home_dir().expect("HOME must be set").join(".config"));
+        .ok()
+        .or_else(|| {
+            dirs::home_dir().map(|h| h.join(".config"))
+        })
+        .expect("Failed to determine config directory: XDG_CONFIG_HOME is not set and HOME is unknown or inaccessible.");
     base.join("pandoc-preview/config.toml")
 }
 
