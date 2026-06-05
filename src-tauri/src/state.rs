@@ -143,7 +143,6 @@ pub fn starter_template_for_tool(tool_id: &str) -> Result<String, String> {
         "qtikz" => Ok(include_str!("../../src-tauri/assets/diagram-templates/qtikz.tikz").to_string()),
         "tikzit" => Ok(include_str!("../../src-tauri/assets/diagram-templates/tikzit.tikz").to_string()),
         "inkscape" => Ok(include_str!("../../src-tauri/assets/diagram-templates/inkscape.svg").to_string()),
-        "drawio" => Ok(include_str!("../../src-tauri/assets/diagram-templates/drawio.drawio").to_string()),
         "xournal" => Ok(include_str!("../../src-tauri/assets/diagram-templates/xournal.xoj").to_string()),
         "xournalpp" => Ok(include_str!("../../src-tauri/assets/diagram-templates/xournalpp.xopp").to_string()),
         "ipe" => Ok(include_str!("../../src-tauri/assets/diagram-templates/ipe.ipe").to_string()),

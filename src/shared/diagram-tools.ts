@@ -21,7 +21,6 @@ const MARKDOWN_REFS: Record<string, (filename: string) => string> = {
   qtikz: (f) => `\\input{./figures/${f}}`,
   tikzit: (f) => `\\input{./figures/${f}}`,
   inkscape: (f) => `![](./figures/${f})`,
-  drawio: (f) => `![](./figures/${f})`,
   xournal: (f) => `![](./figures/${f})`,
   xournalpp: (f) => `![](./figures/${f})`,
   ipe: (f) => `![](./figures/${f})`,

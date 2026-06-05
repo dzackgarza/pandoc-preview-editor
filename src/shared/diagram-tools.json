@@ -17,23 +17,19 @@
   },
   {
     "id": "inkscape",
-    "executables": ["inkscape"],
+    "executables": [
+      "inkscape"
+    ],
     "ext": ".svg",
     "label": "Inkscape (Vector)",
     "desc": "Writes .svg drawings",
     "url": "https://inkscape.org/"
   },
   {
-    "id": "drawio",
-    "executables": ["drawio", "draw.io"],
-    "ext": ".drawio",
-    "label": "draw.io (Diagram)",
-    "desc": "Writes .drawio diagrams",
-    "url": "https://www.drawio.com/"
-  },
-  {
     "id": "xournal",
-    "executables": ["xournal"],
+    "executables": [
+      "xournal"
+    ],
     "ext": ".xoj",
     "label": "Xournal (Sketch)",
     "desc": "Writes .xoj notes",

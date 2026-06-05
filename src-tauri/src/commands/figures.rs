@@ -132,7 +132,7 @@ fn figure_kind(path: &Path) -> Option<String> {
         .map(|value| format!(".{}", value.to_string_lossy().to_lowercase()))?;
     match ext.as_str() {
         ".png" | ".jpg" | ".jpeg" | ".gif" | ".webp" => Some("clipboard".into()),
-        ".svg" | ".tikz" | ".drawio" | ".xoj" | ".xopp" | ".ipe" => {
+        ".svg" | ".tikz" | ".xoj" | ".xopp" | ".ipe" => {
             tool_id_for_ext(&ext).map(str::to_string)
         }
         _ => None,
