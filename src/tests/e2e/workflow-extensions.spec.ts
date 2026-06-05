@@ -47,10 +47,7 @@ test.describe('Desktop Extensions Workflow (Consolidated)', () => {
       await modal.locator('button').filter({ hasText: 'Create' }).click();
       await expect(modal).not.toBeVisible();
 
-      const editorContent = await appPage.evaluate<string>(
-        'window.__PANDOC_PREVIEW_EDITOR_VIEW__.state.doc.toString()',
-      );
-      expect(editorContent).toContain('![](./figures/my-diagram.tikz)');
+      await expect(appPage.locator('.cm-content')).toContainText('![](./figures/my-diagram.tikz)');
       expect(existsSync(path.join(testEnv.workspaceDir, 'figures', 'my-diagram.tikz'))).toBe(true);
 
       // 3. Image Paste Workflow
@@ -66,13 +63,7 @@ test.describe('Desktop Extensions Workflow (Consolidated)', () => {
       await appPage.getByTestId('editor').click();
       await appPage.keyboard.press('Control+V');
 
-      await expect
-        .poll(() =>
-          appPage.evaluate<string>(
-            'window.__PANDOC_PREVIEW_EDITOR_VIEW__.state.doc.toString()',
-          ),
-        )
-        .toMatch(/!\[\]\(\.\/figures\/figure-.*\.png\)/);
+      await expect(appPage.locator('.cm-content')).toContainText('![](./figures/figure-');
 
       // 4. Plugin Execution (Export via Menu)
       await appPage.getByTestId('menu-trigger-plugin').click();

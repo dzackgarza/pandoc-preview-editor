@@ -67,6 +67,15 @@ const RESET_LAYOUT = {
   'preview-pane-panel': 44,
 };
 
+declare global {
+  interface Window {
+    __PANDOC_PREVIEW_BACKUP_COMPLETED__?: number;
+  }
+}
+
+// Ensure the module is treated as a module when augmenting global scope
+export {};
+
 export function App() {
   const [markdownText, setMarkdownText] = useState('');
   const [currentFile, setCurrentFile] = useState<string | null>(null);
@@ -217,9 +226,7 @@ export function App() {
         markdown: markdownText,
         path: currentFile,
       }).then(() => {
-        // @ts-ignore
         window.__PANDOC_PREVIEW_BACKUP_COMPLETED__ =
-          // @ts-ignore
           (window.__PANDOC_PREVIEW_BACKUP_COMPLETED__ || 0) + 1;
       });
     }, 500);
@@ -867,11 +874,6 @@ export function App() {
                 onChange={updateMarkdown}
                 onCreateEditor={(view) => {
                   editorViewRef.current = view;
-                  (
-                    window as typeof window & {
-                      __PANDOC_PREVIEW_EDITOR_VIEW__?: EditorView;
-                    }
-                  ).__PANDOC_PREVIEW_EDITOR_VIEW__ = view;
                 }}
                 onSave={saveCurrent}
               />

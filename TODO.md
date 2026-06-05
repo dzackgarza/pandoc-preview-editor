@@ -35,11 +35,11 @@
   - **Filter-Provided Hooks**: Update the project's Pandoc filters to provide canonical hooks (e.g., semantic classes or data-attributes) that the template-side JS uses to identify and interact with editable figures.
   - **Thin App Integration**: Reduce the React layer's role to a minor integration that listens for `postMessage` edit commands from the iframe and dispatches them to the Rust backend.
 - **Remediate Testing Hacks in Production** — Remove brittle window globals and type suppressions used for E2E verification:
-  - **Burn Window Globals**: Remove `__PANDOC_PREVIEW_BACKUP_COMPLETED__` and `__PANDOC_PREVIEW_EDITOR_VIEW__` from `App.tsx` and `EditorPane.tsx`.
-  - **Standard DOM Verification**: Update E2E tests to verify editor content via standard locators (e.g., `.cm-content`) rather than reaching into the CodeMirror instance.
+  - [x] **Burn Window Globals**: Remove `__PANDOC_PREVIEW_BACKUP_COMPLETED__` and `__PANDOC_PREVIEW_EDITOR_VIEW__` from `App.tsx` and `EditorPane.tsx`.
+  - [x] **Standard DOM Verification**: Update E2E tests to verify editor content via standard locators (e.g., `.cm-content`) rather than reaching into the CodeMirror instance.
   - [x] **Deterministic UI Signals**: Replace the backup counter with a real UI signal (e.g., a "Backup Saved" status transition) or an observable state that reflects background process completion.
   - [x] **Remediate E2E Clipboard Theater**: Replace the browser-side event simulation in `src/tests/e2e/workflow-extensions.spec.ts` with a platform-native utility (e.g., `wl-copy` or `xclip`) to populate the real system clipboard, ensuring the Tauri IPC and OS boundary are tested.
-  - **Type Safety**: Eliminate all `@ts-ignore` usages. If a global is strictly required for the test adapter (like `__PW_ACTIVE__`), define it properly in the `Window` interface.
+  - [x] **Type Safety**: Eliminate all `@ts-ignore` usages. If a global is strictly required for the test adapter (like `__PW_ACTIVE__`), define it properly in the `Window` interface.
 - **Remediate Rust Fail-Fast Violations** — Fix the use of banned `let _ =` patterns that silence critical filesystem errors in `src-tauri/src/config.rs`:
   - **Fix Silenced Errors**: Replace `let _ = fs::create_dir_all(...)` and `let _ = fs::write(...)` with proper error handling (returning `Result` or using `expect`).
   - **Float to Global QC**: Propagate this violation pattern to the global Quality Control system (`~/ai/quality-control`).

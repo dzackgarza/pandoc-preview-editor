@@ -7,34 +7,17 @@ export type AppPage = TauriPage;
 
 /**
  * Replace all content in the CodeMirror editor.
- * Uses TauriPage.evaluate(string).  Polls up to 10s for the editor hook.
+ * Uses standard DOM interactions.
  */
 export async function replaceEditorContents(
   appPage: AppPage,
   text: string,
 ): Promise<void> {
-  // eslint-disable-next-line sonarjs/no-nested-functions
-  await expect
-    .poll(
-      async () => {
-        return appPage.evaluate(`
-          (() => {
-            const view = window.__PANDOC_PREVIEW_EDITOR_VIEW__;
-            if (!view) return 'NO_HOOK';
-            view.dispatch({
-              changes: {
-                from: 0,
-                to: view.state.doc.length,
-                insert: ${JSON.stringify(text)},
-              },
-            });
-            return 'OK';
-          })()
-        `);
-      },
-      { timeout: 10000, intervals: [200, 500] },
-    )
-    .toBe('OK');
+  const content = appPage.locator('.cm-content');
+  await content.click();
+  await appPage.keyboard.press('Control+A');
+  await appPage.keyboard.press('Backspace');
+  await content.fill(text);
 }
 
 /**
