@@ -46,7 +46,7 @@ test.describe('Desktop Editing Workflow (Consolidated)', () => {
       // 2. Editing & Preview State
       const updatedMarkdown = '# Launch proof\n\nEdited content.\n';
       await replaceEditorContents(appPage, updatedMarkdown);
-      await expect(appPage.locator('#save-state')).toContainText('unsaved');
+      await expect(appPage.locator('#save-state')).toHaveAttribute('data-state', 'dirty');
       await expect.poll(() => previewText(appPage)).toContain('Edited content.');
 
       // 3. Undo/Redo Check
@@ -58,7 +58,7 @@ test.describe('Desktop Editing Workflow (Consolidated)', () => {
       // 4. Persistence (Save)
       await appPage.getByTestId('menu-trigger-file').click();
       await appPage.getByTestId('menu-item-save').click();
-      await expect(appPage.locator('#save-state')).toContainText('saved');
+      await expect(appPage.locator('#save-state')).toHaveAttribute('data-state', 'saved');
       expect(readFileSync(docPath, 'utf8')).toBe(updatedMarkdown);
 
       // 5. Explorer Navigation & Dirty State Hand-off
@@ -91,7 +91,7 @@ test.describe('Desktop Editing Workflow (Consolidated)', () => {
       // 8. Backup Recovery Proof
       const recoveryMarkdown = '# Recovered\n\nDirty content.\n';
       await replaceEditorContents(appPage, recoveryMarkdown);
-      await expect(appPage.locator('#save-state')).toContainText('unsaved');
+      await expect(appPage.locator('#save-state')).toHaveAttribute('data-state', 'dirty');
       
       // Wait for the background backup signal
       await expect.poll(async () => {

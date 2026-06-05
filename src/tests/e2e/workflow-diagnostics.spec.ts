@@ -36,7 +36,7 @@ test.describe('Desktop Diagnostics Workflow (Consolidated)', () => {
       await replaceEditorContents(appPage, '# Broken\n\nForce render.');
       
       // 2. Status Bar Error State
-      await expect(appPage.locator('#status')).toContainText('error', { timeout: 10000 });
+      await expect(appPage.locator('#status')).toHaveAttribute('data-state', 'error', { timeout: 10000 });
 
       // 3. Diagnostics Overlay Proof
       const diagOverlay = appPage.locator('#diagnostics');
@@ -54,9 +54,9 @@ test.describe('Desktop Diagnostics Workflow (Consolidated)', () => {
       await expect(dialog).not.toBeVisible();
 
       // Status should return to ready/saved and overlay should disappear
-      await expect(appPage.locator('#status')).not.toContainText('error');
+      await expect(appPage.locator('#status')).not.toHaveAttribute('data-state', 'error');
       await expect(diagOverlay).not.toBeVisible();
-      await expect(appPage.locator('#status')).toContainText(/ready|saved/);
+      await expect(appPage.locator('#status')).toHaveAttribute('data-state', 'idle');
     }
   );
 });

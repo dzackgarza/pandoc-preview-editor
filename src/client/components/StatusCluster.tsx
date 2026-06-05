@@ -30,6 +30,7 @@ export function StatusCluster({
     <footer className="flex h-8 shrink-0 items-center gap-4 border-t border-[#2b2f38] bg-[#20232b] px-3 text-xs text-[#aab2c0]">
       <span
         id="status"
+        data-state={status}
         className={cn('flex items-center gap-1.5', statusView.className)}
       >
         {statusView.icon}
@@ -43,6 +44,7 @@ export function StatusCluster({
       ) : null}
       <span
         id="save-state"
+        data-state={saveState}
         className={cn('flex items-center gap-1.5', saveView.className)}
       >
         {saveView.icon}

@@ -79,14 +79,14 @@ test.describe('Desktop Extensions Workflow (Consolidated)', () => {
       await appPage.getByTestId('menu-subtrigger-export').hover();
       await appPage.getByTestId('menu-item-export-html').click();
 
-      await expect(appPage.locator('#status')).toContainText(/ready|saved/, { timeout: 15000 });
+      await expect(appPage.locator('#status')).toHaveAttribute('data-state', 'idle', { timeout: 15000 });
       expect(existsSync(htmlPath)).toBe(true);
 
       await appPage.getByTestId('menu-trigger-plugin').click();
       await appPage.getByTestId('menu-subtrigger-export').hover();
       await appPage.getByTestId('menu-item-export-pdf').click();
 
-      await expect(appPage.locator('#status')).toContainText(/ready|saved/, { timeout: 15000 });
+      await expect(appPage.locator('#status')).toHaveAttribute('data-state', 'idle', { timeout: 15000 });
       expect(readFileSync(pdfPath).subarray(0, 5).toString()).toBe('%PDF-');
 
       // 5. Filter Rendering (TikZjax)
