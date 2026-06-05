@@ -13,6 +13,7 @@ export function StatusCluster({
   savedAt,
   saveState,
   status,
+  backupSaved,
 }: {
   currentFile: string | null;
   durationMs: number | null;
@@ -21,6 +22,7 @@ export function StatusCluster({
   savedAt: Date | null;
   saveState: SaveState;
   status: RenderStatus;
+  backupSaved: Date | null;
 }) {
   const statusView = statusDisplay(status);
   const saveView = saveDisplay(saveState);
@@ -45,19 +47,12 @@ export function StatusCluster({
       <span
         id="save-state"
         data-state={saveState}
+        data-backup-saved={backupSaved ? backupSaved.getTime() : 0}
         className={cn('flex items-center gap-1.5', saveView.className)}
       >
         {saveView.icon}
         {saveView.label}
       </span>
-      {saveState === 'dirty' ? (
-        <span
-          id="auto-backup-state"
-          className="flex items-center gap-1.5 text-[#e5c76b]"
-        >
-          ephemeral auto-backup active
-        </span>
-      ) : null}
       <span
         id="plugin-state"
         className={cn('flex items-center gap-1.5', pluginView.className)}

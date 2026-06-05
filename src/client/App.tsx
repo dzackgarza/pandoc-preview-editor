@@ -219,6 +219,8 @@ export function App() {
     return clearRenderTimer;
   }, [clearRenderTimer, markdownText, scheduleRender]);
 
+  const [lastBackupSaved, setLastBackupSaved] = useState<Date | null>(null);
+
   useEffect(() => {
     if (saveState !== 'dirty' || !currentFile) return;
     const handle = window.setTimeout(() => {
@@ -226,8 +228,7 @@ export function App() {
         markdown: markdownText,
         path: currentFile,
       }).then(() => {
-        window.__PANDOC_PREVIEW_BACKUP_COMPLETED__ =
-          (window.__PANDOC_PREVIEW_BACKUP_COMPLETED__ || 0) + 1;
+        setLastBackupSaved(new Date());
       });
     }, 500);
     return () => window.clearTimeout(handle);
@@ -925,6 +926,7 @@ export function App() {
           savedAt={savedAt}
           saveState={saveState}
           status={status}
+          backupSaved={lastBackupSaved}
         />
         <FileSelectorDialog
           mode={saveAsDialogMode}

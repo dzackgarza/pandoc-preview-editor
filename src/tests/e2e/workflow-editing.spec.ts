@@ -95,7 +95,8 @@ test.describe('Desktop Editing Workflow (Consolidated)', () => {
       
       // Wait for the background backup signal
       await expect.poll(async () => {
-        return appPage.evaluate<number>('window.__PANDOC_PREVIEW_BACKUP_COMPLETED__ || 0');
+        const attr = await appPage.locator('#save-state').getAttribute('data-backup-saved');
+        return parseInt(attr || '0', 10);
       }, { timeout: 5000 }).toBeGreaterThan(0);
       
       await appPage.reload(); // Simulate crash/restart
