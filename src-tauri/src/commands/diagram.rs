@@ -72,26 +72,15 @@ pub fn get_diagram_tools() -> serde_json::Value {
 pub fn create_diagram_file(
     kind: String,
     filename: String,
-    document_path: String,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<serde_json::Value, String> {
     let s = state.lock().unwrap();
-    let workspace_root = s.workspace_root()?;
-    let resolved_doc = if Path::new(&document_path).is_absolute() {
-        PathBuf::from(&document_path)
-    } else {
-        crate::fs_utils::resolve_inside(&workspace_root, &document_path)?
-    };
-    if s.is_temp_file || s.file.is_none() || s.file.as_ref() != Some(&resolved_doc) {
-        return Err("save the document before adding figures".into());
-    }
-    let figures_dir = resolved_doc
-        .parent()
-        .ok_or_else(|| format!("document path has no parent: {}", resolved_doc.display()))?
-        .join("figures");
+    let figures_dir = s.figures_dir.clone();
+    drop(s);
+
     let figure_path = normalize_path(&figures_dir.join(&filename));
     if !path_is_inside(&figures_dir, &figure_path) {
-        return Err("figure path escapes figures directory".into());
+        return Err("figure path escapes global figures directory".into());
     }
     if figure_path.exists() {
         return Err("figure already exists".into());
@@ -99,11 +88,10 @@ pub fn create_diagram_file(
     fs::create_dir_all(&figures_dir).map_err(|e| e.to_string())?;
     let template = starter_template_for_tool(&kind)?;
     fs::write(&figure_path, template).map_err(|e| e.to_string())?;
-    let relative_path = format!("figures/{}", filename);
+
     Ok(serde_json::json!({
         "ok": true,
         "absolutePath": figure_path.to_string_lossy(),
-        "relativePath": relative_path,
     }))
 }
 

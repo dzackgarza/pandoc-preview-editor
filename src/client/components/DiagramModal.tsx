@@ -156,21 +156,14 @@ export function DiagramModal({
     setLoading(true);
     setError(null);
     try {
-      const docPath = await ensureRealFile();
-      if (!docPath) {
-        setLoading(false);
-        return;
-      }
-
       const contentBase64 = await blobToBase64(clipboardBlob);
       const data = await invoke<{
         ok: boolean;
         path: string;
-        relativePath: string;
         markdown: string;
       }>('save_figure_asset', {
         contentBase64,
-        documentPath: docPath,
+        documentPath: '', // Logic now uses global figures_dir
         mimeType: clipboardBlob.type,
       });
 
@@ -204,20 +197,12 @@ export function DiagramModal({
     }
 
     try {
-      const docPath = await ensureRealFile();
-      if (!docPath) {
-        setLoading(false);
-        return;
-      }
-
       const fileData = await invoke<{
         ok: boolean;
         absolutePath: string;
-        relativePath: string;
       }>('create_diagram_file', {
         kind: desktopTool,
         filename: finalName,
-        documentPath: docPath,
       });
 
       if (!fileData.ok) {
@@ -232,7 +217,7 @@ export function DiagramModal({
       const activeTool =
         DIAGRAM_TOOLS.find((t: DiagramTool) => t.id === desktopTool) ??
         DIAGRAM_TOOLS[0];
-      const markdownRef = activeTool.markdownRef(finalName);
+      const markdownRef = activeTool.markdownRef(fileData.absolutePath);
 
       insertTextAtCursor(`\n${markdownRef}\n`);
       onClose();
@@ -430,8 +415,8 @@ export function DiagramModal({
                 <div className="max-w-md w-full flex flex-col gap-4">
                   <div className="text-xs text-[#788190] text-center">
                     Select a local desktop vector/diagram app. The server will
-                    instantiate a starter file template inside your document's
-                    `./figures/` folder, launch the app, and insert a relative link
+                    instantiate a starter file template inside your global
+                    figures folder, launch the app, and insert an absolute link
                     automatically.
                   </div>
 
@@ -500,7 +485,7 @@ export function DiagramModal({
                     <div className="text-xs text-[#5c6370] font-mono">
                       Will create:{' '}
                       <span className="text-[#aab2c0]">
-                        figures/{filename || 'filename'}
+                        {filename || 'filename'}
                         {
                           (
                             DIAGRAM_TOOLS.find(
