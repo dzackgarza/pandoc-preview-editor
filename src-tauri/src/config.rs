@@ -318,6 +318,92 @@ filters_dir = "/tmp/filters"
     }
 
     #[test]
+    fn existing_config_missing_template_asset_fails_before_state_build() {
+        let dir = tempfile::tempdir().expect("tempdir must be available");
+        let config_path = dir.path().join("config.toml");
+        let templates_dir = dir.path().join("templates");
+        let filters_dir = dir.path().join("filters");
+        let figures_dir = dir.path().join("figures");
+        fs::create_dir_all(&templates_dir).expect("templates dir must be writable");
+        fs::create_dir_all(&filters_dir).expect("filters dir must be writable");
+        fs::create_dir_all(&figures_dir).expect("figures dir must be writable");
+        let missing_template = templates_dir.join("pandoc_preview_template.html");
+
+        fs::write(
+            &config_path,
+            format!(
+                r#"
+[render]
+debounce_ms = 100
+timeout_ms = 20000
+restore_last_file = false
+
+[pandoc]
+render_command = "pandoc --template={} -t html5"
+templates_dir = "{}"
+filters_dir = "{}"
+figures_dir = "{}"
+"#,
+                missing_template.display(),
+                templates_dir.display(),
+                filters_dir.display(),
+                figures_dir.display()
+            ),
+        )
+        .expect("test config must be writable");
+
+        let error = build_initial_state_from_config_path(&config_path).unwrap_err();
+
+        assert!(error.contains("missing configured Pandoc template"));
+        assert!(error.contains(&missing_template.display().to_string()));
+    }
+
+    #[test]
+    fn existing_config_missing_lua_filter_asset_fails_before_state_build() {
+        let dir = tempfile::tempdir().expect("tempdir must be available");
+        let config_path = dir.path().join("config.toml");
+        let templates_dir = dir.path().join("templates");
+        let filters_dir = dir.path().join("filters");
+        let figures_dir = dir.path().join("figures");
+        let template = templates_dir.join("pandoc_preview_template.html");
+        let missing_filter = filters_dir.join("tikzcd.lua");
+        fs::create_dir_all(&templates_dir).expect("templates dir must be writable");
+        fs::create_dir_all(&filters_dir).expect("filters dir must be writable");
+        fs::create_dir_all(&figures_dir).expect("figures dir must be writable");
+        fs::write(&template, "<!doctype html><html><body>$body$</body></html>")
+            .expect("template must be writable");
+
+        fs::write(
+            &config_path,
+            format!(
+                r#"
+[render]
+debounce_ms = 100
+timeout_ms = 20000
+restore_last_file = false
+
+[pandoc]
+render_command = "pandoc --template={} --lua-filter={} -t html5"
+templates_dir = "{}"
+filters_dir = "{}"
+figures_dir = "{}"
+"#,
+                template.display(),
+                missing_filter.display(),
+                templates_dir.display(),
+                filters_dir.display(),
+                figures_dir.display()
+            ),
+        )
+        .expect("test config must be writable");
+
+        let error = build_initial_state_from_config_path(&config_path).unwrap_err();
+
+        assert!(error.contains("missing configured Pandoc lua-filter"));
+        assert!(error.contains(&missing_filter.display().to_string()));
+    }
+
+    #[test]
     fn malformed_existing_config_fails_loudly() {
         let dir = tempfile::tempdir().expect("tempdir must be available");
         let config_path = dir.path().join("config.toml");
