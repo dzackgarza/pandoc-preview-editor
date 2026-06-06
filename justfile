@@ -94,8 +94,6 @@ test: _agent-contracts _typecheck _check-dependencies
         status="$?"
         cleanup_status=0
 
-        cargo clean --manifest-path src-tauri/Cargo.toml --target-dir "$test_target_dir" || cleanup_status="$?"
-
         if [ "$status" -eq 0 ]; then
             if [ -e test-results ]; then
                 gio trash test-results

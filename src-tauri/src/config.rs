@@ -1,3 +1,4 @@
+use crate::command_flags::ParsedCommandFlags;
 use crate::state::AppState;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -24,9 +25,13 @@ fn state_file_path() -> PathBuf {
 }
 
 pub fn get_backup_path(document_path: &Path) -> Result<PathBuf, String> {
-    let canonical = document_path
-        .canonicalize()
-        .map_err(|e| format!("failed to canonicalize document path {}: {}", document_path.display(), e))?;
+    let canonical = document_path.canonicalize().map_err(|e| {
+        format!(
+            "failed to canonicalize document path {}: {}",
+            document_path.display(),
+            e
+        )
+    })?;
     let mut hasher = Sha256::new();
     hasher.update(canonical.to_string_lossy().as_bytes());
     let hash = hex::encode(hasher.finalize());
@@ -42,11 +47,13 @@ pub fn save_session_state(last_file: &Path, is_temp_file: bool) {
         "is_temp_file": is_temp_file,
     });
     let state_file = state_file_path();
-    fs::write(
-        &state_file,
-        serde_json::to_string_pretty(&state).unwrap(),
-    )
-    .unwrap_or_else(|e| panic!("Failed to write session state to {}: {}", state_file.display(), e));
+    fs::write(&state_file, serde_json::to_string_pretty(&state).unwrap()).unwrap_or_else(|e| {
+        panic!(
+            "Failed to write session state to {}: {}",
+            state_file.display(),
+            e
+        )
+    });
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -67,7 +74,6 @@ pub struct TomlPandocSection {
     pub render_command: String,
     pub templates_dir: String,
     pub filters_dir: String,
-    #[serde(default)]
     pub figures_dir: String,
 }
 
@@ -105,6 +111,147 @@ pub fn load_config_from_toml(config_path: &Path) -> Result<TomlConfig, String> {
         .map_err(|e| format!("failed to parse config {}: {}", config_path.display(), e))
 }
 
+pub fn expand_config_path(raw_path: &str) -> Result<PathBuf, String> {
+    if raw_path.trim().is_empty() {
+        return Err("config path must not be empty".into());
+    }
+    if raw_path != raw_path.trim() {
+        return Err(format!(
+            "config path must not contain leading or trailing whitespace: {raw_path:?}"
+        ));
+    }
+    if raw_path == "~" {
+        return dirs::home_dir()
+            .ok_or_else(|| "HOME must be set to expand config path `~`".to_string());
+    }
+    if let Some(rest) = raw_path.strip_prefix("~/") {
+        return dirs::home_dir()
+            .map(|home| home.join(rest))
+            .ok_or_else(|| format!("HOME must be set to expand config path `{raw_path}`"));
+    }
+    if raw_path == "$HOME" || raw_path == "${HOME}" {
+        return dirs::home_dir()
+            .ok_or_else(|| format!("HOME must be set to expand config path `{raw_path}`"));
+    }
+    if let Some(rest) = raw_path.strip_prefix("$HOME/") {
+        return dirs::home_dir()
+            .map(|home| home.join(rest))
+            .ok_or_else(|| format!("HOME must be set to expand config path `{raw_path}`"));
+    }
+    if let Some(rest) = raw_path.strip_prefix("${HOME}/") {
+        return dirs::home_dir()
+            .map(|home| home.join(rest))
+            .ok_or_else(|| format!("HOME must be set to expand config path `{raw_path}`"));
+    }
+    if raw_path.starts_with('~') {
+        return Err(format!(
+            "unsupported home-relative config path `{raw_path}`; use `~/...`"
+        ));
+    }
+    if raw_path.starts_with('$') {
+        return Err(format!(
+            "unsupported environment-relative config path `{raw_path}`; only $HOME and ${{HOME}} are accepted"
+        ));
+    }
+    Ok(PathBuf::from(raw_path))
+}
+
+pub fn validate_existing_dir(label: &str, path: &Path) -> Result<PathBuf, String> {
+    let metadata = fs::metadata(path).map_err(|e| {
+        format!(
+            "configured Pandoc {label} does not exist: {}: {e}",
+            path.display()
+        )
+    })?;
+    if !metadata.is_dir() {
+        return Err(format!(
+            "configured Pandoc {label} is not a directory: {}",
+            path.display()
+        ));
+    }
+    fs::canonicalize(path).map_err(|e| {
+        format!(
+            "failed to canonicalize configured Pandoc {label} {}: {e}",
+            path.display()
+        )
+    })
+}
+
+fn validate_asset_file(
+    kind: &str,
+    raw_path: &str,
+    base_dir: &Path,
+    base_label: &str,
+) -> Result<(), String> {
+    if raw_path == "~" || raw_path.starts_with("~/") {
+        return Err(format!(
+            "configured Pandoc {kind} uses `{raw_path}`, but the renderer shell does not expand `~` inside flag values; use $HOME/... or an absolute path"
+        ));
+    }
+    let expanded = expand_config_path(raw_path)?;
+    let candidate = if expanded.is_absolute() {
+        expanded
+    } else {
+        base_dir.join(expanded)
+    };
+    let metadata = fs::metadata(&candidate).map_err(|e| {
+        format!(
+            "missing configured Pandoc {kind}: {}: {e}",
+            candidate.display()
+        )
+    })?;
+    if !metadata.is_file() {
+        return Err(format!(
+            "configured Pandoc {kind} is not a file: {}",
+            candidate.display()
+        ));
+    }
+    let canonical = fs::canonicalize(&candidate).map_err(|e| {
+        format!(
+            "failed to canonicalize configured Pandoc {kind} {}: {e}",
+            candidate.display()
+        )
+    })?;
+    if !canonical.starts_with(base_dir) {
+        return Err(format!(
+            "configured Pandoc {kind} must resolve inside {base_label}: {} is outside {}",
+            canonical.display(),
+            base_dir.display()
+        ));
+    }
+    Ok(())
+}
+
+pub fn validate_render_assets(
+    parsed_flags: &ParsedCommandFlags,
+    templates_dir: &Path,
+    filters_dir: &Path,
+    figures_dir: &Path,
+) -> Result<(), String> {
+    let canonical_templates_dir = validate_existing_dir("templates_dir", templates_dir)?;
+    let canonical_filters_dir = validate_existing_dir("filters_dir", filters_dir)?;
+    validate_existing_dir("figures_dir", figures_dir)?;
+
+    if let Some(template) = &parsed_flags.template {
+        validate_asset_file(
+            "template",
+            template,
+            &canonical_templates_dir,
+            "templates_dir",
+        )?;
+    }
+    for filter in &parsed_flags.filters {
+        validate_asset_file(
+            &filter.flag,
+            &filter.path,
+            &canonical_filters_dir,
+            "filters_dir",
+        )?;
+    }
+
+    Ok(())
+}
+
 pub fn discover_config_path() -> PathBuf {
     let base = std::env::var("XDG_CONFIG_HOME")
         .map(PathBuf::from)
@@ -132,15 +279,11 @@ pub fn build_initial_state_from_config_path(config_path: &Path) -> Result<AppSta
 
     let render_command = pandoc.render_command;
     let parsed_flags = crate::command_flags::parse_render_command(&render_command)?;
-    let templates_dir = PathBuf::from(pandoc.templates_dir);
-    let filters_dir = PathBuf::from(pandoc.filters_dir);
-    
-    // Default to ~/.pandoc/figures if empty or missing, per opinionated decision
-    let figures_dir = if pandoc.figures_dir.trim().is_empty() {
-        dirs::home_dir().expect("HOME must be set").join(".pandoc/figures")
-    } else {
-        PathBuf::from(pandoc.figures_dir)
-    };
+    let templates_dir = expand_config_path(&pandoc.templates_dir)?;
+    let filters_dir = expand_config_path(&pandoc.filters_dir)?;
+
+    let figures_dir = expand_config_path(&pandoc.figures_dir)?;
+    validate_render_assets(&parsed_flags, &templates_dir, &filters_dir, &figures_dir)?;
 
     let debounce_ms = render.debounce_ms;
     let timeout_ms = render.timeout_ms;
@@ -277,14 +420,26 @@ mod tests {
     fn existing_config_missing_render_section_fails_loudly() {
         let dir = tempfile::tempdir().expect("tempdir must be available");
         let config_path = dir.path().join("config.toml");
+        let templates_dir = dir.path().join("templates");
+        let filters_dir = dir.path().join("filters");
+        let figures_dir = dir.path().join("figures");
+        fs::create_dir_all(&templates_dir).expect("templates dir must be writable");
+        fs::create_dir_all(&filters_dir).expect("filters dir must be writable");
+        fs::create_dir_all(&figures_dir).expect("figures dir must be writable");
         fs::write(
             &config_path,
-            r#"
+            format!(
+                r#"
 [pandoc]
 render_command = "pandoc -t html5"
-templates_dir = "/tmp/templates"
-filters_dir = "/tmp/filters"
+templates_dir = "{}"
+filters_dir = "{}"
+figures_dir = "{}"
 "#,
+                templates_dir.display(),
+                filters_dir.display(),
+                figures_dir.display()
+            ),
         )
         .expect("test config must be writable");
 
@@ -315,6 +470,40 @@ filters_dir = "/tmp/filters"
         let error = build_initial_state_from_config_path(&config_path).unwrap_err();
 
         assert!(error.contains("missing field `render_command`"));
+    }
+
+    #[test]
+    fn existing_config_missing_figures_dir_fails_loudly() {
+        let dir = tempfile::tempdir().expect("tempdir must be available");
+        let config_path = dir.path().join("config.toml");
+        let templates_dir = dir.path().join("templates");
+        let filters_dir = dir.path().join("filters");
+        fs::create_dir_all(&templates_dir).expect("templates dir must be writable");
+        fs::create_dir_all(&filters_dir).expect("filters dir must be writable");
+
+        fs::write(
+            &config_path,
+            format!(
+                r#"
+[render]
+debounce_ms = 100
+timeout_ms = 20000
+restore_last_file = false
+
+[pandoc]
+render_command = "pandoc -t html5"
+templates_dir = "{}"
+filters_dir = "{}"
+"#,
+                templates_dir.display(),
+                filters_dir.display()
+            ),
+        )
+        .expect("test config must be writable");
+
+        let error = build_initial_state_from_config_path(&config_path).unwrap_err();
+
+        assert!(error.contains("missing field `figures_dir`"));
     }
 
     #[test]
@@ -356,6 +545,44 @@ figures_dir = "{}"
 
         assert!(error.contains("missing configured Pandoc template"));
         assert!(error.contains(&missing_template.display().to_string()));
+    }
+
+    #[test]
+    fn existing_config_home_relative_template_flag_fails_before_render() {
+        let dir = tempfile::tempdir().expect("tempdir must be available");
+        let config_path = dir.path().join("config.toml");
+        let templates_dir = dir.path().join("templates");
+        let filters_dir = dir.path().join("filters");
+        let figures_dir = dir.path().join("figures");
+        fs::create_dir_all(&templates_dir).expect("templates dir must be writable");
+        fs::create_dir_all(&filters_dir).expect("filters dir must be writable");
+        fs::create_dir_all(&figures_dir).expect("figures dir must be writable");
+
+        fs::write(
+            &config_path,
+            format!(
+                r#"
+[render]
+debounce_ms = 100
+timeout_ms = 20000
+restore_last_file = false
+
+[pandoc]
+render_command = "pandoc --template=~/.pandoc/templates/pandoc_preview_template.html -t html5"
+templates_dir = "{}"
+filters_dir = "{}"
+figures_dir = "{}"
+"#,
+                templates_dir.display(),
+                filters_dir.display(),
+                figures_dir.display()
+            ),
+        )
+        .expect("test config must be writable");
+
+        let error = build_initial_state_from_config_path(&config_path).unwrap_err();
+
+        assert!(error.contains("renderer shell does not expand `~` inside flag values"));
     }
 
     #[test]
@@ -419,9 +646,16 @@ figures_dir = "{}"
     fn complete_existing_config_builds_configured_initial_state() {
         let dir = tempfile::tempdir().expect("tempdir must be available");
         let config_path = dir.path().join("config.toml");
+        let templates_dir = dir.path().join("templates");
+        let filters_dir = dir.path().join("filters");
+        let figures_dir = dir.path().join("figures");
+        fs::create_dir_all(&templates_dir).expect("templates dir must be writable");
+        fs::create_dir_all(&filters_dir).expect("filters dir must be writable");
+        fs::create_dir_all(&figures_dir).expect("figures dir must be writable");
         fs::write(
             &config_path,
-            r#"
+            format!(
+                r#"
 [render]
 debounce_ms = 125
 timeout_ms = 45000
@@ -429,10 +663,14 @@ restore_last_file = false
 
 [pandoc]
 render_command = "pandoc --standalone -t html5"
-templates_dir = "/tmp/templates"
-filters_dir = "/tmp/filters"
-figures_dir = "/tmp/figures"
+templates_dir = "{}"
+filters_dir = "{}"
+figures_dir = "{}"
 "#,
+                templates_dir.display(),
+                filters_dir.display(),
+                figures_dir.display()
+            ),
         )
         .expect("test config must be writable");
 
@@ -442,8 +680,8 @@ figures_dir = "/tmp/figures"
         assert_eq!(state.debounce_ms, 125);
         assert_eq!(state.timeout_ms, 45_000);
         assert!(!state.restore_last_file);
-        assert_eq!(state.templates_dir, PathBuf::from("/tmp/templates"));
-        assert_eq!(state.filters_dir, PathBuf::from("/tmp/filters"));
-        assert_eq!(state.figures_dir, PathBuf::from("/tmp/figures"));
+        assert_eq!(state.templates_dir, templates_dir);
+        assert_eq!(state.filters_dir, filters_dir);
+        assert_eq!(state.figures_dir, figures_dir);
     }
 }

@@ -272,11 +272,7 @@ pub fn browse(dir: String) -> Result<BrowseResult, String> {
             continue;
         }
         let abs = entry.path();
-        let kind = if abs.is_dir() {
-            "directory"
-        } else {
-            "file"
-        };
+        let kind = if abs.is_dir() { "directory" } else { "file" };
         entries.push(BrowseEntry {
             name,
             absolute_path: abs.to_string_lossy().into_owned(),

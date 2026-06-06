@@ -8,6 +8,14 @@ const devUrl = 'http://localhost:5173';
 const mcpSocket = path.join(repoRoot, '.agents', 'tmp', 'tauri-playwright.sock');
 mkdirSync(path.dirname(mcpSocket), { recursive: true });
 
+export const PANDOC_TEMPLATE_NAME = 'pandoc_preview_template.html';
+export const PANDOC_TEMPLATE_CONTENT =
+  '<!doctype html><html><head><meta charset="utf-8"></head><body>$body$</body></html>\n';
+export const PANDOC_FILTER_FILES = [
+  { name: 'tikzcd.lua', content: 'return {}\n' },
+  { name: 'convert_amsthm_envs.lua', content: 'return {}\n' },
+] as const;
+
 const base = createTauriTest({
   devUrl,
   mcpSocket,
@@ -25,6 +33,9 @@ export type TestEnvironment = {
   xdgStateHome: string;
   configPath: string;
   sessionStatePath: string;
+  templatesDir: string;
+  filtersDir: string;
+  figuresDir: string;
   writeConfig: (overrides?: {
     debounceMs?: number;
     timeoutMs?: number;
@@ -32,6 +43,7 @@ export type TestEnvironment = {
     renderCommand?: string;
     templatesDir?: string;
     filtersDir?: string;
+    figuresDir?: string;
   }) => void;
   writeSessionState: (filePath: string, isTempFile?: boolean) => void;
   readConfig: () => string;
@@ -43,14 +55,58 @@ function ensureDir(dir: string) {
   mkdirSync(dir, { recursive: true });
 }
 
+function pandocDirs(
+  env: Pick<TestEnvironment, 'homeDir'>,
+  overrides: Parameters<TestEnvironment['writeConfig']>[0] = {},
+) {
+  return {
+    templatesDir: overrides.templatesDir ?? path.join(env.homeDir, '.pandoc', 'templates'),
+    filtersDir: overrides.filtersDir ?? path.join(env.homeDir, '.pandoc', 'filters'),
+    figuresDir: overrides.figuresDir ?? path.join(env.homeDir, '.pandoc', 'figures'),
+  };
+}
+
+function defaultRenderCommand(templatesDir: string, filtersDir: string) {
+  return [
+    'pandoc',
+    '-f markdown+tex_math_dollars+citations',
+    '--standalone',
+    '--citeproc',
+    '--mathjax',
+    `--template=${path.join(templatesDir, PANDOC_TEMPLATE_NAME)}`,
+    ...PANDOC_FILTER_FILES.map(({ name }) => `--lua-filter=${path.join(filtersDir, name)}`),
+    '--to=html5',
+  ].join(' ');
+}
+
+function assertFileContent(filePath: string, expectedContent: string) {
+  const actualContent = readFileSync(filePath, 'utf-8');
+  if (actualContent !== expectedContent) {
+    throw new Error(`fixture file content mismatch: ${filePath}`);
+  }
+}
+
+function writePandocAssets(templatesDir: string, filtersDir: string, figuresDir: string) {
+  ensureDir(templatesDir);
+  ensureDir(filtersDir);
+  ensureDir(figuresDir);
+
+  const templatePath = path.join(templatesDir, PANDOC_TEMPLATE_NAME);
+  writeFileSync(templatePath, PANDOC_TEMPLATE_CONTENT, 'utf-8');
+  assertFileContent(templatePath, PANDOC_TEMPLATE_CONTENT);
+
+  for (const { name, content } of PANDOC_FILTER_FILES) {
+    const filterPath = path.join(filtersDir, name);
+    writeFileSync(filterPath, content, 'utf-8');
+    assertFileContent(filterPath, content);
+  }
+}
+
 function defaultConfig(
   env: Pick<TestEnvironment, 'homeDir'>,
   overrides: Parameters<TestEnvironment['writeConfig']>[0] = {},
 ) {
-  const templatesDir =
-    overrides.templatesDir ?? path.join(env.homeDir, '.pandoc', 'templates');
-  const filtersDir =
-    overrides.filtersDir ?? path.join(env.homeDir, '.pandoc', 'filters');
+  const { templatesDir, filtersDir, figuresDir } = pandocDirs(env, overrides);
 
   return `[render]
 debounce_ms = ${overrides.debounceMs ?? 50}
@@ -59,11 +115,11 @@ restore_last_file = ${overrides.restoreLastFile ?? true}
 
 [pandoc]
 render_command = ${JSON.stringify(
-    overrides.renderCommand ??
-      'pandoc -f markdown+tex_math_dollars+citations --standalone --to=html5',
+    overrides.renderCommand ?? defaultRenderCommand(templatesDir, filtersDir),
   )}
 templates_dir = ${JSON.stringify(templatesDir)}
 filters_dir = ${JSON.stringify(filtersDir)}
+figures_dir = ${JSON.stringify(figuresDir)}
 `;
 }
 
@@ -92,14 +148,18 @@ export const test = base.test.extend<{
       const stateDir = path.join(xdgStateHome, 'pandoc-preview');
       const configPath = path.join(configDir, 'config.toml');
       const sessionStatePath = path.join(stateDir, 'state.json');
+      const templatesDir = path.join(homeDir, '.pandoc', 'templates');
+      const filtersDir = path.join(homeDir, '.pandoc', 'filters');
+      const figuresDir = path.join(homeDir, '.pandoc', 'figures');
 
       for (const dir of [
         homeDir,
         workspaceDir,
         configDir,
         stateDir,
-        path.join(homeDir, '.pandoc', 'templates'),
-        path.join(homeDir, '.pandoc', 'filters'),
+        templatesDir,
+        filtersDir,
+        figuresDir,
       ]) {
         ensureDir(dir);
       }
@@ -118,6 +178,8 @@ export const test = base.test.extend<{
       };
 
       const writeConfig = (overrides = {}) => {
+        const dirs = pandocDirs({ homeDir }, overrides);
+        writePandocAssets(dirs.templatesDir, dirs.filtersDir, dirs.figuresDir);
         ensureDir(configDir);
         writeFileSync(configPath, defaultConfig({ homeDir }, overrides));
       };
@@ -160,6 +222,9 @@ export const test = base.test.extend<{
           xdgStateHome,
           configPath,
           sessionStatePath,
+          templatesDir,
+          filtersDir,
+          figuresDir,
           writeConfig,
           writeSessionState,
           readConfig: () => readFileSync(configPath, 'utf8'),

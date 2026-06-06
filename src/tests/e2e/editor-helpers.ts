@@ -81,15 +81,16 @@ import { load as parseTomlRaw } from 'js-toml';
 
 /** Explicit structure for config.toml content. */
 export interface ConfigToml {
+  render: {
+    debounce_ms: number;
+    timeout_ms: number;
+    restore_last_file: boolean;
+  };
   pandoc: {
     render_command: string;
     templates_dir: string;
     filters_dir: string;
-    debounce_ms: number;
-    timeout_ms: number;
-  };
-  session: {
-    restore_last_file: boolean;
+    figures_dir: string;
   };
 }
 

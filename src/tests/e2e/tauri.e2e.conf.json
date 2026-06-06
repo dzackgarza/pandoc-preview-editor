@@ -4,7 +4,19 @@
     "beforeDevCommand": "node -e \"\""
   },
   "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "Pandoc Preview",
+        "width": 1400,
+        "height": 900,
+        "resizable": true,
+        "fullscreen": false,
+        "label": "main"
+      }
+    ],
     "security": {
+      "csp": null,
       "capabilities": [
         "default",
         {

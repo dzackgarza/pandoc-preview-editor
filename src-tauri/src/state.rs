@@ -60,8 +60,12 @@ impl AppState {
                 return Ok(parent.to_path_buf());
             }
         }
-        std::env::current_dir()
-            .map_err(|e| format!("Failed to determine workspace root and current directory is inaccessible: {}", e))
+        std::env::current_dir().map_err(|e| {
+            format!(
+                "Failed to determine workspace root and current directory is inaccessible: {}",
+                e
+            )
+        })
     }
 
     pub fn document_root(&self) -> Result<PathBuf, String> {
@@ -86,12 +90,17 @@ impl AppState {
                 return fs::read_to_string(path)
                     .map_err(|e| format!("failed to read active file {}: {e}", path.display()));
             }
-            // File does not exist yet (e.g. newly created path), fall back to memory
+            // A pending New target has no disk file until the first save.
             return self.file_content.clone().ok_or_else(|| {
-                format!("File {} does not exist on disk and no content is held in memory", path.display())
+                format!(
+                    "File {} does not exist on disk and no content is held in memory",
+                    path.display()
+                )
             });
         }
-        self.file_content.clone().ok_or_else(|| "No file is currently loaded in state".to_string())
+        self.file_content
+            .clone()
+            .ok_or_else(|| "No file is currently loaded in state".to_string())
     }
 }
 
@@ -140,10 +149,18 @@ pub fn tool_id_for_ext(ext: &str) -> Option<&str> {
 pub fn starter_template_for_tool(tool_id: &str) -> Result<String, String> {
     // We try to use include_str! to bake them in during compilation rather than relying on fs at runtime
     match tool_id {
-        "qtikz" => Ok(include_str!("../../src-tauri/assets/diagram-templates/qtikz.tikz").to_string()),
-        "tikzit" => Ok(include_str!("../../src-tauri/assets/diagram-templates/tikzit.tikz").to_string()),
-        "inkscape" => Ok(include_str!("../../src-tauri/assets/diagram-templates/inkscape.svg").to_string()),
-        "xournalpp" => Ok(include_str!("../../src-tauri/assets/diagram-templates/xournalpp.xopp").to_string()),
+        "qtikz" => {
+            Ok(include_str!("../../src-tauri/assets/diagram-templates/qtikz.tikz").to_string())
+        }
+        "tikzit" => {
+            Ok(include_str!("../../src-tauri/assets/diagram-templates/tikzit.tikz").to_string())
+        }
+        "inkscape" => {
+            Ok(include_str!("../../src-tauri/assets/diagram-templates/inkscape.svg").to_string())
+        }
+        "xournalpp" => {
+            Ok(include_str!("../../src-tauri/assets/diagram-templates/xournalpp.xopp").to_string())
+        }
         "ipe" => Ok(include_str!("../../src-tauri/assets/diagram-templates/ipe.ipe").to_string()),
         _ => Err(format!("unknown diagram tool: {tool_id}")),
     }

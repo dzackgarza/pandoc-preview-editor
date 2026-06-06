@@ -1,10 +1,9 @@
-use std::path::PathBuf;
 use std::sync::Mutex;
 
 use tauri::State;
 
 use crate::command_flags;
-use crate::config::write_config_toml;
+use crate::config::{expand_config_path, validate_render_assets, write_config_toml};
 use crate::state::AppState;
 
 #[derive(serde::Deserialize)]
@@ -46,18 +45,20 @@ pub fn set_config(
     if update.render_command.trim().is_empty() {
         return Err("renderCommand must be a non-empty shell command".into());
     }
-    let mut s = state.lock().unwrap();
-    let templates = PathBuf::from(&update.templates_dir);
-    let filters = PathBuf::from(&update.filters_dir);
-    let figures = PathBuf::from(&update.figures_dir);
+    let templates = expand_config_path(&update.templates_dir)?;
+    let filters = expand_config_path(&update.filters_dir)?;
+    let figures = expand_config_path(&update.figures_dir)?;
+    let parsed_flags = command_flags::parse_render_command(&update.render_command)?;
+    validate_render_assets(&parsed_flags, &templates, &filters, &figures)?;
 
+    let mut s = state.lock().unwrap();
     s.templates_dir = templates;
     s.filters_dir = filters.clone();
     s.figures_dir = figures.clone();
     s.debounce_ms = update.debounce_ms;
     s.timeout_ms = update.timeout_ms;
     s.render_command = update.render_command.clone();
-    s.parsed_flags = command_flags::parse_render_command(&update.render_command)?;
+    s.parsed_flags = parsed_flags;
     s.restore_last_file = update.restore_last_file;
 
     if let Some(ref config_path) = s.config_path {

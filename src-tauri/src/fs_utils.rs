@@ -71,15 +71,16 @@ pub fn is_text_like_file(path: &Path) -> Result<bool, String> {
     if name == "justfile" {
         return Ok(true);
     }
-    
+
     // Read only the first 1024 bytes for inspection to avoid loading large binaries
     use std::io::Read;
-    let mut file = fs::File::open(path)
-        .map_err(|e| format!("failed to open file {}: {e}", path.display()))?;
+    let mut file =
+        fs::File::open(path).map_err(|e| format!("failed to open file {}: {e}", path.display()))?;
     let mut buffer = [0; 1024];
-    let n = file.read(&mut buffer)
+    let n = file
+        .read(&mut buffer)
         .map_err(|e| format!("failed to read file sample {}: {e}", path.display()))?;
-        
+
     Ok(content_inspector::inspect(&buffer[..n]).is_text())
 }
 

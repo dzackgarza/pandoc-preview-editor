@@ -1,6 +1,12 @@
-import { readFileSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { expect, test } from './fixtures.js';
+import {
+  expect,
+  PANDOC_FILTER_FILES,
+  PANDOC_TEMPLATE_CONTENT,
+  PANDOC_TEMPLATE_NAME,
+  test,
+} from './fixtures.js';
 import {
   invokeTauri,
   parseToml,
@@ -35,11 +41,22 @@ test.describe('Desktop Configuration Workflow (Consolidated)', () => {
       const tomlPath = testEnv.configPath;
       const filtersDir = path.join(testEnv.homeDir, '.pandoc', 'filters');
       const filterPath = path.join(filtersDir, 'my-filter.lua');
+      const templatePath = path.join(testEnv.templatesDir, PANDOC_TEMPLATE_NAME);
 
       // 1. Creation Proof (Missing Config)
-      expect(existsSync(tomlPath)).toBe(true);
       const initialToml = parseToml(readFileSync(tomlPath, 'utf-8'));
       expect(initialToml.pandoc.render_command).toContain('--standalone');
+      expect(initialToml.pandoc.render_command).toContain(`--template=${templatePath}`);
+      expect(initialToml.pandoc.templates_dir).toBe(testEnv.templatesDir);
+      expect(initialToml.pandoc.filters_dir).toBe(testEnv.filtersDir);
+      expect(initialToml.pandoc.figures_dir).toBe(testEnv.figuresDir);
+      expect(readFileSync(templatePath, 'utf-8')).toBe(PANDOC_TEMPLATE_CONTENT);
+      for (const { name, content } of PANDOC_FILTER_FILES) {
+        expect(readFileSync(path.join(testEnv.filtersDir, name), 'utf-8')).toBe(content);
+        expect(initialToml.pandoc.render_command).toContain(
+          `--lua-filter=${path.join(testEnv.filtersDir, name)}`,
+        );
+      }
 
       // 2. Settings UI Interaction
       await appPage.getByTestId('menu-trigger-file').click();
@@ -95,12 +112,14 @@ test.describe('Desktop Configuration Workflow (Consolidated)', () => {
 
       // 6. Path Validation (Rejection of external paths)
       await dialog.locator('[role="tab"]').filter({ hasText: 'Raw Command' }).click();
-      await argsTextarea.fill('pandoc --template=/tmp/external.html');
+      const externalTemplate = path.join(testEnv.rootDir, 'external.html');
+      writeFileSync(externalTemplate, '<html>$body$</html>', 'utf-8');
+      await argsTextarea.fill(`pandoc --template=${externalTemplate}`);
       await appPage.locator('button').filter({ hasText: 'Apply Settings' }).click();
       
       // Should show validation error and stay open
       await expect(dialog).toBeVisible();
-      await expect(dialog.locator('text=/is external/')).toBeVisible();
+      await expect(dialog.locator('text=/outside/')).toBeVisible();
       
       await dialog.locator('button').filter({ hasText: 'Cancel' }).click();
     }

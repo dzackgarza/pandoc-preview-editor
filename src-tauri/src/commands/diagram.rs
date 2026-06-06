@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use tauri::State;
 
+use crate::config::validate_existing_dir;
 use crate::fs_utils::{normalize_path, path_is_inside};
 use crate::state::{starter_template_for_tool, tool_id_for_ext, AppState};
 
@@ -72,6 +73,7 @@ pub fn create_diagram_file(
     let s = state.lock().unwrap();
     let figures_dir = s.figures_dir.clone();
     drop(s);
+    let figures_dir = validate_existing_dir("figures_dir", &figures_dir)?;
 
     let figure_path = normalize_path(&figures_dir.join(&filename));
     if !path_is_inside(&figures_dir, &figure_path) {
@@ -80,7 +82,6 @@ pub fn create_diagram_file(
     if figure_path.exists() {
         return Err("figure already exists".into());
     }
-    fs::create_dir_all(&figures_dir).map_err(|e| e.to_string())?;
     let template = starter_template_for_tool(&kind)?;
     fs::write(&figure_path, template).map_err(|e| e.to_string())?;
 
@@ -109,10 +110,12 @@ pub fn launch_diagram(
                 .to_string()
         }
     };
-    let entry = s
-        .tool_state
-        .get(&tool_type)
-        .ok_or_else(|| format!("Desktop application for {} is not installed on this system", tool_type))?;
+    let entry = s.tool_state.get(&tool_type).ok_or_else(|| {
+        format!(
+            "Desktop application for {} is not installed on this system",
+            tool_type
+        )
+    })?;
     let resolved = if Path::new(&absolute_path).is_absolute() {
         PathBuf::from(&absolute_path)
     } else if let Some(ref file) = s.file {

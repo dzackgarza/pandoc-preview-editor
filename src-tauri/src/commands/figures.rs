@@ -8,6 +8,7 @@ use tauri::State;
 use uuid::Uuid;
 use walkdir::WalkDir;
 
+use crate::config::validate_existing_dir;
 use crate::fs_utils::{image_extension, normalize_path, path_is_inside, sanitize_figure_filename};
 use crate::state::{tool_id_for_ext, AppState};
 
@@ -38,13 +39,14 @@ pub fn save_figure_asset(
     let s = state.lock().unwrap();
     let figures_dir = s.figures_dir.clone();
     drop(s);
+    let figures_dir = validate_existing_dir("figures_dir", &figures_dir)?;
 
     let figure_name = filename
         .as_deref()
         .filter(|n| !n.is_empty())
         .map(|n| sanitize_figure_filename(n, &mime_type))
         .unwrap_or_else(|| format!("figure-{}{}", Uuid::new_v4(), image_extension(&mime_type)));
-    
+
     let figure_path = normalize_path(&figures_dir.join(&figure_name));
     if !path_is_inside(&figures_dir, &figure_path) {
         return Err("figure path escapes global figures directory".into());
@@ -52,13 +54,12 @@ pub fn save_figure_asset(
     if figure_path.exists() {
         return Err("figure already exists".into());
     }
-    fs::create_dir_all(&figures_dir).map_err(|e| e.to_string())?;
     let bytes = B64.decode(&content_base64).map_err(|e| e.to_string())?;
     fs::write(&figure_path, &bytes).map_err(|e| e.to_string())?;
-    
+
     // We return the absolute path so the frontend can inject the canonical global path
     let markdown = format!("![]({})", figure_path.display());
-    
+
     Ok(serde_json::json!({
         "ok": true,
         "path": figure_path.to_string_lossy(),
@@ -71,17 +72,16 @@ pub fn figures_registry(state: State<'_, Mutex<AppState>>) -> Result<serde_json:
     let s = state.lock().unwrap();
     let figures_dir = s.figures_dir.clone();
     drop(s);
-
-    if !figures_dir.exists() {
-        return Ok(serde_json::json!({ "figures": [] }));
-    }
+    let figures_dir = validate_existing_dir("figures_dir", &figures_dir)?;
 
     let mut figures: Vec<FigureEntry> = vec![];
-    for entry in WalkDir::new(&figures_dir)
-        .sort_by_file_name()
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
+    for entry in WalkDir::new(&figures_dir).sort_by_file_name().into_iter() {
+        let entry = entry.map_err(|e| {
+            format!(
+                "failed to read figure registry entry under {}: {e}",
+                figures_dir.display()
+            )
+        })?;
         let path = entry.path();
         if !path.is_file() {
             continue;
@@ -132,9 +132,7 @@ fn figure_kind(path: &Path) -> Option<String> {
         .map(|value| format!(".{}", value.to_string_lossy().to_lowercase()))?;
     match ext.as_str() {
         ".png" | ".jpg" | ".jpeg" | ".gif" | ".webp" => Some("clipboard".into()),
-        ".svg" | ".tikz" | ".xopp" | ".ipe" => {
-            tool_id_for_ext(&ext).map(str::to_string)
-        }
+        ".svg" | ".tikz" | ".xopp" | ".ipe" => tool_id_for_ext(&ext).map(str::to_string),
         _ => None,
     }
 }

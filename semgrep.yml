@@ -1,0 +1,2 @@
+extends:
+  - /home/dzack/ai/quality-control/semgrep.yml
