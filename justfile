@@ -48,6 +48,10 @@ _typecheck:
     npx tsc --noEmit
 
 [private]
+_semgrep:
+    @just -f ~/ai/quality-control/justfile _semgrep
+
+[private]
 _check-dependencies:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -82,7 +86,7 @@ _check-dependencies:
     fi
 
 # Run all tests: agent contracts, type-check, dependency assertion, Rust unit tests, canonical workflow E2E.
-test: _agent-contracts _typecheck _check-dependencies
+test: _agent-contracts _semgrep _typecheck _check-dependencies
     #!/usr/bin/env bash
     set -euo pipefail
 
