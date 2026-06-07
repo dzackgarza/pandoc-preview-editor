@@ -11,23 +11,23 @@ export interface DiagramTool {
   id: string;
   executables: string[];
   ext: string;
-  markdownRef: (filename: string) => string;
+  markdownRef: (absolutePath: string) => string;
   label: string;
   desc: string;
   url: string;
 }
 
-const MARKDOWN_REFS: Record<string, (filename: string) => string> = {
-  qtikz: (f) => `\\input{./figures/${f}}`,
-  tikzit: (f) => `\\input{./figures/${f}}`,
-  inkscape: (f) => `![](./figures/${f})`,
-  xournalpp: (f) => `![](./figures/${f})`,
-  ipe: (f) => `![](./figures/${f})`,
+const MARKDOWN_REFS: Record<string, (absolutePath: string) => string> = {
+  qtikz: (absolutePath) => `\\input{${absolutePath}}`,
+  tikzit: (absolutePath) => `\\input{${absolutePath}}`,
+  inkscape: (absolutePath) => `![](${absolutePath})`,
+  xournalpp: (absolutePath) => `![](${absolutePath})`,
+  ipe: (absolutePath) => `![](${absolutePath})`,
 };
 
 export const DIAGRAM_TOOLS: DiagramTool[] = toolData.map((t) => ({
   ...t,
-  markdownRef: MARKDOWN_REFS[t.id] ?? ((f: string) => `![](./figures/${f})`),
+  markdownRef: MARKDOWN_REFS[t.id] ?? ((absolutePath: string) => `![](${absolutePath})`),
 }));
 
 /** Look up a tool by id. Throws if not found — callers must use valid IDs. */

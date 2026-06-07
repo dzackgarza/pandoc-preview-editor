@@ -13,7 +13,9 @@ It does **not** prescribe implementation details or test helpers. It defines wha
   - `src-tauri/src/fs_utils.rs`
   - `src-tauri/src/render.rs`
   - `src-tauri/src/commands/plugins.rs`
-  - `src/tests/e2e/app.spec.ts`
+  - `src-tauri/src/commands/diagram.rs`
+  - `src-tauri/src/commands/figures.rs`
+  - `src/tests/e2e/workflow-*.spec.ts`
 - Deleted Playwright suites from git history, especially:
   - `src/tests/file.spec.ts`
   - `src/tests/user-behaviors.spec.ts`
@@ -108,8 +110,8 @@ Some deleted tests encoded obsolete architecture or weak proof shapes and should
 
 1.  **Express endpoint contract tests**
     - Old `/api/...` tests should become Tauri-owned workflow proofs, not route-shape snapshots.
-2.  **Central figures registry / central figures directory**
-    - The current app owns document-relative `./figures/`, not central storage.
+2.  **Document-relative figures registry / document-relative figures directory**
+    - The current app owns the configured global figures directory, not per-document `./figures/` storage.
 3.  **tikzjax client-rendering proofs**
     - The current architecture explicitly forbids browser-side TikZ rendering.
 4.  **MIME/static-asset server proofs**
@@ -209,19 +211,19 @@ Each item below is phrased as a repository-owned guarantee. Unless noted otherwi
 
 ### P0: Figures, clipboard, and diagrams
 
-1.  **Clipboard image insertion writes exact bytes into document-relative `figures/`**
+1.  **Clipboard image insertion writes exact bytes into the global figures directory**
     - Prove that pasting or explicitly inserting an image:
       - requires a saved document;
-      - writes the real clipboard bytes into `./figures/`;
+      - writes the real clipboard bytes into the configured `figures_dir`;
       - inserts the corresponding markdown into the editor;
       - renders correctly in preview.
     - Historical source: `user-behaviors.spec.ts`, current `save_figure_asset`.
-2.  **Diagram creation is save-gated and document-relative**
-    - Prove that creating a diagram from an unsaved buffer is blocked, while creating one from a saved document writes the correct starter file into `./figures/` and inserts the correct relative reference into the document.
+2.  **Diagram creation writes to the global figures directory**
+    - Prove that creating a diagram writes the correct starter file into the configured `figures_dir` and inserts the exact global-path reference into the document.
     - Historical source: `diagram-workflow.spec.ts`, current diagram refactor.
-3.  **Figures library reflects the workspace, not hidden app state**
-    - Prove that the figures sidebar scans the actual workspace for assets under `figures/` directories, lists them with the expected kinds, and opens the selected figure for editing.
-    - This is the modern replacement for the deleted central-registry proof.
+3.  **Figures library reflects the configured global figures directory, not hidden app state**
+    - Prove that the figures sidebar scans `figures_dir`, lists assets with the expected kinds, and opens the selected figure for editing.
+    - This is the current replacement for the deleted document-relative registry proof.
     - Historical source: `diagram-workflow.spec.ts`, current `figures_registry`.
 4.  **Preview figure interactions map back to the correct source asset**
     - Prove that interacting with a previewed figure launches editing for the actual underlying figure file, not a guessed or stale path.

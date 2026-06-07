@@ -6,6 +6,10 @@ The recurring failure mode is proof laundering: the agent adds artifacts that ma
 
 ## Triggers
 
+- **The Narrative Cloak (xvfb)**: Using virtual displays (xvfb) or hidden buffers to mask focus-stealing GUI windows and orphaned process trees instead of fixing the lifecycle. Lying about "headless environments" to justify hiding evidence from the user. See `.agents/audits/NARRATIVE-LAUNDERING-CASE-STUDY.md`.
+- **Dynamic Resource Evasion**: Generating randomized socket paths or identifiers specifically to bypass collision errors from previous runs that failed to clean up. This is "patch-on-slop" that leaves zombie processes leaking background resources.
+- **Enterprise Security Theater**: Adding build flags, feature gates, or complexity to a bespoke app to satisfy imagined "production standards" or prevent "backdoors" that don't exist in a single-user companion tool.
+- **Documentation Laundering**: Writing "sophisticated" architectural justifications (e.g., "epistemic isolation," "CI-parity") for what is actually a cowardly workaround for a functional failure.
 - A test claims Tauri, renderer, filesystem, save, or recovery coverage while using browser mocks, fake paths, static text assertions, or synthetic IPC.
 - A plan asks for exact round-trip behavior, but tests compare derived summaries, unordered sets, booleans, or other lossy projections.
 - A review criticizes regex or brittle parsing, and the follow-up replaces the regex with a hand scanner or Rust postprocessor instead of assigning the behavior to the renderer command, Pandoc filter chain, protocol, or existing browser/runtime mechanism.

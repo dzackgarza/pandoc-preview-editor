@@ -25,6 +25,7 @@ test.describe('Desktop Extensions Workflow (Consolidated)', () => {
       const docPath = path.join(testEnv.workspaceDir, 'source.md');
       const htmlPath = path.join(testEnv.workspaceDir, 'source.html');
       const pdfPath = path.join(testEnv.workspaceDir, 'source.pdf');
+      const diagramPath = path.join(testEnv.figuresDir, 'my-diagram.tikz');
 
       await expect(appPage.getByTestId('editor')).toBeVisible();
 
@@ -47,8 +48,8 @@ test.describe('Desktop Extensions Workflow (Consolidated)', () => {
       await modal.locator('button').filter({ hasText: 'Create' }).click();
       await expect(modal).not.toBeVisible();
 
-      await expect(appPage.locator('.cm-content')).toContainText('![](./figures/my-diagram.tikz)');
-      expect(existsSync(path.join(testEnv.workspaceDir, 'figures', 'my-diagram.tikz'))).toBe(true);
+      await expect(appPage.locator('.cm-content')).toContainText(`\\input{${diagramPath}}`);
+      expect(existsSync(diagramPath)).toBe(true);
 
       // 3. Image Paste Workflow
       try {
@@ -63,7 +64,7 @@ test.describe('Desktop Extensions Workflow (Consolidated)', () => {
       await appPage.getByTestId('editor').click();
       await appPage.keyboard.press('Control+V');
 
-      await expect(appPage.locator('.cm-content')).toContainText('![](./figures/figure-');
+      await expect(appPage.locator('.cm-content')).toContainText(`![](${testEnv.figuresDir}/figure-`);
 
       // 4. Plugin Execution (Export via Menu)
       await appPage.getByTestId('menu-trigger-plugin').click();
@@ -80,7 +81,7 @@ test.describe('Desktop Extensions Workflow (Consolidated)', () => {
       await expect(appPage.locator('#status')).toHaveAttribute('data-state', 'idle', { timeout: 15000 });
       expect(readFileSync(pdfPath).subarray(0, 5).toString()).toBe('%PDF-');
 
-      // 5. Filter Rendering (TikZjax)
+      // 5. Server-side TikZ rendering through the configured Pandoc pipeline
       const tikzBlock = '```tikz\n\\begin{tikzpicture}\\draw (0,0) -- (1,1);\\end{tikzpicture}\n```';
       await replaceEditorContents(appPage, tikzBlock);
       await expect.poll(() => previewInnerHTML(appPage), { timeout: 15000 })

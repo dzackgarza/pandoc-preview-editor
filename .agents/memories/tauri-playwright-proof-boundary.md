@@ -32,7 +32,7 @@ The E2E overlay `src/tests/e2e/tauri.e2e.conf.json` selects `default` and an inl
 
 ## Dependency Gate
 
-The app-owned diagram tool contract is `src/shared/diagram-tools.json`, consumed by `src-tauri/src/state.rs`. Public test gating must read that JSON instead of duplicating executable names in shell. If the gate reports `xournal` while `xournalpp` is present, that is not an alternatives bug: the JSON declares separate `xournal` and `xournalpp` tools. Change the JSON contract if the app should no longer require a tool.
+The app-owned diagram tool contract is `src/shared/diagram-tools.json`, consumed by `src-tauri/src/state.rs`. Public test gating must read that JSON instead of duplicating executable names in shell. Drawio and legacy xournal have been dropped; xournalpp remains as the supported handwriting tool entry.
 
 ## Local Failure Pattern To Reject
 

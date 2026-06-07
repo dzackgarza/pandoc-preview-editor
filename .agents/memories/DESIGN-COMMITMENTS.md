@@ -17,7 +17,7 @@ This document records the concrete technical commitments for the `pandoc-preview
 - **Local-Only Operation**: All file paths are absolute or workspace-relative host paths. The app does not implement network transport layers for files.
 - **Application Configuration**: `~/.config/pandoc-preview/config.toml` (via XDG spec).
 - **Pandoc Assets**: Centralized under `~/.pandoc/templates/` and `~/.pandoc/filters/`.
-- **Figures**: Document-relative `./figures/` directory.
+- **Figures**: Centralized under the configured global `figures_dir`, typically `~/.pandoc/figures/`.
 
 ## 3. Implementation Specifics
 

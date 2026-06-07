@@ -117,12 +117,13 @@ Therefore:
 
 ## Standard Preview Asset Resolution via `<base href>`
 
-To resolve document-relative and absolute asset URLs (e.g. images, figures) inside the preview iframe, use the standard browser-native `<base href>` element combined with Express static asset directories.
+To resolve asset URLs inside the preview iframe, prefer absolute references emitted by the configured renderer and the app's global figures directory contract.
+The former Express-era `<base href>` static-serving plan is not current Tauri architecture.
 
 Therefore:
 - **Delete Brittle HTML Rewriters:** Do NOT use hand-rolled regex engines to parse HTML strings, extract tags, and rewrite source URLs before returning them to the iframe.
-- **Absolute Host Base Injection:** Because sandboxed `srcdoc` iframes default their base URL to `about:srcdoc` (rendering relative base hrefs non-functional), the server must dynamically inject a fully qualified absolute URL (e.g. `http://localhost:port/api/preview-assets/`) based on the incoming request's host header.
-- **Secure Static Serving:** Mount the `/api/preview-assets/` endpoint to the document root (`express.static(currentDocumentRoot(config))`). To prevent relative path resolution failures, strip any leading slashes cleanly from the request path before matching absolute paths securely within the workspace.
+- **No Express Static Serving Contract:** Do not resurrect `/api/preview-assets/` or Express static asset routing in the Tauri app.
+- **Global Figures Contract:** Figure creation and pasted images use configured `figures_dir`; markdown references should point to the actual global asset path.
 
 ## Bespoke Integration with Generation Tools
 
@@ -143,10 +144,9 @@ The correct reading of such a variable:
 - A previous author encountered the gap and encoded the hedge inline rather than extending the data model
 - The fix is not to delete the variable or clean up its surrounding logic — it is to update the schema so the property is expressed structurally
 
-In this codebase, the dual-binary-name problem for xournal/xournalpp was correctly
-fixed by adding `executables: string[]` to the `DiagramTool` record and resolving
-to the first available binary in a shared probing loop. No tool is special-cased.
-The one-off variable no longer exists because the schema now expresses the general case.
+In this codebase, xournal support was dropped and xournalpp remains as the supported
+tool entry. The general schema is still `executables: string[]`; no tool should be
+special-cased in probing or launch logic.
 
 **Trigger**: Any one-off variable that hedges between two names, paths, or behaviors for a specific entity.
 

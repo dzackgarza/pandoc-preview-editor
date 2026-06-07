@@ -54,7 +54,7 @@ Acceptance oracle: In a tracked repo, clicking "Save" creates exactly one git co
 ### REQ-003: Academic Reproducibility (Centralized Assets)
 
 Outcome: Document rendering is reproducible across machines using the same dotfiles.
-User-visible behavior: Templates and filters are loaded from a central directory, not ad-hoc project paths.
+User-visible behavior: Templates, filters, and reusable figure assets are loaded from central directories, not ad-hoc project paths.
 Inputs: Command flags, asset directory paths.
 Outputs: Resolver-verified paths for Pandoc assets.
 Owner: App/Server (Enforcement).

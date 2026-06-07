@@ -160,8 +160,8 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
         onSave();
         onClose();
       })
-      .catch((err: any) => {
-        setValidationError(err.message || err || 'Server error occurred');
+      .catch((err: unknown) => {
+        setValidationError(err instanceof Error ? err.message : String(err));
       });
   };
 
@@ -488,12 +488,13 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
                     Figures Workflow
                   </div>
                   <p className="mt-2 text-[11px] leading-5 text-[#788190]">
-                    New diagrams and pasted images are saved beside the active document in
+                    New diagrams and pasted images are saved in the configured global figures
+                    directory
                     <code className="mx-1 rounded bg-[#101218] px-1.5 py-0.5 text-[#c5cad3]">
-                      ./figures/
+                      {figuresDir}
                     </code>
-                    . The Figures Library scans the current workspace for those files so the
-                    app stays aligned with normal editor-relative asset paths.
+                    . The Figures Library scans that canonical location so shared academic
+                    assets are reused across documents.
                   </p>
                 </div>
               </Tabs.Content>
