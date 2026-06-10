@@ -1,20 +1,25 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as Tabs from '@radix-ui/react-tabs';
 import { X, Settings, Cpu, FolderOpen, Terminal, Filter, Plug } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
+import { toast } from '../lib/toast.js';
 import {
   ParsedFlags,
-  parseCommand as parseFlags,
+  fromRustParsedFlags,
   buildCommand,
+  RustParsedFlags,
 } from '../../shared/command-parser.js';
 
-interface SettingsData {
+export interface SettingsData {
   templatesDir: string;
   filtersDir: string;
+  figuresDir: string;
   debounceMs: number;
   timeoutMs: number;
   renderCommand: string;
-  restoreLastFile?: boolean;
+  restoreLastFile: boolean;
+  parsedFlags: RustParsedFlags;
 }
 
 interface PluginMetadata {
@@ -41,6 +46,7 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
   // Config state
   const [templatesDir, setTemplatesDir] = useState('~/.pandoc/templates');
   const [filtersDir, setFiltersDir] = useState('~/.pandoc/filters');
+  const [figuresDir, setFiguresDir] = useState('~/.pandoc/figures');
   const [debounceMs, setDebounceMs] = useState(750);
   const [timeoutMs, setTimeoutMs] = useState(30000);
   const [restoreLastFile, setRestoreLastFile] = useState(true);
@@ -49,48 +55,82 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
   const [rawArgsText, setRawArgsText] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
 
-  // All flag state derived from rawArgsText; no separate per-flag state vars
-  const parsedFlags = useMemo(
-    () => parseFlags(rawArgsText),
-    [rawArgsText],
-  );
+  // Flag state from Rust parser (single source of truth), kept in Settings-UI form.
+  // Updated locally when user modifies structured controls; rebuilt from raw text on dialog open.
+  const [parsedFlags, setParsedFlags] = useState<ParsedFlags>({
+    commandName: 'pandoc',
+    standalone: false,
+    citeproc: false,
+    toc: false,
+    numberSections: false,
+    embedResources: false,
+    math: 'none',
+    selectedTemplate: '',
+    selectedFilters: [],
+    otherFlags: [],
+  });
 
   // Fetch config, plugins, and asset lists when the dialog opens
   useEffect(() => {
     if (open) {
       setValidationError(null);
-      fetch('/api/config')
-        .then((res) => res.json())
-        .then((data: SettingsData) => {
+      invoke<SettingsData>('get_config')
+        .then((data) => {
           setTemplatesDir(data.templatesDir);
           setFiltersDir(data.filtersDir);
+          setFiguresDir(data.figuresDir);
           setDebounceMs(data.debounceMs);
           setTimeoutMs(data.timeoutMs);
-          setRawArgsText(data.renderCommand || 'pandoc');
-          setRestoreLastFile(data.restoreLastFile !== false);
+          setRawArgsText(data.renderCommand);
+          setRestoreLastFile(data.restoreLastFile);
+          setParsedFlags(fromRustParsedFlags(data.parsedFlags));
         })
-        .catch(console.error);
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          setValidationError(message);
+          toast({
+            title: 'Settings failed to load',
+            description: message,
+            variant: 'destructive',
+          });
+        });
 
-      fetch('/api/pandoc/assets')
-        .then((res) => res.json())
-        .then((data: { templates: string[]; filters: string[] }) => {
-          setAvailableTemplates(data.templates || []);
-          setAvailableFilters(data.filters || []);
+      invoke<{ templates: string[]; filters: string[] }>('pandoc_assets')
+        .then((data) => {
+          setAvailableTemplates(data.templates);
+          setAvailableFilters(data.filters);
         })
-        .catch(console.error);
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          setValidationError(message);
+          toast({
+            title: 'Pandoc assets failed to load',
+            description: message,
+            variant: 'destructive',
+          });
+        });
 
-      fetch('/api/plugins')
-        .then((res) => res.json())
-        .then((data: { plugins: PluginMetadata[] }) => {
-          setPlugins(data.plugins || []);
+      invoke<{ plugins: PluginMetadata[] }>('list_plugins')
+        .then((data) => {
+          setPlugins(data.plugins);
         })
-        .catch(console.error);
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          setValidationError(message);
+          toast({
+            title: 'Plugins failed to load',
+            description: message,
+            variant: 'destructive',
+          });
+        });
     }
   }, [open]);
 
-  // Update a single flag: rebuild the raw command string from the new flag state
+  // Update a single flag: patch local state and rebuild the raw command string
   const updateFlag = (patch: Partial<ParsedFlags>) => {
-    setRawArgsText(buildCommand({ ...parsedFlags, ...patch }, templatesDir, filtersDir));
+    const next = { ...parsedFlags, ...patch };
+    setParsedFlags(next);
+    setRawArgsText(buildCommand(next, templatesDir, filtersDir));
   };
 
   const handleFilterToggle = (filterName: string) => {
@@ -105,31 +145,23 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
   };
 
   const handleSave = () => {
-    const payload = {
-      templatesDir,
-      filtersDir,
-      debounceMs: Number(debounceMs),
-      timeoutMs: Number(timeoutMs),
-      renderCommand: rawArgsText,
-      restoreLastFile,
-    };
-
-    fetch('/api/config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+    invoke('set_config', {
+      update: {
+        templatesDir,
+        filtersDir,
+        figuresDir,
+        debounceMs: Number(debounceMs),
+        timeoutMs: Number(timeoutMs),
+        renderCommand: rawArgsText,
+        restoreLastFile: restoreLastFile,
+      }
     })
-      .then(async (res) => {
-        const data = await res.json();
-        if (res.ok) {
-          onSave();
-          onClose();
-        } else {
-          setValidationError(data.error || 'Failed to save configuration');
-        }
+      .then(() => {
+        onSave();
+        onClose();
       })
-      .catch((err) => {
-        setValidationError(err.message || 'Server error occurred');
+      .catch((err: unknown) => {
+        setValidationError(err instanceof Error ? err.message : String(err));
       });
   };
 
@@ -147,7 +179,9 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
           <div className="flex items-center justify-between border-b border-[#2b2f38] bg-[#171a21]/50 px-6 py-4 shrink-0">
             <div className="flex items-center gap-3">
               <Settings className="h-5 w-5 text-[#8fb8ff] animate-pulse" />
-              <Dialog.Title className="text-base font-semibold tracking-wide">Editor Settings & Preferences</Dialog.Title>
+              <Dialog.Title className="text-base font-semibold tracking-wide">
+                Editor Settings & Preferences
+              </Dialog.Title>
             </div>
             <Dialog.Close asChild>
               <button
@@ -169,6 +203,7 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
             <Tabs.List className="w-56 border-r border-[#2b2f38] bg-[#14171f] py-4 flex flex-col gap-1 shrink-0">
               <Tabs.Trigger
                 value="general"
+                data-testid="settings-tab-general"
                 className="flex items-center gap-3 px-5 py-2.5 text-left text-sm outline-none transition-colors w-full cursor-pointer text-[#a9b2c3] hover:bg-[#1f2229] hover:text-[#e6e8eb] data-[state=active]:bg-[#2a2f3a] data-[state=active]:text-white data-[state=active]:font-medium data-[state=active]:border-l-2 data-[state=active]:border-[#3b82f6]"
               >
                 <Cpu className="h-4 w-4 text-[#8fb8ff]" />
@@ -176,6 +211,7 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
               </Tabs.Trigger>
               <Tabs.Trigger
                 value="pandoc"
+                data-testid="settings-tab-pandoc"
                 className="flex items-center gap-3 px-5 py-2.5 text-left text-sm outline-none transition-colors w-full cursor-pointer text-[#a9b2c3] hover:bg-[#1f2229] hover:text-[#e6e8eb] data-[state=active]:bg-[#2a2f3a] data-[state=active]:text-white data-[state=active]:font-medium data-[state=active]:border-l-2 data-[state=active]:border-[#3b82f6]"
               >
                 <Terminal className="h-4 w-4 text-[#a6e3a1]" />
@@ -183,6 +219,7 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
               </Tabs.Trigger>
               <Tabs.Trigger
                 value="filters"
+                data-testid="settings-tab-filters"
                 className="flex items-center gap-3 px-5 py-2.5 text-left text-sm outline-none transition-colors w-full cursor-pointer text-[#a9b2c3] hover:bg-[#1f2229] hover:text-[#e6e8eb] data-[state=active]:bg-[#2a2f3a] data-[state=active]:text-white data-[state=active]:font-medium data-[state=active]:border-l-2 data-[state=active]:border-[#3b82f6]"
               >
                 <Filter className="h-4 w-4 text-[#f9e2af]" />
@@ -190,6 +227,7 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
               </Tabs.Trigger>
               <Tabs.Trigger
                 value="assets"
+                data-testid="settings-tab-assets"
                 className="flex items-center gap-3 px-5 py-2.5 text-left text-sm outline-none transition-colors w-full cursor-pointer text-[#a9b2c3] hover:bg-[#1f2229] hover:text-[#e6e8eb] data-[state=active]:bg-[#2a2f3a] data-[state=active]:text-white data-[state=active]:font-medium data-[state=active]:border-l-2 data-[state=active]:border-[#3b82f6]"
               >
                 <FolderOpen className="h-4 w-4 text-[#f5c2e7]" />
@@ -197,6 +235,7 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
               </Tabs.Trigger>
               <Tabs.Trigger
                 value="raw"
+                data-testid="settings-tab-raw"
                 className="flex items-center gap-3 px-5 py-2.5 text-left text-sm outline-none transition-colors w-full cursor-pointer text-[#a9b2c3] hover:bg-[#1f2229] hover:text-[#e6e8eb] data-[state=active]:bg-[#2a2f3a] data-[state=active]:text-white data-[state=active]:font-medium data-[state=active]:border-l-2 data-[state=active]:border-[#3b82f6]"
               >
                 <Terminal className="h-4 w-4 text-[#89dceb]" />
@@ -204,6 +243,7 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
               </Tabs.Trigger>
               <Tabs.Trigger
                 value="plugins"
+                data-testid="settings-tab-plugins"
                 className="flex items-center gap-3 px-5 py-2.5 text-left text-sm outline-none transition-colors w-full cursor-pointer text-[#a9b2c3] hover:bg-[#1f2229] hover:text-[#e6e8eb] data-[state=active]:bg-[#2a2f3a] data-[state=active]:text-white data-[state=active]:font-medium data-[state=active]:border-l-2 data-[state=active]:border-[#3b82f6]"
               >
                 <Plug className="h-4 w-4 text-[#cba6f7]" />
@@ -225,7 +265,10 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
                 className="flex flex-col gap-5 outline-none"
               >
                 <div className="flex flex-col gap-1.5">
-                  <label htmlFor="debounce-duration-input" className="text-xs font-semibold text-[#8fb8ff] tracking-wider uppercase">
+                  <label
+                    htmlFor="debounce-duration-input"
+                    className="text-xs font-semibold text-[#8fb8ff] tracking-wider uppercase"
+                  >
                     DEBOUNCE DURATION (MS)
                   </label>
                   <input
@@ -236,12 +279,16 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
                     onChange={(e) => setDebounceMs(Number(e.target.value))}
                   />
                   <span className="text-[11px] text-[#788190]">
-                    Delay in milliseconds between typing and launching live render compilations.
+                    Delay in milliseconds between typing and launching live render
+                    compilations.
                   </span>
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label htmlFor="timeout-duration-input" className="text-xs font-semibold text-[#8fb8ff] tracking-wider uppercase">
+                  <label
+                    htmlFor="timeout-duration-input"
+                    className="text-xs font-semibold text-[#8fb8ff] tracking-wider uppercase"
+                  >
                     TIMEOUT DURATION (MS)
                   </label>
                   <input
@@ -252,7 +299,8 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
                     onChange={(e) => setTimeoutMs(Number(e.target.value))}
                   />
                   <span className="text-[11px] text-[#788190]">
-                    Max compile time before halting pandoc compilation to protect system resources.
+                    Max compile time before halting pandoc compilation to protect system
+                    resources.
                   </span>
                 </div>
 
@@ -266,7 +314,8 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
                     onChange={(val) => setRestoreLastFile(val)}
                   />
                   <span className="text-[11px] text-[#788190] ml-6">
-                    Automatically reload the last active markdown file and recover unsaved backup buffers when launching the editor.
+                    Automatically reload the last active markdown file and recover
+                    unsaved backup buffers when launching the editor.
                   </span>
                 </div>
               </Tabs.Content>
@@ -313,7 +362,9 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
                   <select
                     className="w-full rounded-md border border-[#2b2f38] bg-[#15171d] px-3.5 py-2 text-sm text-[#e6e8eb] outline-none focus:border-[#3b82f6] cursor-pointer"
                     value={parsedFlags.math}
-                    onChange={(e) => updateFlag({ math: e.target.value as ParsedFlags['math'] })}
+                    onChange={(e) =>
+                      updateFlag({ math: e.target.value as ParsedFlags['math'] })
+                    }
                   >
                     <option value="none">None</option>
                     <option value="mathjax">MathJax (--mathjax)</option>
@@ -342,9 +393,15 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
               </Tabs.Content>
 
               {/* Lua Filters Tab */}
-              <Tabs.Content value="filters" className="flex flex-col gap-5 outline-none">
+              <Tabs.Content
+                value="filters"
+                className="flex flex-col gap-5 outline-none"
+              >
                 <div className="flex flex-col gap-1.5">
-                  <label htmlFor="filters-directory-input" className="text-xs font-semibold text-[#8fb8ff] tracking-wider uppercase">
+                  <label
+                    htmlFor="filters-directory-input"
+                    className="text-xs font-semibold text-[#8fb8ff] tracking-wider uppercase"
+                  >
                     Filters Directory
                   </label>
                   <input
@@ -356,7 +413,8 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
                     onChange={(e) => setFiltersDir(e.target.value)}
                   />
                   <span className="text-[11px] text-[#788190]">
-                    Absolute path to the centralized directory containing Lua (`.lua`) and binary filters.
+                    Absolute path to the centralized directory containing Lua (`.lua`)
+                    and binary filters.
                   </span>
                 </div>
 
@@ -365,12 +423,15 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
                     Toggle Lua / Binary Filters
                   </label>
                   <div className="text-xs text-[#788190] mb-1">
-                    Scan results of available filter files found in the directory. Toggle to automatically append or remove them from the compiler command.
+                    Scan results of available filter files found in the directory.
+                    Toggle to automatically append or remove them from the compiler
+                    command.
                   </div>
                   <div className="flex-1 min-h-[200px] overflow-y-auto rounded-lg border border-[#2b2f38] bg-[#15171d]/30 p-4 flex flex-col gap-3">
                     {availableFilters.length === 0 ? (
                       <div className="flex h-32 flex-col items-center justify-center text-center text-[#788190] italic text-xs">
-                        No Lua filters found in the directory. Place `.lua` filter scripts in the specified folder.
+                        No Lua filters found in the directory. Place `.lua` filter
+                        scripts in the specified folder.
                       </div>
                     ) : (
                       availableFilters.map((filt) => (
@@ -385,8 +446,12 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
                             className="h-4 w-4 rounded border-[#343946] bg-[#15161a] text-[#3b82f6] focus:ring-[#3b82f6] cursor-pointer"
                           />
                           <div className="flex flex-col flex-1 min-w-0">
-                            <span className="text-sm font-medium text-[#d6d9df]">{filt}</span>
-                            <span className="text-xs text-[#5c6370] font-mono break-all">{filtersDir}/{filt}</span>
+                            <span className="text-sm font-medium text-[#d6d9df]">
+                              {filt}
+                            </span>
+                            <span className="text-xs text-[#5c6370] font-mono break-all">
+                              {filtersDir}/{filt}
+                            </span>
                           </div>
                         </label>
                       ))
@@ -398,7 +463,10 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
               {/* Asset Resolution Tab */}
               <Tabs.Content value="assets" className="flex flex-col gap-5 outline-none">
                 <div className="flex flex-col gap-1.5">
-                  <label htmlFor="templates-directory-input" className="text-xs font-semibold text-[#8fb8ff] tracking-wider uppercase">
+                  <label
+                    htmlFor="templates-directory-input"
+                    className="text-xs font-semibold text-[#8fb8ff] tracking-wider uppercase"
+                  >
                     Templates Directory
                   </label>
                   <input
@@ -410,24 +478,24 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
                     onChange={(e) => setTemplatesDir(e.target.value)}
                   />
                   <span className="text-[11px] text-[#788190]">
-                    Absolute path to the directory containing custom Pandoc HTML and PDF templates.
+                    Absolute path to the directory containing custom Pandoc HTML and PDF
+                    templates.
                   </span>
                 </div>
 
-                <div className="flex flex-col gap-1.5 mt-2">
-                  <label htmlFor="central-figures-directory-input" className="text-xs font-semibold text-[#8fb8ff] tracking-wider uppercase">
-                    Central Figures Directory
-                  </label>
-                  <input
-                    disabled
-                    id="central-figures-directory-input"
-                    className="w-full max-w-md rounded-md border border-[#2b2f38] bg-[#15171d] px-3.5 py-2 text-sm text-[#788190] outline-none transition-colors opacity-55"
-                    type="text"
-                    value="~/.pandoc/figures"
-                  />
-                  <span className="text-[11px] text-[#788190]">
-                    Managed centralized folder for TikZ, TikZ-CD, Xournal++, and Inkscape vector figures (Phase 3 Integration).
-                  </span>
+                <div className="mt-2 rounded-md border border-[#2b2f38] bg-[#15171d] p-3.5">
+                  <div className="text-xs font-semibold text-[#8fb8ff] tracking-wider uppercase">
+                    Figures Workflow
+                  </div>
+                  <p className="mt-2 text-[11px] leading-5 text-[#788190]">
+                    New diagrams and pasted images are saved in the configured global figures
+                    directory
+                    <code className="mx-1 rounded bg-[#101218] px-1.5 py-0.5 text-[#c5cad3]">
+                      {figuresDir}
+                    </code>
+                    . The Figures Library scans that canonical location so shared academic
+                    assets are reused across documents.
+                  </p>
                 </div>
               </Tabs.Content>
 
@@ -436,7 +504,10 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
                 value="raw"
                 className="flex h-full flex-col gap-2.5 outline-none"
               >
-                <label htmlFor="raw-render-command-textarea" className="text-xs font-semibold text-[#8fb8ff] tracking-wider uppercase">
+                <label
+                  htmlFor="raw-render-command-textarea"
+                  className="text-xs font-semibold text-[#8fb8ff] tracking-wider uppercase"
+                >
                   Render Command
                 </label>
                 <textarea
@@ -447,17 +518,24 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
                   onChange={(e) => handleRawTextChange(e.target.value)}
                 />
                 <p className="text-xs text-[#788190]">
-                  Changes in raw arguments automatically update the options checkboxes,
-                  and vice-versa.
+                  Edit flags using the structured controls above, or paste a complete
+                  command into the Raw Command tab and save. Structured controls update
+                  on dialog reopen.
                 </p>
               </Tabs.Content>
 
               {/* Plugins Tab */}
-              <Tabs.Content value="plugins" className="flex h-full flex-col gap-4 outline-none overflow-y-auto">
+              <Tabs.Content
+                value="plugins"
+                className="flex h-full flex-col gap-4 outline-none overflow-y-auto"
+              >
                 <div className="flex flex-col gap-1">
-                  <h3 className="text-sm font-semibold text-[#8fb8ff]">Active Extension Plugins</h3>
+                  <h3 className="text-sm font-semibold text-[#8fb8ff]">
+                    Active Extension Plugins
+                  </h3>
                   <p className="text-xs text-[#788190]">
-                    Library of active plugins loaded into the host environment. Plugins extend the editor with compile hooks and custom export filters.
+                    Library of active plugins loaded into the host environment. Plugins
+                    extend the editor with compile hooks and custom export filters.
                   </p>
                 </div>
 
@@ -473,12 +551,16 @@ export function SettingsDialog({ open, onClose, onSave }: SettingsDialogProps) {
                         className="rounded-lg border border-[#2b2f38] bg-[#171a21]/50 p-4 flex flex-col gap-2 hover:border-[#3b82f6]/50 transition-colors"
                       >
                         <div className="flex items-center justify-between">
-                          <span className="font-semibold text-[#d6d9df]">{plugin.name}</span>
+                          <span className="font-semibold text-[#d6d9df]">
+                            {plugin.name}
+                          </span>
                           <span className="rounded bg-[#2a2f3a] px-2 py-0.5 text-[10px] font-mono text-[#8fb8ff]">
                             {plugin.category}
                           </span>
                         </div>
-                        <div className="text-xs text-[#a9b2c3]">{plugin.description}</div>
+                        <div className="text-xs text-[#a9b2c3]">
+                          {plugin.description}
+                        </div>
                         <div className="mt-auto pt-2 border-t border-[#2b2f38]/50 text-[10px] text-[#5c6370] font-mono">
                           ID: {plugin.id}
                         </div>

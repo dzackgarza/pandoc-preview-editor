@@ -1,0 +1,44 @@
+[
+  {
+    "id": "qtikz",
+    "executables": ["qtikz"],
+    "ext": ".tikz",
+    "label": "Qtikz (TikZ editor)",
+    "desc": "Writes .tikz files",
+    "url": "https://github.com/nlohmann/qtikz"
+  },
+  {
+    "id": "tikzit",
+    "executables": ["tikzit"],
+    "ext": ".tikz",
+    "label": "Tikzit (Node/TikZ)",
+    "desc": "Writes .tikz files",
+    "url": "https://tikzit.github.io/"
+  },
+  {
+    "id": "inkscape",
+    "executables": [
+      "inkscape"
+    ],
+    "ext": ".svg",
+    "label": "Inkscape (Vector)",
+    "desc": "Writes .svg drawings",
+    "url": "https://inkscape.org/"
+  },
+  {
+    "id": "xournalpp",
+    "executables": ["xournalpp"],
+    "ext": ".xopp",
+    "label": "Xournal++ (Sketch)",
+    "desc": "Writes .xopp notes",
+    "url": "https://github.com/xournalpp/xournalpp"
+  },
+  {
+    "id": "ipe",
+    "executables": ["ipe"],
+    "ext": ".ipe",
+    "label": "Ipe (Extensible Editor)",
+    "desc": "Writes .ipe drawings",
+    "url": "https://ipe.otfried.org/"
+  }
+]

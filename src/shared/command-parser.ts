@@ -1,9 +1,21 @@
-import minimist from 'minimist';
-import { parse, quote } from 'shell-quote';
+import { quote } from 'shell-quote';
 
-export function tokenize(command: string): string[] {
-  return parse(command).filter((t): t is string => typeof t === 'string');
+// ─── Rust-side parsed flags (from get_config().parsedFlags) ─────────────────
+
+export interface RustParsedFlags {
+  command_name: string;
+  standalone: boolean;
+  citeproc: boolean;
+  toc: boolean;
+  number_sections: boolean;
+  embed_resources: boolean;
+  math_engine: 'None' | 'MathJax' | 'KaTeX' | 'WebTeX';
+  template: string | null;
+  filters: Array<{ flag: string; path: string }>;
+  other_args: string[];
 }
+
+// ─── Settings-UI-friendly form (bare filenames for dropdowns) ─────────────────
 
 export interface ParsedFlags {
   commandName: string;
@@ -18,89 +30,42 @@ export interface ParsedFlags {
   otherFlags: string[];
 }
 
-export function parseCommand(command: string): ParsedFlags {
-  const tokens = tokenize(command);
-  const [commandName = 'pandoc', ...rest] = tokens;
+const MATH_MAP: Record<RustParsedFlags['math_engine'], ParsedFlags['math']> = {
+  None: 'none',
+  MathJax: 'mathjax',
+  KaTeX: 'katex',
+  WebTeX: 'webtex',
+};
 
-  const parsed = minimist(rest, {
-    string: ['template', 'lua-filter', 'filter'],
-    boolean: [
-      'standalone',
-      'citeproc',
-      'toc',
-      'number-sections',
-      'embed-resources',
-      'mathjax',
-      'katex',
-      'webtex',
-    ],
-    alias: {
-      s: 'standalone',
-      N: 'number-sections',
-      toc: 'table-of-contents',
-    },
-    default: {},
-    stopEarly: false,
-  });
-
-  const rawTemplate = pickLast(parsed.template);
-  const selectedTemplate = rawTemplate
-    ? rawTemplate.split('/').at(-1) || rawTemplate
+/// Convert Rust-side parsed flags into the Settings-UI-friendly form
+/// where template/filter values are bare filenames (not full paths).
+export function fromRustParsedFlags(rust: RustParsedFlags): ParsedFlags {
+  const selectedTemplate = rust.template
+    ? rust.template.startsWith('/') || rust.template.startsWith('~/')
+      ? rust.template
+      : rust.template.split('/').at(-1) || rust.template
     : '';
 
-  const rawLuaFilters = toArray(parsed['lua-filter']);
-  const rawFilters = toArray(parsed.filter);
-  const selectedFilters = [...rawLuaFilters, ...rawFilters].map(
-    (f) => f.split('/').at(-1) || f,
-  );
-
-  let math: ParsedFlags['math'] = 'none';
-  if (parsed.webtex) math = 'webtex';
-  if (parsed.katex) math = 'katex';
-  if (parsed.mathjax) math = 'mathjax';
-
-  const knownFlags = new Set([
-    'standalone',
-    'citeproc',
-    'toc',
-    'number-sections',
-    'embed-resources',
-    'mathjax',
-    'katex',
-    'webtex',
-    'template',
-    'lua-filter',
-    'filter',
-    's',
-    'N',
-    '_',
-  ]);
-  const otherFlags: string[] = [];
-  for (const [key, value] of Object.entries(parsed)) {
-    if (knownFlags.has(key)) continue;
-    if (key.startsWith('_')) continue;
-    if (typeof value === 'boolean') {
-      if (value) otherFlags.push(`--${key}`);
-    } else if (Array.isArray(value)) {
-      for (const v of value) otherFlags.push(`--${key}=${v}`);
-    } else {
-      otherFlags.push(`--${key}=${value}`);
-    }
-  }
+  const selectedFilters = rust.filters.map((f) => {
+    if (f.path.startsWith('/') || f.path.startsWith('~/')) return f.path;
+    return f.path.split('/').at(-1) || f.path;
+  });
 
   return {
-    commandName,
-    standalone: !!parsed.standalone,
-    citeproc: !!parsed.citeproc,
-    toc: !!parsed.toc,
-    numberSections: !!parsed['number-sections'],
-    embedResources: !!parsed['embed-resources'],
-    math,
+    commandName: rust.command_name,
+    standalone: rust.standalone,
+    citeproc: rust.citeproc,
+    toc: rust.toc,
+    numberSections: rust.number_sections,
+    embedResources: rust.embed_resources,
+    math: MATH_MAP[rust.math_engine] ?? 'none',
     selectedTemplate,
     selectedFilters,
-    otherFlags,
+    otherFlags: rust.other_args,
   };
 }
+
+// ─── Command reconstruction ──────────────────────────────────────────────────
 
 export function buildCommand(
   flags: ParsedFlags,
@@ -117,26 +82,25 @@ export function buildCommand(
   if (flags.math === 'katex') args.push('--katex');
   if (flags.math === 'webtex') args.push('--webtex');
   if (flags.selectedTemplate) {
-    args.push(
-      `--template=${templatesDir.replace(/\/$/, '')}/${flags.selectedTemplate}`,
-    );
+    if (
+      flags.selectedTemplate.startsWith('/') ||
+      flags.selectedTemplate.startsWith('~/')
+    ) {
+      args.push(`--template=${flags.selectedTemplate}`);
+    } else {
+      args.push(
+        `--template=${templatesDir.replace(/\/$/, '')}/${flags.selectedTemplate}`,
+      );
+    }
   }
   for (const filter of flags.selectedFilters) {
     const ext = filter.endsWith('.lua') ? '--lua-filter' : '--filter';
-    args.push(`${ext}=${filtersDir.replace(/\/$/, '')}/${filter}`);
+    if (filter.startsWith('/') || filter.startsWith('~/')) {
+      args.push(`${ext}=${filter}`);
+    } else {
+      args.push(`${ext}=${filtersDir.replace(/\/$/, '')}/${filter}`);
+    }
   }
   args.push(...flags.otherFlags);
   return quote([flags.commandName, ...args]);
-}
-
-function toArray(value: any): string[] {
-  if (value === undefined || value === null) return [];
-  if (Array.isArray(value)) return value;
-  return [String(value)];
-}
-
-function pickLast(value: any): string | null {
-  if (value === undefined || value === null) return null;
-  if (Array.isArray(value)) return value.at(-1) ?? null;
-  return String(value);
 }

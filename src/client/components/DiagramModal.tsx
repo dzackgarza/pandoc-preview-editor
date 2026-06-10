@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X, Image, Globe, Monitor, Loader, Clipboard, Plus, Check } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
+import { blobToBase64 } from '../lib/utils.js';
 import { DIAGRAM_TOOLS, type DiagramTool } from '../../shared/diagram-tools.js';
 
 interface DiagramModalProps {
@@ -12,24 +14,27 @@ interface DiagramModalProps {
 
 type TabType = 'clipboard' | 'web' | 'desktop';
 
-export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor }: DiagramModalProps) {
+export function DiagramModal({
+  open,
+  onClose,
+  ensureRealFile,
+  insertTextAtCursor,
+}: DiagramModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>('clipboard');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Desktop form states — tool id is a plain string; the DIAGRAM_TOOLS registry
   // is the source of truth for which ids exist and what they mean.
   const [desktopTool, setDesktopTool] = useState<string>(DIAGRAM_TOOLS[0].id);
   const [filename, setFilename] = useState('');
-  // Optimistic defaults: treat every tool as available until the server says otherwise.
   const [availableTools, setAvailableTools] = useState<Record<string, boolean>>(
-    Object.fromEntries(DIAGRAM_TOOLS.map((t: DiagramTool) => [t.id, true]))
+    Object.fromEntries(DIAGRAM_TOOLS.map((t: DiagramTool) => [t.id, false])),
   );
 
   useEffect(() => {
     if (open) {
-      fetch('/api/diagram/tools')
-        .then((res) => res.json())
+      invoke<Record<string, boolean>>('get_diagram_tools')
         .then((data) => {
           if (data) {
             setAvailableTools(data);
@@ -39,12 +44,56 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
             }
           }
         })
-        .catch(console.error);
+        .catch((err: unknown) => {
+          setError(err instanceof Error ? err.message : String(err));
+        });
     }
   }, [open]);
 
   // Web tools states
   const [webTool, setWebTool] = useState<'quiver' | 'freetikz'>('quiver');
+  const [proxyHtml, setProxyHtml] = useState('');
+  const [proxyLoading, setProxyLoading] = useState(false);
+
+  const webToolUrl =
+    webTool === 'quiver'
+      ? 'https://q.uiver.app/'
+      : 'https://homepages.inf.ed.ac.uk/cheunen/freetikz/freetikz.html';
+
+  useEffect(() => {
+    let active = true;
+    if (open && activeTab === 'web') {
+      setProxyLoading(true);
+      invoke<{ html: string; baseUrl: string; overlay: string }>('diagram_proxy', { url: webToolUrl })
+        .then((data) => {
+          if (active) {
+            // Structural injection in the frontend
+            const baseTag = `<base href="${data.baseUrl}">`;
+            let combined = data.html;
+            if (combined.includes('<head>')) {
+              combined = combined.replace('<head>', `<head>${baseTag}`);
+            } else {
+              combined = baseTag + combined;
+            }
+            combined += data.overlay;
+            setProxyHtml(combined);
+          }
+        })
+        .catch((err: unknown) => {
+          if (active) {
+            setError(err instanceof Error ? err.message : String(err));
+          }
+        })
+        .finally(() => {
+          if (active) {
+            setProxyLoading(false);
+          }
+        });
+    }
+    return () => {
+      active = false;
+    };
+  }, [open, activeTab, webToolUrl]);
 
   // Clipboard preview state
   const [clipboardImage, setClipboardImage] = useState<string | null>(null);
@@ -92,8 +141,8 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
       }
       setClipboardImage(null);
       setClipboardBlob(null);
-    } catch {
-      // Clipboard read API blocked or empty
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
       setClipboardImage(null);
       setClipboardBlob(null);
     }
@@ -116,33 +165,24 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
     setLoading(true);
     setError(null);
     try {
-      const docPath = await ensureRealFile();
-      if (!docPath) {
-        setLoading(false);
-        return;
-      }
-
       const contentBase64 = await blobToBase64(clipboardBlob);
-      const res = await fetch('/api/figures/assets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contentBase64,
-          documentPath: docPath,
-          mimeType: clipboardBlob.type,
-        }),
+      const data = await invoke<{
+        ok: boolean;
+        path: string;
+        markdown: string;
+      }>('save_figure_asset', {
+        contentBase64,
+        documentPath: '', // Logic now uses global figures_dir
+        mimeType: clipboardBlob.type,
       });
 
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || 'Failed to save clipboard image');
+      if (!data.ok) {
+        throw new Error('Failed to save clipboard image');
       }
-
-      const data = await res.json();
       insertTextAtCursor(`\n${data.markdown}\n`);
       onClose();
-    } catch (err: any) {
-      setError(err.message || 'Clipboard save failed');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
@@ -156,7 +196,8 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
     setLoading(true);
     setError(null);
 
-    const activeTool = DIAGRAM_TOOLS.find((t: DiagramTool) => t.id === desktopTool) ?? DIAGRAM_TOOLS[0];
+    const activeTool =
+      DIAGRAM_TOOLS.find((t: DiagramTool) => t.id === desktopTool) ?? DIAGRAM_TOOLS[0];
     const ext = activeTool.ext;
 
     let finalName = filename.trim();
@@ -165,60 +206,44 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
     }
 
     try {
-      const docPath = await ensureRealFile();
-      if (!docPath) {
-        setLoading(false);
-        return;
-      }
-
-      const fileRes = await fetch('/api/diagram/file', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: desktopTool,
-          filename: finalName,
-          documentPath: docPath,
-        }),
+      const fileData = await invoke<{
+        ok: boolean;
+        absolutePath: string;
+      }>('create_diagram_file', {
+        kind: desktopTool,
+        filename: finalName,
       });
 
-      if (!fileRes.ok) {
-        const errData = await fileRes.json();
-        throw new Error(errData.error || 'Failed to create diagram template file');
+      if (!fileData.ok) {
+        throw new Error('Failed to create diagram template file');
       }
 
-      const fileData = await fileRes.json();
-
-      const launchRes = await fetch('/api/diagram/launch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          absolutePath: fileData.absolutePath,
-          type: desktopTool,
-        }),
+      await invoke('launch_diagram', {
+        absolutePath: fileData.absolutePath,
+        kind: desktopTool,
       });
 
-      if (!launchRes.ok) {
-        const errData = await launchRes.json();
-        throw new Error(errData.error || 'Failed to launch desktop application');
-      }
-
-      const activeTool = DIAGRAM_TOOLS.find((t: DiagramTool) => t.id === desktopTool) ?? DIAGRAM_TOOLS[0];
-      const markdownRef = activeTool.markdownRef(finalName);
+      const activeTool =
+        DIAGRAM_TOOLS.find((t: DiagramTool) => t.id === desktopTool) ??
+        DIAGRAM_TOOLS[0];
+      const markdownRef = activeTool.markdownRef(fileData.absolutePath);
 
       insertTextAtCursor(`\n${markdownRef}\n`);
       onClose();
-    } catch (err: any) {
-      setError(err.message || 'Desktop launching failed');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
   };
 
-  const webToolUrl = webTool === 'quiver' ? 'https://q.uiver.app/' : 'https://homepages.inf.ed.ac.uk/cheunen/freetikz/freetikz.html';
-  const proxiedUrl = `/api/diagram/proxy?url=${encodeURIComponent(webToolUrl)}`;
-
   return (
-    <Dialog.Root open={open} onOpenChange={(val) => { if (!val) onClose(); }}>
+    <Dialog.Root
+      open={open}
+      onOpenChange={(val) => {
+        if (!val) onClose();
+      }}
+    >
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs transition-opacity" />
         <Dialog.Content className="fixed top-1/2 left-1/2 z-50 w-[800px] h-[600px] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-[#2b2f38] bg-[#1e222b] text-[#e6e8eb] shadow-2xl outline-none flex flex-col overflow-hidden">
@@ -226,7 +251,9 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
           <div className="flex items-center justify-between border-b border-[#2b2f38] px-4 py-3 shrink-0">
             <div className="flex items-center gap-2">
               <Plus className="h-5 w-5 text-[#89b4fa]" />
-              <Dialog.Title className="text-base font-medium">Insert Diagram / Figure</Dialog.Title>
+              <Dialog.Title className="text-base font-medium">
+                Insert Diagram / Figure
+              </Dialog.Title>
             </div>
             <Dialog.Close asChild>
               <button
@@ -241,7 +268,10 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
           {/* Navigation Bar */}
           <div className="flex bg-[#171a21] border-b border-[#2b2f38] shrink-0">
             <button
-              onClick={() => { setActiveTab('clipboard'); setError(null); }}
+              onClick={() => {
+                setActiveTab('clipboard');
+                setError(null);
+              }}
               className={`flex items-center gap-2 px-5 py-3 text-sm font-medium border-b-2 outline-none transition-all cursor-pointer ${
                 activeTab === 'clipboard'
                   ? 'border-[#89b4fa] text-white bg-[#1e222b]/55'
@@ -252,7 +282,10 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
               From Clipboard
             </button>
             <button
-              onClick={() => { setActiveTab('web'); setError(null); }}
+              onClick={() => {
+                setActiveTab('web');
+                setError(null);
+              }}
               className={`flex items-center gap-2 px-5 py-3 text-sm font-medium border-b-2 outline-none transition-all cursor-pointer ${
                 activeTab === 'web'
                   ? 'border-[#89b4fa] text-white bg-[#1e222b]/55'
@@ -263,7 +296,10 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
               Web TikZ Tools
             </button>
             <button
-              onClick={() => { setActiveTab('desktop'); setError(null); }}
+              onClick={() => {
+                setActiveTab('desktop');
+                setError(null);
+              }}
               className={`flex items-center gap-2 px-5 py-3 text-sm font-medium border-b-2 outline-none transition-all cursor-pointer ${
                 activeTab === 'desktop'
                   ? 'border-[#89b4fa] text-white bg-[#1e222b]/55'
@@ -288,24 +324,40 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
               <div className="flex-1 flex flex-col justify-center items-center gap-4 text-center">
                 {clipboardImage ? (
                   <div className="flex flex-col items-center gap-4 max-w-md w-full">
-                    <div className="text-xs text-[#788190]">Detected image on clipboard:</div>
+                    <div className="text-xs text-[#788190]">
+                      Detected image on clipboard:
+                    </div>
                     <div className="relative rounded-lg border border-[#343946] bg-[#15161a] p-2 max-h-60 overflow-hidden shadow-inner flex items-center justify-center">
-                      <img src={clipboardImage} alt="Clipboard content" className="max-h-56 max-w-full object-contain rounded-md" />
+                      <img
+                        src={clipboardImage}
+                        alt="Clipboard content"
+                        className="max-h-56 max-w-full object-contain rounded-md"
+                      />
                     </div>
                     <button
                       onClick={handleInsertClipboard}
                       disabled={loading}
                       className="rounded bg-[#89b4fa] text-[#11111b] px-6 py-2.5 text-sm font-semibold hover:bg-[#b4befe] transition-all cursor-pointer flex items-center gap-1.5 shadow-md disabled:opacity-40"
                     >
-                      {loading ? <Loader className="h-4 w-4 animate-spin text-[#11111b]" /> : <Image className="h-4 w-4 text-[#11111b]" />}
+                      {loading ? (
+                        <Loader className="h-4 w-4 animate-spin text-[#11111b]" />
+                      ) : (
+                        <Image className="h-4 w-4 text-[#11111b]" />
+                      )}
                       Insert Clipboard Image
                     </button>
                   </div>
                 ) : (
                   <div className="flex flex-col items-center gap-2 max-w-sm text-[#788190]">
                     <Clipboard className="h-10 w-10 text-[#5c6370] mb-2" />
-                    <span className="text-sm font-semibold text-[#d6d9df]">No Image Found on Clipboard</span>
-                    <span className="text-xs">Copy an image (screenshot or diagram export) onto your system clipboard, click the button below to scan, and insert it instantly.</span>
+                    <span className="text-sm font-semibold text-[#d6d9df]">
+                      No Image Found on Clipboard
+                    </span>
+                    <span className="text-xs">
+                      Copy an image (screenshot or diagram export) onto your system
+                      clipboard, click the button below to scan, and insert it
+                      instantly.
+                    </span>
                     <button
                       onClick={checkClipboard}
                       className="mt-3 rounded border border-[#343946] bg-[#222530] px-4 py-2 text-xs text-[#aab2c0] hover:bg-[#2b2e3c] transition-colors cursor-pointer"
@@ -322,7 +374,8 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
               <div className="flex-1 flex flex-col overflow-hidden">
                 <div className="flex justify-between items-center pb-2 shrink-0">
                   <div className="text-xs text-[#788190]">
-                    Serve quiver or FreeTikZ same-origin. Export actions inside the tool are intercepted and automatically injected at the cursor.
+                    Serve quiver or FreeTikZ same-origin. Export actions inside the tool
+                    are intercepted and automatically injected at the cursor.
                   </div>
                   <div className="flex gap-2">
                     <button
@@ -349,11 +402,18 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
                 </div>
 
                 <div className="flex-1 rounded-lg border border-[#2b2f38] bg-black overflow-hidden relative shadow-inner">
-                  <iframe
-                    src={proxiedUrl}
-                    className="w-full h-full border-none"
-                    title="Web TikZ Tool"
-                  />
+                  {proxyLoading ? (
+                    <div className="flex h-full items-center justify-center text-[#788190] text-xs">
+                      <Loader className="h-5 w-5 animate-spin mr-2" />
+                      Loading...
+                    </div>
+                  ) : (
+                    <iframe
+                      srcDoc={proxyHtml}
+                      className="w-full h-full border-none"
+                      title="Web TikZ Tool"
+                    />
+                  )}
                 </div>
               </div>
             )}
@@ -363,7 +423,10 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
               <div className="flex-1 flex flex-col justify-center items-center">
                 <div className="max-w-md w-full flex flex-col gap-4">
                   <div className="text-xs text-[#788190] text-center">
-                    Select a local desktop vector/diagram app. The server will instantiate a starter file template inside your document's `./figures/` folder, launch the app, and insert a relative link automatically.
+                    Select a local desktop vector/diagram app. The server will
+                    instantiate a starter file template inside your global
+                    figures folder, launch the app, and insert an absolute link
+                    automatically.
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 mt-2">
@@ -380,9 +443,13 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
                           >
                             <div className="text-sm font-semibold flex items-center gap-1.5 justify-between">
                               <span>{tool.label}</span>
-                              <span className="text-[9px] font-normal px-1.5 py-0.5 rounded bg-[#2b1c1e] text-[#f38ba8] border border-[#f38ba8]/20 whitespace-nowrap">Install (Link)</span>
+                              <span className="text-[9px] font-normal px-1.5 py-0.5 rounded bg-[#2b1c1e] text-[#f38ba8] border border-[#f38ba8]/20 whitespace-nowrap">
+                                Install (Link)
+                              </span>
                             </div>
-                            <div className="text-xs text-[#aab2c8] mt-0.5">{tool.desc}</div>
+                            <div className="text-xs text-[#aab2c8] mt-0.5">
+                              {tool.desc}
+                            </div>
                             <div className="text-[10px] text-[#e06c75] underline mt-1.5">
                               Visit homepage to install &rarr;
                             </div>
@@ -392,7 +459,11 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
                       return (
                         <button
                           key={tool.id}
-                          onClick={() => { setDesktopTool(tool.id); setError(null); }}
+                          data-testid={`diagram-tool-${tool.id}`}
+                          onClick={() => {
+                            setDesktopTool(tool.id);
+                            setError(null);
+                          }}
                           className={`rounded-md border p-3 text-left transition-all ${
                             desktopTool === tool.id
                               ? 'border-[#89b4fa] bg-[#89b4fa]/5 text-white cursor-pointer'
@@ -400,25 +471,38 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
                           }`}
                         >
                           <div className="text-sm font-semibold">{tool.label}</div>
-                          <div className="text-xs text-[#5c6370] mt-0.5">{tool.desc}</div>
+                          <div className="text-xs text-[#5c6370] mt-0.5">
+                            {tool.desc}
+                          </div>
                         </button>
                       );
                     })}
                   </div>
 
                   <div className="flex flex-col gap-1.5 mt-2">
-                    <label className="text-xs font-semibold text-[#a9b2c3]">Figure Filename</label>
+                    <label className="text-xs font-semibold text-[#a9b2c3]">
+                      Figure Filename
+                    </label>
                     <input
                       type="text"
+                      aria-label="Filename"
                       className="w-full rounded border border-[#343946] bg-[#15161a] px-3 py-2 text-sm text-[#e6e8eb] outline-none focus:border-[#89b4fa]"
                       placeholder="e.g. commutative-diagram"
                       value={filename}
                       onChange={(e) => setFilename(e.target.value)}
                     />
                     <div className="text-xs text-[#5c6370] font-mono">
-                      Will create: <span className="text-[#aab2c0]">figures/{filename || 'filename'}{
-                        (DIAGRAM_TOOLS.find((t: DiagramTool) => t.id === desktopTool) ?? DIAGRAM_TOOLS[0]).ext
-                      }</span>
+                      Will create:{' '}
+                      <span className="text-[#aab2c0]">
+                        {filename || 'filename'}
+                        {
+                          (
+                            DIAGRAM_TOOLS.find(
+                              (t: DiagramTool) => t.id === desktopTool,
+                            ) ?? DIAGRAM_TOOLS[0]
+                          ).ext
+                        }
+                      </span>
                     </div>
                   </div>
 
@@ -427,7 +511,11 @@ export function DiagramModal({ open, onClose, ensureRealFile, insertTextAtCursor
                     disabled={loading || !filename.trim()}
                     className="mt-2 rounded bg-[#89b4fa] text-[#11111b] py-2.5 text-sm font-semibold hover:bg-[#b4befe] transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md disabled:opacity-40"
                   >
-                    {loading ? <Loader className="h-4 w-4 animate-spin text-[#11111b]" /> : <Monitor className="h-4 w-4 text-[#11111b]" />}
+                    {loading ? (
+                      <Loader className="h-4 w-4 animate-spin text-[#11111b]" />
+                    ) : (
+                      <Monitor className="h-4 w-4 text-[#11111b]" />
+                    )}
                     Create & Launch App
                   </button>
                 </div>

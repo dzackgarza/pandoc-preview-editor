@@ -1,0 +1,36 @@
+.pandoc-preview-edit-overlay {
+  position: absolute;
+  background: rgba(30, 34, 43, 0.85);
+  backdrop-filter: blur(4px);
+  border: 1px solid #2b2f38;
+  color: #8fb8ff;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  z-index: 10000;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  transition: all 0.15s ease;
+  pointer-events: auto;
+  user-select: none;
+}
+
+.pandoc-preview-edit-overlay:hover {
+  background: rgba(45, 50, 60, 0.95);
+  color: #b4d2ff;
+  transform: translateY(-1px);
+}
+
+.pandoc-preview-editable {
+  display: inline-block;
+  position: relative;
+  transition: outline 0.15s ease;
+}
+
+.pandoc-preview-editable:hover {
+  outline: 2px solid rgba(143, 184, 255, 0.3);
+  outline-offset: 4px;
+  border-radius: 4px;
+}

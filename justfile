@@ -10,19 +10,13 @@ install:
 setup: install build-client
     #!/usr/bin/env bash
     set -euo pipefail
+    git config core.hooksPath .githooks
     XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
     TARGET_DIR="$XDG_CONFIG_HOME/pandoc-preview"
     TARGET_FILE="$TARGET_DIR/config.toml"
     if [ ! -f "$TARGET_FILE" ] && [ ! -f "$TARGET_DIR/pandoc-preview.toml" ]; then
         mkdir -p "$TARGET_DIR"
-        echo "[render]" > "$TARGET_FILE"
-        echo "debounce_ms = 750" >> "$TARGET_FILE"
-        echo "timeout_ms = 30000" >> "$TARGET_FILE"
-        echo "" >> "$TARGET_FILE"
-        echo "[pandoc]" >> "$TARGET_FILE"
-        echo "render_command = \"pandoc --standalone --citeproc --mathjax --template=~/.pandoc/templates/pandoc_preview_template.html --lua-filter=~/.pandoc/filters/tikzcd.lua --lua-filter=~/.pandoc/filters/convert_amsthm_envs.lua -f markdown+tex_math_dollars+citations+wikilinks_title_after_pipe+tex_math_single_backslash -t html\"" >> "$TARGET_FILE"
-        echo "templates_dir = \"~/.pandoc/templates\"" >> "$TARGET_FILE"
-        echo "filters_dir = \"~/.pandoc/filters\"" >> "$TARGET_FILE"
+        cp default-config.toml "$TARGET_FILE"
         echo "Initialized default configuration at: $TARGET_FILE"
     else
         echo "Configuration already exists, skipping initialization."
@@ -33,36 +27,113 @@ setup: install build-client
 build-client:
     npx vite build
 
-# Run the app (optional file argument via FILE)
-run file='': build-client
-    #!/usr/bin/env bash
-    set -euo pipefail
-    cmd="npx tsx src/server/cli.ts"
-    if [ -n "{{file}}" ]; then
-        cmd="$cmd {{file}}"
-    fi
-    exec $cmd
+# Run the app in development mode
+run:
+    npx tauri dev
 
-# Type-check the project
-typecheck:
+# Build the Tauri desktop application (.deb / AppImage)
+build-tauri:
+    npx tauri build
+
+[private]
+_agent-contracts:
+    node scripts/check-agent-contracts.mjs --all
+
+[private]
+_agent-contracts-staged:
+    node scripts/check-agent-contracts.mjs --staged
+
+[private]
+_typecheck:
     npx tsc --noEmit
 
-# Run all tests (Playwright E2E + API tests)
-test: build-client
-    npx playwright test
+[private]
+_check-dependencies:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    missing=()
 
-# Run tests in headed mode (visible browser)
-test-headed: build-client
-    npx playwright test --headed
+    if ! command -v pandoc >/dev/null 2>&1; then
+        missing+=("pandoc")
+    fi
 
-# Run tests with HTML reporter
-test-report: build-client
-    npx playwright test --reporter=html
+    while IFS=$'\t' read -r tool_id executables; do
+        found=0
+        IFS='|' read -r -a candidates <<< "$executables"
+        for executable in "${candidates[@]}"; do
+            if command -v "$executable" >/dev/null 2>&1; then
+                found=1
+                break
+            fi
+        done
 
-# Run focused preview rendering workflow tests
-test-render:
-    npx playwright test src/tests/e2e.spec.ts --grep "complex document"
+        if [ "$found" -eq 0 ]; then
+            missing+=("$tool_id (${executables//|/ or })")
+        fi
+    done < <(jq -r '.[] | [.id, (.executables | join("|"))] | @tsv' src/shared/diagram-tools.json)
 
-# Run only browser E2E tests
-test-e2e: build-client
-    npx playwright test src/tests/e2e.spec.ts
+    if [ ${#missing[@]} -ne 0 ]; then
+        echo "FATAL: Missing hard dependencies required for pandoc-preview startup:"
+        for m in "${missing[@]}"; do
+            echo "  - $m"
+        done
+        echo "The app is architected to fail-fast and will panic (101) if any of these are missing from PATH."
+        exit 1
+    fi
+
+# Run all tests: agent contracts, type-check, dependency assertion, Rust unit tests, canonical workflow E2E.
+test: _agent-contracts _typecheck _check-dependencies
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    test_target_dir="$(pwd)/.agents/tmp/cargo-target"
+    socket_path="$(pwd)/.agents/tmp/tauri-playwright.sock"
+    export CARGO_TARGET_DIR="$test_target_dir"
+
+    cleanup() {
+        status="$?"
+        cleanup_status=0
+
+        if [ "$status" -eq 0 ]; then
+            if [ -e test-results ]; then
+                gio trash test-results
+            fi
+            if [ -e tauri-dev.log ]; then
+                gio trash tauri-dev.log
+            fi
+            if [ -e "$socket_path" ]; then
+                gio trash "$socket_path" || cleanup_status="$?"
+            fi
+        fi
+
+        if [ "$cleanup_status" -ne 0 ]; then
+            exit "$cleanup_status"
+        fi
+        exit "$status"
+    }
+
+    terminate() {
+        exit 143
+    }
+
+    trap cleanup EXIT
+    trap terminate INT TERM
+
+    if [ -e "$socket_path" ]; then
+        echo "FATAL: stale Tauri Playwright socket exists at $socket_path"
+        echo "Remove the stale socket explicitly before rerunning the proof suite."
+        exit 1
+    fi
+
+    mkdir -p "$test_target_dir"
+    cargo test --manifest-path src-tauri/Cargo.toml
+    cargo build --manifest-path src-tauri/Cargo.toml --no-default-features --features e2e-testing
+    npx playwright test --config src/tests/playwright.config.ts --max-failures=1
+
+[private]
+_test-rust:
+    cargo test --manifest-path src-tauri/Cargo.toml
+
+[private]
+_test-rust-verbose:
+    cargo test --manifest-path src-tauri/Cargo.toml -- --show-output

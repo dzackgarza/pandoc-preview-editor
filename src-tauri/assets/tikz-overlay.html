@@ -1,0 +1,75 @@
+<div
+  id="pandoc-preview-export-overlay"
+  style="position: fixed; top: 12px; right: 12px; z-index: 2147483647; background: linear-gradient(135deg, #1e1e2e 0%, #181825 100%); color: #cdd6f4; padding: 16px; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.1); font-family: system-ui, -apple-system, sans-serif; width: 280px; backdrop-filter: blur(8px); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);"
+>
+  <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+    <div style="background: #89b4fa; width: 8px; height: 8px; border-radius: 50%;"></div>
+    <span style="font-weight: 700; font-size: 13px; letter-spacing: 0.5px; text-transform: uppercase; color: #89b4fa;">Diagram Integration</span>
+  </div>
+  <div id="pandoc-preview-status" style="font-size: 12px; margin-bottom: 16px; color: #a6adc8; line-height: 1.5;">
+    Ready to extract. Export your work inside the tool to sync.
+  </div>
+  <button
+    id="pandoc-preview-btn-export"
+    style="width: 100%; background: #89b4fa; color: #11111b; border: none; padding: 10px; border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer; transition: all 0.2s ease; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 12px rgba(137, 180, 250, 0.2);"
+  >
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+    Inject into Document
+  </button>
+</div>
+
+<script>
+  (function() {
+    /**
+     * Pandoc-Preview Diagram Integration
+     * Deterministic scrapers based on one-time study of tool DOM findings.
+     */
+    const scrapers = {
+      'q.uiver.app': () => {
+        // Quiver uses a modal for export.
+        const area = document.querySelector('.modal textarea');
+        return area ? area.value : null;
+      },
+      'homepages.inf.ed.ac.uk': () => {
+        // FreeTikZ uses a fixed textarea with ID #latex.
+        const area = document.getElementById('latex');
+        if (!area) return null;
+        
+        let val = area.value;
+        // Strip LaTeX preamble if present to get raw TikZ
+        const tikzMatch = val.match(/\\begin\{tikzpicture\}[\s\S]*\\end\{tikzpicture\}/);
+        return tikzMatch ? tikzMatch[0] : val;
+      }
+    };
+
+    const host = window.location.hostname;
+    const scraper = scrapers[host];
+
+    document.getElementById('pandoc-preview-btn-export').addEventListener('click', () => {
+      if (!scraper) {
+        console.error('No scraper found for host:', host);
+        return;
+      }
+
+      const code = scraper();
+      if (code) {
+        window.parent.postMessage({
+          type: 'diagram-export',
+          code: code
+        }, '*');
+        
+        const status = document.getElementById('pandoc-preview-status');
+        status.innerText = 'Success! Code injected.';
+        status.style.color = '#a6e3a1';
+        setTimeout(() => {
+          status.innerText = 'Ready to extract. Export your work inside the tool to sync.';
+          status.style.color = '#a6adc8';
+        }, 2000);
+      } else {
+        const status = document.getElementById('pandoc-preview-status');
+        status.innerText = 'Could not find export. Please trigger "Export > TikZ" inside the tool first.';
+        status.style.color = '#f38ba8';
+      }
+    });
+  })();
+</script>

@@ -1,0 +1,10 @@
+[render]
+debounce_ms = 750
+timeout_ms = 30000
+restore_last_file = false
+
+[pandoc]
+render_command = "pandoc --standalone --citeproc --mathjax --template=${HOME}/.pandoc/templates/pandoc_preview_template.html --lua-filter=${HOME}/.pandoc/filters/tikzcd.lua --lua-filter=${HOME}/.pandoc/filters/convert_amsthm_envs.lua -f markdown+tex_math_dollars+citations+wikilinks_title_after_pipe+tex_math_single_backslash -t html"
+templates_dir = "${HOME}/.pandoc/templates"
+filters_dir = "${HOME}/.pandoc/filters"
+figures_dir = "${HOME}/.pandoc/figures"

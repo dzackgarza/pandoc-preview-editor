@@ -3,14 +3,10 @@
   "version": "0.2.1",
   "private": true,
   "type": "module",
-  "bin": {
-    "pandoc-preview": "./src/server/cli.ts"
-  },
   "scripts": {
-    "dev": "tsx src/server/cli.ts",
-    "start": "tsx src/server/cli.ts",
-    "typecheck": "tsc --noEmit",
-    "build": "vite build"
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.3",
@@ -24,6 +20,7 @@
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-toast": "^1.2.15",
     "@radix-ui/react-tooltip": "^1.2.8",
+    "@tauri-apps/api": "^2.11.0",
     "@types/shell-quote": "^1.7.5",
     "@uiw/react-codemirror": "^4.25.9",
     "class-variance-authority": "^0.7.1",
@@ -44,7 +41,9 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
+    "@srsholmes/tauri-playwright": "^0.2.2",
     "@tailwindcss/vite": "^4.3.0",
+    "@tauri-apps/cli": "^2.11.2",
     "@types/express": "^5.0.0",
     "@types/minimist": "^1.2.5",
     "@types/node": "^22.10.0",
